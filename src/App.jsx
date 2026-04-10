@@ -1,14 +1,8 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { supabase } from "./supabase";
 
 /*
-  AIRPALACE FLIGHT OPS v5.0 — PERSISTENCE-FIRST ARCHITECTURE
-  
-  Pattern: SAVE-FIRST, RENDER-AFTER
-  Every mutation: 1) write to storage  2) confirm success  3) update React state
-  
-  Storage keys (kept small and separate):
-    "ap_f"  → flights array JSON
-    "ap_m"  → maint status JSON  
+  AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
 */
 
 // ═══ DATA ═══
@@ -19,7 +13,7 @@ const AC = {
 const RF=1.18, BLK=20, JA=6.7, PW={m:190,w:150,c:80};
 const CMB="9509768", PH="5219995703030";
 const REQBY=["Jabib C","Omar C","Gibran C","Jose C","Anuar C","Direccion","Mantenimiento","Otro"];
-const STS={prog:{l:"Programado",c:"#2563eb",b:"#dbeafe",i:"\u{1F4CB}"},enc:{l:"En Curso",c:"#d97706",b:"#fef3c7",i:"\u2708\uFE0F"},comp:{l:"Completado",c:"#16a34a",b:"#dcfce7",i:"\u2705"},canc:{l:"Cancelado",c:"#dc2626",b:"#fee2e2",i:"\u274C"}};
+const STS={prog:{l:"Programado",c:"#2563eb",b:"#dbeafe",i:"📋"},enc:{l:"En Curso",c:"#d97706",b:"#fef3c7",i:"✈️"},comp:{l:"Completado",c:"#16a34a",b:"#dcfce7",i:"✅"},canc:{l:"Cancelado",c:"#dc2626",b:"#fee2e2",i:"❌"}};
 const MST={disponible:{l:"Disponible",c:"#16a34a",b:"#dcfce7"},mantenimiento:{l:"Mantenimiento",c:"#d97706",b:"#fef3c7"},aog:{l:"AOG",c:"#dc2626",b:"#fee2e2"}};
 const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const WK=["Dom","Lun","Mar","Mie","Jue","Vie","Sab"];
@@ -76,47 +70,60 @@ function calcR(orig,dest,id,px,bg){
   for(var i=0;i<FSTOPS.length;i++){var s=FSTOPS[i];if(s.c===orig||s.c===dest)continue;var l1=hv(oa.la,oa.lo,s.la,s.lo),l2=hv(s.la,s.lo,da.la,da.lo),f1=l1*RF/a.kts*a.gph*1.1,f2=l2*RF/a.kts*a.gph*1.1;if(f1<=a.maxGal&&f2<=a.maxGal&&l1+l2<bt){bt=l1+l2;bs={c:s.c,i4:s.i4,bm1:Math.round(l1*RF/a.kts*60+BLK),bm2:Math.round(l2*RF/a.kts*60+BLK)};}}
   return{dir:false,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:bs?[bs]:[]};
 }
-function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||b.time.localeCompare(a.time);});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
+function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
 
 // ═══ SEED DATA ═══
 var SEED=[
-  {id:1,date:"2026-04-02",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"08:30",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
-  {id:2,date:"2026-04-06",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"07:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
-  {id:3,date:"2026-04-07",ac:"N35EA",orig:"Punta Cana",dest:"Cozumel",time:"17:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
-  {id:4,date:"2026-04-07",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"20:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
-  {id:5,date:"2026-04-12",ac:"N35EA",orig:"Merida",dest:"Providenciales",time:"15:00",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
-  {id:6,date:"2026-04-12",ac:"N35EA",orig:"Providenciales",dest:"Kingston",time:"STBY",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
-  {id:7,date:"2026-04-12",ac:"N540JL",orig:"Orlando MCO",dest:"Merida",time:"STBY",rb:"Mantenimiento",nt:"Ferry",pm:0,pw:0,pc:0,bg:0,st:"prog"},
-  {id:8,date:"2026-04-15",ac:"N540JL",orig:"Merida",dest:"Puebla",time:"08:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
-  {id:9,date:"2026-04-15",ac:"N540JL",orig:"Puebla",dest:"Merida",time:"15:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
-  {id:10,date:"2026-04-27",ac:"N540JL",orig:"Merida",dest:"Cancun",time:"07:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"},
-  {id:11,date:"2026-04-28",ac:"N540JL",orig:"Cancun",dest:"Miami MIA",time:"16:00",rb:"Gibran C",nt:"",pm:2,pw:0,pc:0,bg:0,st:"prog"},
-  {id:12,date:"2026-04-30",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"09:00",rb:"Jabib C",nt:"",pm:3,pw:2,pc:1,bg:250,st:"prog"},
-  {id:13,date:"2026-05-05",ac:"N35EA",orig:"Punta Cana",dest:"Merida",time:"09:00",rb:"Jabib C",nt:"Via Cozumel",pm:3,pw:2,pc:1,bg:250,st:"prog"},
+  {date:"2026-04-02",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"08:30",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
+  {date:"2026-04-06",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"07:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
+  {date:"2026-04-07",ac:"N35EA",orig:"Punta Cana",dest:"Cozumel",time:"17:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
+  {date:"2026-04-07",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"20:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
+  {date:"2026-04-12",ac:"N35EA",orig:"Merida",dest:"Providenciales",time:"15:00",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
+  {date:"2026-04-12",ac:"N35EA",orig:"Providenciales",dest:"Kingston",time:"STBY",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
+  {date:"2026-04-12",ac:"N540JL",orig:"Orlando MCO",dest:"Merida",time:"STBY",rb:"Mantenimiento",nt:"Ferry",pm:0,pw:0,pc:0,bg:0,st:"prog"},
+  {date:"2026-04-15",ac:"N540JL",orig:"Merida",dest:"Puebla",time:"08:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
+  {date:"2026-04-15",ac:"N540JL",orig:"Puebla",dest:"Merida",time:"15:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
+  {date:"2026-04-27",ac:"N540JL",orig:"Merida",dest:"Cancun",time:"07:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"},
+  {date:"2026-04-28",ac:"N540JL",orig:"Cancun",dest:"Miami MIA",time:"16:00",rb:"Gibran C",nt:"",pm:2,pw:0,pc:0,bg:0,st:"prog"},
+  {date:"2026-04-30",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"09:00",rb:"Jabib C",nt:"",pm:3,pw:2,pc:1,bg:250,st:"prog"},
+  {date:"2026-05-05",ac:"N35EA",orig:"Punta Cana",dest:"Merida",time:"09:00",rb:"Jabib C",nt:"Via Cozumel",pm:3,pw:2,pc:1,bg:250,st:"prog"},
 ];
 var SEED_M={N35EA:"disponible",N540JL:"disponible"};
 
-// ═══ STORAGE LAYER — localStorage (works everywhere, no restrictions) ═══
-function storageWrite(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch (e) {
-    console.error("Storage write failed:", e);
-    return false;
-  }
+// ═══ DB HELPERS ═══
+async function loadFlightsFromDb() {
+  const { data, error } = await supabase
+    .from("flights")
+    .select("*")
+    .order("date", { ascending: true })
+    .order("time", { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((f) => ({
+    ...f,
+    pm: Number(f.pm || 0),
+    pw: Number(f.pw || 0),
+    pc: Number(f.pc || 0),
+    bg: Number(f.bg || 0),
+  }));
 }
-function storageRead(key) {
-  try {
-    var raw = localStorage.getItem(key);
-    if (raw === null) return null;
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error("Storage read failed:", e);
-    return null;
-  }
+
+async function loadMaintFromDb() {
+  const { data, error } = await supabase
+    .from("aircraft_status")
+    .select("*");
+
+  if (error) throw error;
+
+  const mapped = {};
+  (data || []).forEach((row) => {
+    mapped[row.ac] = row.status;
+  });
+
+  return mapped;
 }
 
 // ═══ STYLES ═══
@@ -139,17 +146,15 @@ function ApIn({value,onChange,label}){
       </div>}
     </div>);
 }
-function Stp({label,value,onChange,icon,wl}){var ic={M:"\u{1F468}",F:"\u{1F469}",N:"\u{1F9D2}"};return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}><div><span style={{fontSize:16,marginRight:5}}>{ic[icon]||icon}</span><span style={{fontSize:13,fontWeight:600}}>{label}</span> <span style={{fontSize:11,color:"#94a3b8"}}>({wl})</span></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={function(){onChange(Math.max(0,value-1));}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>-</button><span style={{fontSize:17,fontWeight:700,minWidth:22,textAlign:"center"}}>{value}</span><button onClick={function(){onChange(value+1);}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>+</button></div></div>;}
+function Stp({label,value,onChange,icon,wl}){var ic={M:"👨",F:"👩",N:"🧒"};return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}><div><span style={{fontSize:16,marginRight:5}}>{ic[icon]||icon}</span><span style={{fontSize:13,fontWeight:600}}>{label}</span> <span style={{fontSize:11,color:"#94a3b8"}}>({wl})</span></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={function(){onChange(Math.max(0,value-1));}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>-</button><span style={{fontSize:17,fontWeight:700,minWidth:22,textAlign:"center"}}>{value}</span><button onClick={function(){onChange(value+1);}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>+</button></div></div>;}
 
 // ═══ MAIN APP ═══
 export default function App(){
-  // ─── Core state ───
-  var[fs,setFsRaw]=useState(SEED);
+  var[fs,setFsRaw]=useState([]);
   var[mt,setMtRaw]=useState(SEED_M);
-  var[phase,setPhase]=useState("loading"); // loading | ready | saving | saved | error
+  var[phase,setPhase]=useState("loading");
   var[errMsg,setErrMsg]=useState("");
-  
-  // ─── UI state ───
+
   var[vw,setVw]=useState("cal");
   var[sel,setSel]=useState(tds(new Date()));
   var[cM,setCM]=useState(new Date().getMonth());
@@ -163,151 +168,286 @@ export default function App(){
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
   var today=tds(new Date());
 
-  // ═══ PERSISTENCE OPERATIONS — SAVE FIRST, THEN UPDATE STATE ═══
+  useEffect(function () {
+    (async function () {
+      try {
+        const freshFlights = await loadFlightsFromDb();
+        const freshMaint = await loadMaintFromDb();
 
-  // Write flights to storage, then update state
-  function persistFlights(newFlights) {
-    setPhase("saving");
-    var ok = storageWrite("ap_f", newFlights);
-    if (ok) {
-      setFsRaw(newFlights);
-      setPhase("saved");
-      setTimeout(function(){ setPhase("ready"); }, 2000);
-      return true;
-    } else {
-      setErrMsg("No se pudo guardar");
-      setPhase("error");
-      return false;
-    }
-  }
+        if (!freshFlights.length) {
+          const { error } = await supabase.from("flights").insert(SEED);
+          if (error) throw error;
+          const seededFlights = await loadFlightsFromDb();
+          setFsRaw(seededFlights);
+        } else {
+          setFsRaw(freshFlights);
+        }
 
-  // Write maint to storage, then update state
-  function persistMaint(newMaint) {
-    setPhase("saving");
-    var ok = storageWrite("ap_m", newMaint);
-    if (ok) {
-      setMtRaw(newMaint);
-      setPhase("saved");
-      setTimeout(function(){ setPhase("ready"); }, 2000);
-      return true;
-    } else {
-      setErrMsg("No se pudo guardar");
-      setPhase("error");
-      return false;
-    }
-  }
+        if (!Object.keys(freshMaint).length) {
+          const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
+            ac,
+            status,
+            updated_at: new Date().toISOString(),
+          }));
+          const { error } = await supabase.from("aircraft_status").upsert(maintRows);
+          if (error) throw error;
+          const seededMaint = await loadMaintFromDb();
+          setMtRaw(seededMaint);
+        } else {
+          setMtRaw(freshMaint);
+        }
 
-  // ─── LOAD on mount ───
-  useEffect(function(){
-    var savedF = storageRead("ap_f");
-    var savedM = storageRead("ap_m");
-    if (savedF && savedF.length > 0) setFsRaw(savedF);
-    if (savedM && savedM.N35EA) setMtRaw(savedM);
-    setPhase("ready");
+        setPhase("ready");
+      } catch (e) {
+        setErrMsg(e.message || String(e));
+        setPhase("error");
+      }
+    })();
   }, []);
 
-  // ─── Explicit save button (re-persists current state) ───
-  function saveNow() {
+  useEffect(() => {
+    const flightsChannel = supabase
+      .channel("flights-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "flights" },
+        async () => {
+          try {
+            const freshFlights = await loadFlightsFromDb();
+            setFsRaw(freshFlights);
+          } catch {}
+        }
+      )
+      .subscribe();
+
+    const maintChannel = supabase
+      .channel("aircraft-status-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "aircraft_status" },
+        async () => {
+          try {
+            const freshMaint = await loadMaintFromDb();
+            setMtRaw(freshMaint);
+          } catch {}
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(flightsChannel);
+      supabase.removeChannel(maintChannel);
+    };
+  }, []);
+
+  async function addFlight(flight) {
+    const aircraftStatus = mt[flight.ac] || "disponible";
+
+    if (aircraftStatus === "aog" || aircraftStatus === "mantenimiento") {
+      setErrMsg(`La aeronave ${flight.ac} está en ${aircraftStatus.toUpperCase()}`);
+      setPhase("error");
+      return;
+    }
+
     setPhase("saving");
-    var ok1 = storageWrite("ap_f", fs);
-    var ok2 = storageWrite("ap_m", mt);
-    if (ok1 && ok2) {
+
+    const rt = calcR(
+      flight.orig,
+      flight.dest,
+      flight.ac,
+      { m: flight.pm, w: flight.pw, c: flight.pc },
+      flight.bg
+    );
+
+    try {
+      if (rt && !rt.dir && rt.stops.length > 0) {
+        const stop = rt.stops[0];
+
+        const legs = [
+          {
+            ...flight,
+            dest: stop.c,
+            nt: (flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest,
+          },
+          {
+            ...flight,
+            orig: stop.c,
+            time: "STBY",
+            nt: "Tras recarga",
+          },
+        ];
+
+        const { error } = await supabase.from("flights").insert(legs);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("flights").insert([flight]);
+        if (error) throw error;
+      }
+
+      setNtf({ fl: flight, url: makeWaUrl(flight, "PROGRAMADO"), lbl: "PROGRAMADO" });
+      setSf(false);
+      setEditId(null);
+      setNf(Object.assign({}, EF, { date: sel }));
       setPhase("saved");
-      setTimeout(function(){ setPhase("ready"); }, 2500);
-    } else {
-      setErrMsg("Error al guardar");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
       setPhase("error");
     }
   }
 
-  // ═══ ACTION HANDLERS — all await persistence before updating ═══
-
-  var nid=useMemo(function(){return Math.max.apply(null,fs.map(function(f){return f.id;}).concat([0]))+1;},[fs]);
-
-  // Add flight
-  function addFlight(flight) {
-    var rt = calcR(flight.orig, flight.dest, flight.ac, {m:flight.pm,w:flight.pw,c:flight.pc}, flight.bg);
-    var newFs;
-    if (rt && !rt.dir && rt.stops.length > 0) {
-      var stop = rt.stops[0];
-      newFs = fs.concat([
-        Object.assign({}, flight, {id:nid, dest:stop.c, nt:(flight.nt?flight.nt+" | ":"")+"Escala -> "+flight.dest}),
-        Object.assign({}, flight, {id:nid+1, orig:stop.c, time:"STBY", nt:"Tras recarga"})
-      ]);
-    } else {
-      newFs = fs.concat([Object.assign({}, flight, {id:nid})]);
-    }
-    var ok = persistFlights(newFs);
-    if (ok) {
-      setNtf({fl:flight, url:makeWaUrl(flight,"PROGRAMADO"), lbl:"PROGRAMADO"});
-      setSf(false); setEditId(null); setNf(Object.assign({},EF,{date:sel}));
-    }
-  }
-
-  // Edit flight
-  function editFlight(flight) {
-    var newFs = fs.map(function(f){ return f.id===editId ? Object.assign({},flight) : f; });
-    var ok = persistFlights(newFs);
-    if (ok) {
-      setNtf({fl:flight, url:makeWaUrl(flight,"MODIFICADO"), lbl:"MODIFICADO"});
-      setSf(false); setEditId(null); setNf(Object.assign({},EF,{date:sel}));
-    }
-  }
-
-  // Delete flight
-  function delFlight(id) {
-    persistFlights(fs.filter(function(f){ return f.id !== id; }));
-  }
-
-  // Change flight status
-  function chgStatus(id, newSt) {
-    persistFlights(fs.map(function(f){ return f.id===id ? Object.assign({},f,{st:newSt}) : f; }));
-  }
-
-  // Change aircraft maintenance status
-  function chgMaint(acId, newSt) {
-    var newM = Object.assign({}, mt);
-    newM[acId] = newSt;
-    persistMaint(newM);
-  }
-
-  // Restore defaults
-  function restore() {
-    if (!confirm("Restaurar todos los datos originales?")) return;
+  async function editFlight(flight) {
     setPhase("saving");
+
     try {
-      storageWrite("ap_f", SEED);
-      storageWrite("ap_m", SEED_M);
-      setFsRaw(SEED);
-      setMtRaw(SEED_M);
+      const { error } = await supabase
+        .from("flights")
+        .update({
+          date: flight.date,
+          ac: flight.ac,
+          orig: flight.orig,
+          dest: flight.dest,
+          time: flight.time,
+          rb: flight.rb,
+          nt: flight.nt,
+          pm: flight.pm,
+          pw: flight.pw,
+          pc: flight.pc,
+          bg: flight.bg,
+          st: flight.st,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", flight.id);
+
+      if (error) throw error;
+
+      setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
+      setSf(false);
+      setEditId(null);
+      setNf(Object.assign({}, EF, { date: sel }));
       setPhase("saved");
-      setTimeout(function(){ setPhase("ready"); }, 2000);
-    } catch(e) { setErrMsg(String(e)); setPhase("error"); }
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
   }
 
-  // Save form
+  async function delFlight(id) {
+    setPhase("saving");
+
+    try {
+      const { error } = await supabase
+        .from("flights")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
+  }
+
+  async function chgStatus(id, newSt) {
+    setPhase("saving");
+
+    try {
+      const { error } = await supabase
+        .from("flights")
+        .update({
+          st: newSt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
+  }
+
+  async function chgMaint(acId, newSt) {
+    setPhase("saving");
+
+    try {
+      const { error } = await supabase
+        .from("aircraft_status")
+        .upsert([
+          {
+            ac: acId,
+            status: newSt,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+
+      if (error) throw error;
+
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
+  }
+
+  async function restore() {
+    if (!confirm("Restaurar todos los datos originales?")) return;
+
+    setPhase("saving");
+
+    try {
+      await supabase.from("flights").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+
+      const { error: flightsError } = await supabase.from("flights").insert(SEED);
+      if (flightsError) throw flightsError;
+
+      const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
+        ac,
+        status,
+        updated_at: new Date().toISOString(),
+      }));
+
+      const { error: maintError } = await supabase
+        .from("aircraft_status")
+        .upsert(maintRows);
+
+      if (maintError) throw maintError;
+
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(String(e));
+      setPhase("error");
+    }
+  }
+
   function handleSave() {
     if (!nf.orig||!nf.dest||!nf.time||!nf.rb) return;
     if (editId !== null) editFlight(nf);
     else addFlight(nf);
   }
 
-  // ═══ COMPUTED ═══
   var pos=useMemo(function(){return getPos(fs);},[fs]);
-  var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:a.time.localeCompare(b.time);});},[fs,sel,fa]);
-  var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);}).slice(0,20);},[fs,today,fa]);
+  var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
+  var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
 
-  // Loading screen
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestion"}];
+  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
 
   return(
     <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 39px,#1a2d4a22 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#1a2d4a22 40px)",backgroundSize:"40px 40px"}}>
 
-      {/* HEADER */}
       <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
@@ -322,7 +462,6 @@ export default function App(){
         </div>
       </div>
 
-      {/* TABS */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3,padding:"10px 14px 0"}}>
         {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"9px 4px",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",background:vw===t.k?"#fff":"rgba(255,255,255,.07)",color:vw===t.k?"#0f172a":"#94a3b8"}}>{t.l}</button>;})}
       </div>
@@ -330,7 +469,6 @@ export default function App(){
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
       </div>}
 
-      {/* CALENDAR VIEW */}
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:14,marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -351,7 +489,7 @@ export default function App(){
           <span style={{fontWeight:700,color:"#fff",fontSize:15}}>{fdt(sel)}</span>
           <button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{background:"#fff",color:"#0f172a",border:"none",borderRadius:10,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>✈️ + Vuelo</button>
         </div>
-        {dayF.length===0?<div style={{textAlign:"center",color:"#475569",padding:"24px 0"}}>✈️ Sin vuelos este dia</div>
+        {dayF.length===0?<div style={{textAlign:"center",color:"#475569",padding:"24px 0"}}>✈️ Sin vuelos este día</div>
         :dayF.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog,px=(f.pm||0)+(f.pw||0)+(f.pc||0),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);return(
           <div key={f.id} style={{background:"rgba(255,255,255,.97)",borderLeft:"4px solid "+a.clr,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
@@ -373,12 +511,11 @@ export default function App(){
               {Object.entries(STS).filter(function(e){return e[0]!==f.st;}).map(function(e){return <button key={e[0]} onClick={function(){chgStatus(f.id,e[0]);}} style={{fontSize:10,padding:"4px 10px",borderRadius:8,border:"1px solid "+e[1].c,background:e[1].b,color:e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].i} {e[1].l}</button>;})}
             </div>
           </div>);})}
-        <div style={{marginTop:6,marginBottom:16,background:"rgba(255,251,235,.9)",borderRadius:12,padding:10,border:"1px solid #fde68a",fontSize:11,color:"#92400e",lineHeight:1.5}}>⚠️ Los tiempos son estimaciones (+18% ruta, +20min bloque). La programacion final es responsabilidad del piloto al mando.</div>
+        <div style={{marginTop:6,marginBottom:16,background:"rgba(255,251,235,.9)",borderRadius:12,padding:10,border:"1px solid #fde68a",fontSize:11,color:"#92400e",lineHeight:1.5}}>⚠️ Los tiempos son estimaciones (+18% ruta, +20min bloque). La programación final es responsabilidad del piloto al mando.</div>
       </div>}
 
-      {/* LIST VIEW */}
       {vw==="list"&&<div style={{padding:"0 14px 24px"}}>
-        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 Proximos vuelos</div>
+        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 Próximos vuelos</div>
         {upcoming.length===0?<div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div>
         :upcoming.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
           <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
@@ -389,10 +526,9 @@ export default function App(){
             </div></div>);})}
       </div>}
 
-      {/* PLANNER VIEW */}
       {vw==="plan"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:16}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#0f172a"}}>🧭 Planificacion de vuelo</div>
+          <div style={{fontWeight:800,fontSize:16,color:"#0f172a"}}>🧭 Planificación de vuelo</div>
           <div style={{fontSize:11,color:"#94a3b8",marginBottom:14}}>Rutas IFR +18% · Block +20min</div>
           <label style={LS}>Aeronave</label>
           <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setRc(function(p){return Object.assign({},p,{ac:a.id,res:null});});}} style={{flex:1,padding:"10px 8px",border:"2px solid "+a.clr,borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:rc.ac===a.id?a.clr:"transparent",color:rc.ac===a.id?"#fff":a.clr}}>{a.id}<br/><span style={{fontSize:10,fontWeight:500}}>{a.tag}</span></button>;})}</div>
@@ -402,13 +538,13 @@ export default function App(){
             <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>👥 Pasajeros + 2 pilotos</div>
             <Stp label="Hombres" value={rc.pm} onChange={function(v){setRc(function(p){return Object.assign({},p,{pm:v,res:null});});}} icon="M" wl="190 lbs"/>
             <Stp label="Mujeres" value={rc.pw} onChange={function(v){setRc(function(p){return Object.assign({},p,{pw:v,res:null});});}} icon="F" wl="150 lbs"/>
-            <Stp label="Ninos" value={rc.pc} onChange={function(v){setRc(function(p){return Object.assign({},p,{pc:v,res:null});});}} icon="N" wl="80 lbs"/>
+            <Stp label="Niños" value={rc.pc} onChange={function(v){setRc(function(p){return Object.assign({},p,{pc:v,res:null});});}} icon="N" wl="80 lbs"/>
           </div>
           <button onClick={function(){if(rc.orig&&rc.dest)setRc(function(p){return Object.assign({},p,{res:calcR(rc.orig,rc.dest,rc.ac,{m:rc.pm,w:rc.pw,c:rc.pc},rc.bg)});});}} disabled={!rc.orig||!rc.dest} style={{width:"100%",padding:14,background:rc.orig&&rc.dest?"#0f172a":"#cbd5e1",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:14}}>🧭 Calcular</button>
           {rc.res&&<div style={{marginTop:14}}>
             <div style={{background:"#f8fafc",borderRadius:14,padding:14,border:"1.5px solid #e2e8f0"}}>
               <div style={{fontWeight:800,fontSize:17}}>{rc.orig+" → "+rc.dest}</div>
-              <div style={{fontSize:12,color:"#64748b",lineHeight:1.9,marginTop:4}}>GC: {rc.res.gc} NM | Via aerea: ~{rc.res.aw} NM<br/>En ruta: {Math.floor(rc.res.em/60)}h{("0"+(rc.res.em%60)).slice(-2)}m | <strong>Block: {Math.floor(rc.res.bm/60)}h{("0"+(rc.res.bm%60)).slice(-2)}m</strong></div>
+              <div style={{fontSize:12,color:"#64748b",lineHeight:1.9,marginTop:4}}>GC: {rc.res.gc} NM | Vía aérea: ~{rc.res.aw} NM<br/>En ruta: {Math.floor(rc.res.em/60)}h{("0"+(rc.res.em%60)).slice(-2)}m | <strong>Block: {Math.floor(rc.res.bm/60)}h{("0"+(rc.res.bm%60)).slice(-2)}m</strong></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:10}}>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:rc.res.dir?"#dcfce7":"#fef3c7"}}><div style={{fontSize:22}}>{rc.res.dir?"✅":"⚠️"}</div><div style={{fontSize:10,fontWeight:700,color:rc.res.dir?"#166534":"#92400e"}}>{rc.res.dir?"DIRECTO":"ESCALA"}</div></div>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:!rc.res.wt.ov?"#dcfce7":"#fee2e2"}}><div style={{fontSize:22}}>{!rc.res.wt.ov?"⚖️":"❌"}</div><div style={{fontSize:10,fontWeight:700,color:!rc.res.wt.ov?"#166534":"#991b1b"}}>{!rc.res.wt.ov?"PESO OK":"SOBREPESO"}</div></div>
@@ -426,7 +562,6 @@ export default function App(){
         </div>
       </div>}
 
-      {/* GESTION VIEW */}
       {vw==="gest"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,marginTop:8}}>
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
@@ -446,7 +581,6 @@ export default function App(){
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
 
-      {/* FORM MODAL */}
       {sf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
         <div style={{background:"#fff",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{width:36,height:4,background:"#d1d5db",borderRadius:2,margin:"0 auto 12px"}}/>
@@ -465,7 +599,7 @@ export default function App(){
           <div style={{background:"#f8fafc",borderRadius:12,padding:12,border:"1.5px solid #e2e8f0"}}>
             <Stp label="Hombres" value={nf.pm} onChange={function(v){setNf(function(p){return Object.assign({},p,{pm:v});});}} icon="M" wl="190"/>
             <Stp label="Mujeres" value={nf.pw} onChange={function(v){setNf(function(p){return Object.assign({},p,{pw:v});});}} icon="F" wl="150"/>
-            <Stp label="Ninos" value={nf.pc} onChange={function(v){setNf(function(p){return Object.assign({},p,{pc:v});});}} icon="N" wl="80"/>
+            <Stp label="Niños" value={nf.pc} onChange={function(v){setNf(function(p){return Object.assign({},p,{pc:v});});}} icon="N" wl="80"/>
           </div>
           <label style={LS}>Hora</label>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
@@ -482,7 +616,6 @@ export default function App(){
         </div>
       </div>}
 
-      {/* NOTIFICATION */}
       {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
         <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:400,padding:24}} onClick={function(e){e.stopPropagation();}}>
           <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>✅ Vuelo {ntf.lbl}</div>
@@ -499,12 +632,10 @@ export default function App(){
         </div>
       </div>}
 
-      {/* FLOATING SAVE STATUS */}
       <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:900}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
-        {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Guardado correctamente</div>}
-        {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}<br/><button onClick={saveNow} style={{marginTop:6,background:"#fff",color:"#dc2626",border:"none",borderRadius:8,padding:"6px 16px",fontWeight:700,cursor:"pointer",fontSize:12}}>🔄 Reintentar</button></div>}
-        {phase==="ready"&&<button onClick={saveNow} style={{background:"#0f172a",color:"#fff",border:"2px solid #334155",padding:"12px 28px",borderRadius:14,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 15px rgba(0,0,0,.4)"}}>💾 Guardar</button>}
+        {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
+        {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}</div>}
       </div>
 
       <div style={{height:70}}/>
