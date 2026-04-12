@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import { deriveActor } from "./lib/actor";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -133,6 +134,7 @@ async function loadMaintFromDb() {
 var LS={fontSize:12,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,marginTop:8};
 var IS={width:"100%",padding:"11px 13px",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:14,color:"#1e293b",background:"#f8fafc",outline:"none",marginBottom:4,boxSizing:"border-box"};
 var NB={background:"#f1f5f9",border:"none",borderRadius:8,width:36,height:36,fontSize:20,cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center"};
+var META_FIELDS=["created_by_email","created_by_name","updated_by_email","updated_by_name"];
 
 // ═══ COMPONENTS ═══
 function ApIn({value,onChange,label}){
@@ -189,26 +191,21 @@ export default function App(){
   }
 
   function getCreatorMeta(source) {
-    var email = currentUser?.email || null;
-    var local = email ? email.split("@")[0] : "";
-    var fallbackName = local
-      ? local.replace(/[._-]+/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();})
-      : null;
-    var resolvedName =
-      currentUser?.user_metadata?.full_name ||
-      currentUser?.user_metadata?.name ||
-      fallbackName ||
-      email;
+    var actor = deriveActor(currentUser);
     return {
-      created_by_user_id: currentUser?.id || null,
-      created_by_user_email: email,
-      created_by_user_name: resolvedName,
+      created_by_user_id: actor.id,
+      created_by_user_email: actor.email,
+      created_by_user_name: actor.name,
+      created_by_email: actor.email,
+      created_by_name: actor.name,
+      updated_by_email: actor.email,
+      updated_by_name: actor.name,
       creation_source: source,
     };
   }
 
   function getCreatorLabel(f) {
-    return f.created_by_user_name || f.created_by_user_email || "Por sistema";
+    return f.updated_by_name || f.updated_by_email || f.created_by_name || f.created_by_email || f.created_by_user_name || f.created_by_user_email || "Sistema";
   }
 
   function formatCreatedAt(ts) {
@@ -222,6 +219,44 @@ export default function App(){
       setCurrentUser(r?.data?.user || null);
     });
   }, []);
+
+  async function safeInsertFlights(rows) {
+    const { error } = await supabase.from("flights").insert(rows);
+    if (!error) return;
+    if (!String(error.message || "").includes("schema cache")) throw error;
+    const fallbackRows = rows.map(function(r){
+      var copy=Object.assign({},r);META_FIELDS.forEach(function(k){delete copy[k];});return copy;
+    });
+    const retried = await supabase.from("flights").insert(fallbackRows);
+    if (retried.error) throw retried.error;
+  }
+
+  async function safeUpdateFlight(id, updates) {
+    const first = await supabase.from("flights").update(updates).eq("id", id);
+    if (!first.error) return;
+    if (!String(first.error.message || "").includes("schema cache")) throw first.error;
+    var fallback=Object.assign({},updates);META_FIELDS.forEach(function(k){delete fallback[k];});
+    const second = await supabase.from("flights").update(fallback).eq("id", id);
+    if (second.error) throw second.error;
+  }
+
+  async function autoSendWhatsApp(flight, label) {
+    try {
+      const r = await fetch("/api/send-whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flight, label }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(function(){return{};});
+        throw new Error(data.error || `HTTP ${r.status}`);
+      }
+    } catch (e) {
+      setErrMsg(`Vuelo guardado, pero WhatsApp falló: ${e.message || String(e)}`);
+      setPhase("error");
+      setTimeout(function(){setPhase("ready");}, 2200);
+    }
+  }
 
   useEffect(function () {
     (async function () {
@@ -335,11 +370,12 @@ export default function App(){
           },
         ];
 
-        const { error } = await supabase.from("flights").insert(legs);
-        if (error) throw error;
+        await safeInsertFlights(legs);
+        await autoSendWhatsApp(legs[0], "PROGRAMADO");
       } else {
-        const { error } = await supabase.from("flights").insert([{ ...flight, ...creatorMeta }]);
-        if (error) throw error;
+        const created = { ...flight, ...creatorMeta };
+        await safeInsertFlights([created]);
+        await autoSendWhatsApp(created, "PROGRAMADO");
       }
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "PROGRAMADO"), lbl: "PROGRAMADO" });
@@ -359,9 +395,7 @@ export default function App(){
     const creatorMeta = getCreatorMeta("manual");
 
     try {
-      const { error } = await supabase
-        .from("flights")
-        .update({
+      await safeUpdateFlight(flight.id, {
           date: flight.date,
           ac: flight.ac,
           orig: flight.orig,
@@ -377,10 +411,7 @@ export default function App(){
           updated_by_email: creatorMeta.created_by_email,
           updated_by_name: creatorMeta.created_by_name,
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", flight.id);
-
-      if (error) throw error;
+        });
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
       setSf(false);
@@ -522,13 +553,19 @@ export default function App(){
     setPhase("saving");
     setErrMsg("");
     try {
-      await executeAgentAction(agentValidation, {
+      const execRes = await executeAgentAction(agentValidation, {
         calcRoute: calcR,
         creatorMeta: getCreatorMeta("ai"),
       });
       setAgentInstruction("");
       setAgentResult(null);
       setAgentValidation(null);
+      if (execRes && execRes.warning) {
+        setErrMsg(`Vuelo creado, pero WhatsApp falló: ${execRes.warning}`);
+        setPhase("error");
+        setTimeout(function(){setPhase("ready");}, 2200);
+        return;
+      }
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1200);
     } catch (e) {
