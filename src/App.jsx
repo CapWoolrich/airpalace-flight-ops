@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
-import { deriveActor } from "./lib/actor";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -177,6 +176,9 @@ export default function App(){
   var[agentBusy,setAgentBusy]=useState(false);
   var[agentOpen,setAgentOpen]=useState(false);
   var[currentUser,setCurrentUser]=useState(null);
+  var[recording,setRecording]=useState(false);
+  var[transcribing,setTranscribing]=useState(false);
+  var[recorder,setRecorder]=useState(null);
   var[recentAc,setRecentAc]=useState("all");
   var[recentCreator,setRecentCreator]=useState("all");
   var[recentDate,setRecentDate]=useState("30d");
@@ -191,21 +193,13 @@ export default function App(){
   }
 
   function getCreatorMeta(source) {
-    var actor = deriveActor(currentUser);
     return {
-      created_by_user_id: actor.id,
-      created_by_user_email: actor.email,
-      created_by_user_name: actor.name,
-      created_by_email: actor.email,
-      created_by_name: actor.name,
-      updated_by_email: actor.email,
-      updated_by_name: actor.name,
       creation_source: source,
     };
   }
 
   function getCreatorLabel(f) {
-    return f.updated_by_name || f.updated_by_email || f.created_by_name || f.created_by_email || f.created_by_user_name || f.created_by_user_email || "Sistema";
+    return "Por sistema";
   }
 
   function formatCreatedAt(ts) {
@@ -222,22 +216,12 @@ export default function App(){
 
   async function safeInsertFlights(rows) {
     const { error } = await supabase.from("flights").insert(rows);
-    if (!error) return;
-    if (!String(error.message || "").includes("schema cache")) throw error;
-    const fallbackRows = rows.map(function(r){
-      var copy=Object.assign({},r);META_FIELDS.forEach(function(k){delete copy[k];});return copy;
-    });
-    const retried = await supabase.from("flights").insert(fallbackRows);
-    if (retried.error) throw retried.error;
+    if (error) throw error;
   }
 
   async function safeUpdateFlight(id, updates) {
     const first = await supabase.from("flights").update(updates).eq("id", id);
-    if (!first.error) return;
-    if (!String(first.error.message || "").includes("schema cache")) throw first.error;
-    var fallback=Object.assign({},updates);META_FIELDS.forEach(function(k){delete fallback[k];});
-    const second = await supabase.from("flights").update(fallback).eq("id", id);
-    if (second.error) throw second.error;
+    if (first.error) throw first.error;
   }
 
   async function autoSendWhatsApp(flight, label) {
@@ -547,6 +531,56 @@ export default function App(){
     }
   }
 
+  async function transcribeAudio(blob) {
+    setTranscribing(true);
+    try {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+
+      const r = await fetch("/api/transcribe-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/webm" }),
+      });
+      const data = await r.json().catch(function(){return{};});
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      if (data.text) setAgentInstruction(data.text);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  async function toggleVoiceInput() {
+    if (recording && recorder) {
+      recorder.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
+      mediaRecorder.onstop = function(){
+        stream.getTracks().forEach(function(t){t.stop();});
+        setRecording(false);
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        transcribeAudio(blob);
+      };
+      setRecorder(mediaRecorder);
+      mediaRecorder.start();
+      setRecording(true);
+    } catch (e) {
+      setErrMsg("No se pudo iniciar el micrófono.");
+      setPhase("error");
+    }
+  }
+
   async function executeAgentInstruction() {
     if (!agentValidation || !agentValidation.can_execute) return;
     setAgentBusy(true);
@@ -719,7 +753,7 @@ export default function App(){
             </div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
             <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
-            <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Por: {getCreatorLabel(f)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+            <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
             <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
           </div>);})}
       </div>}
@@ -864,6 +898,9 @@ export default function App(){
           placeholder="Escribe una instrucción..."
           style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
         />
+        <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+          {transcribing?"⏳ Transcribiendo...":recording?"⏹️ Detener grabación":"🎤 Grabar voz"}
+        </button>
         <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
           {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
         </button>

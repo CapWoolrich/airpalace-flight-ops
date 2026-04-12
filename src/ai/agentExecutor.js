@@ -1,6 +1,5 @@
 import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
-const META_FIELDS = ["created_by_email", "created_by_name", "updated_by_email", "updated_by_name"];
 
 function createFlightLegs(payload, routeResult) {
   const creatorMeta = payload.creator_meta || {};
@@ -17,13 +16,6 @@ function createFlightLegs(payload, routeResult) {
     pc: Number(payload.pc || 0),
     bg: Number(payload.bg || 0),
     st: payload.st || "prog",
-    created_by_user_id: creatorMeta.created_by_user_id || null,
-    created_by_user_email: creatorMeta.created_by_user_email || null,
-    created_by_user_name: creatorMeta.created_by_user_name || null,
-    created_by_email: creatorMeta.created_by_email || creatorMeta.created_by_user_email || null,
-    created_by_name: creatorMeta.created_by_name || creatorMeta.created_by_user_name || null,
-    updated_by_email: creatorMeta.updated_by_email || creatorMeta.created_by_email || creatorMeta.created_by_user_email || null,
-    updated_by_name: creatorMeta.updated_by_name || creatorMeta.created_by_name || creatorMeta.created_by_user_name || null,
     creation_source: creatorMeta.creation_source || "ai",
   };
 
@@ -54,16 +46,8 @@ export async function executeAgentAction(agentResult, options = {}) {
 
   async function safeInsert(rows) {
     const first = await supabase.from("flights").insert(rows);
-    if (!first.error) return true;
-    if (!String(first.error.message || "").includes("schema cache")) throw first.error;
-    const fallbackRows = rows.map((r) => {
-      const c = { ...r };
-      META_FIELDS.forEach((k) => delete c[k]);
-      return c;
-    });
-    const second = await supabase.from("flights").insert(fallbackRows);
-    if (second.error) throw second.error;
-    return false;
+    if (first.error) throw first.error;
+    return true;
   }
 
   async function sendWhatsApp(flight) {
@@ -97,21 +81,13 @@ export async function executeAgentAction(agentResult, options = {}) {
     }
 
     case "edit_flight": {
-      const editorMeta = options.creatorMeta || {};
       const updates = {};
       ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
         if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
       });
-      updates.updated_by_email = editorMeta.updated_by_email || editorMeta.created_by_email || editorMeta.created_by_user_email || null;
-      updates.updated_by_name = editorMeta.updated_by_name || editorMeta.created_by_name || editorMeta.created_by_user_name || null;
       updates.updated_at = new Date().toISOString();
 
       let { error } = await supabase.from("flights").update(updates).eq("id", payload.flight_id);
-      if (error && String(error.message || "").includes("schema cache")) {
-        const fallback = { ...updates };
-        META_FIELDS.forEach((k) => delete fallback[k]);
-        ({ error } = await supabase.from("flights").update(fallback).eq("id", payload.flight_id));
-      }
       if (error) throw error;
       return { ok: true, message: "Vuelo editado correctamente." };
     }
