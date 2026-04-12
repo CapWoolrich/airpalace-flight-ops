@@ -1,5 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import { analyzeOpsInstruction } from "./ai/agentClient";
+import { validateAgentResult } from "./ai/agentValidator";
+import { executeAgentAction } from "./ai/agentExecutor";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -166,7 +169,77 @@ export default function App(){
   var EF={ac:"N35EA",orig:"",dest:"",date:tds(new Date()),time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
   var[nf,setNf]=useState(EF);
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
+  var[agentInstruction,setAgentInstruction]=useState("");
+  var[agentResult,setAgentResult]=useState(null);
+  var[agentValidation,setAgentValidation]=useState(null);
+  var[agentBusy,setAgentBusy]=useState(false);
+  var[agentOpen,setAgentOpen]=useState(false);
+  var[currentUser,setCurrentUser]=useState(null);
+  var[recording,setRecording]=useState(false);
+  var[transcribing,setTranscribing]=useState(false);
+  var[recorder,setRecorder]=useState(null);
+  var[recentAc,setRecentAc]=useState("all");
+  var[recentCreator,setRecentCreator]=useState("all");
+  var[recentDate,setRecentDate]=useState("30d");
+  var[recentSource,setRecentSource]=useState("all");
   var today=tds(new Date());
+
+  function toErrorMessage(e) {
+    if (!e) return "Error desconocido";
+    if (typeof e === "string") return e;
+    if (typeof e?.message === "string" && e.message) return e.message;
+    return String(e);
+  }
+
+  function getCreatorMeta(source) {
+    return {
+      creation_source: source,
+    };
+  }
+
+  function getCreatorLabel(f) {
+    return "Por sistema";
+  }
+
+  function formatCreatedAt(ts) {
+    if (!ts) return "No disponible";
+    var d=new Date(ts);if(isNaN(d.getTime()))return"No disponible";
+    return d.toLocaleDateString("es-MX")+" "+d.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+  }
+
+  useEffect(function () {
+    supabase.auth.getUser().then(function (r) {
+      setCurrentUser(r?.data?.user || null);
+    });
+  }, []);
+
+  async function safeInsertFlights(rows) {
+    const { error } = await supabase.from("flights").insert(rows);
+    if (error) throw error;
+  }
+
+  async function safeUpdateFlight(id, updates) {
+    const first = await supabase.from("flights").update(updates).eq("id", id);
+    if (first.error) throw first.error;
+  }
+
+  async function autoSendWhatsApp(flight, label) {
+    try {
+      const r = await fetch("/api/send-whatsapp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flight, label }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(function(){return{};});
+        throw new Error(data.error || `HTTP ${r.status}`);
+      }
+    } catch (e) {
+      setErrMsg(`Vuelo guardado, pero WhatsApp falló: ${e.message || String(e)}`);
+      setPhase("error");
+      setTimeout(function(){setPhase("ready");}, 2200);
+    }
+  }
 
   useEffect(function () {
     (async function () {
@@ -250,6 +323,7 @@ export default function App(){
     }
 
     setPhase("saving");
+    const creatorMeta = getCreatorMeta("manual");
 
     const rt = calcR(
       flight.orig,
@@ -268,20 +342,23 @@ export default function App(){
             ...flight,
             dest: stop.c,
             nt: (flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest,
+            ...creatorMeta,
           },
           {
             ...flight,
             orig: stop.c,
             time: "STBY",
             nt: "Tras recarga",
+            ...creatorMeta,
           },
         ];
 
-        const { error } = await supabase.from("flights").insert(legs);
-        if (error) throw error;
+        await safeInsertFlights(legs);
+        await autoSendWhatsApp(legs[0], "PROGRAMADO");
       } else {
-        const { error } = await supabase.from("flights").insert([flight]);
-        if (error) throw error;
+        const created = { ...flight, ...creatorMeta };
+        await safeInsertFlights([created]);
+        await autoSendWhatsApp(created, "PROGRAMADO");
       }
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "PROGRAMADO"), lbl: "PROGRAMADO" });
@@ -291,18 +368,17 @@ export default function App(){
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
     } catch (e) {
-      setErrMsg(e.message || String(e));
+      setErrMsg(toErrorMessage(e));
       setPhase("error");
     }
   }
 
   async function editFlight(flight) {
     setPhase("saving");
+    const creatorMeta = getCreatorMeta("manual");
 
     try {
-      const { error } = await supabase
-        .from("flights")
-        .update({
+      await safeUpdateFlight(flight.id, {
           date: flight.date,
           ac: flight.ac,
           orig: flight.orig,
@@ -316,10 +392,7 @@ export default function App(){
           bg: flight.bg,
           st: flight.st,
           updated_at: new Date().toISOString(),
-        })
-        .eq("id", flight.id);
-
-      if (error) throw error;
+        });
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
       setSf(false);
@@ -328,7 +401,7 @@ export default function App(){
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
     } catch (e) {
-      setErrMsg(e.message || String(e));
+      setErrMsg(toErrorMessage(e));
       setPhase("error");
     }
   }
@@ -435,22 +508,146 @@ export default function App(){
     else addFlight(nf);
   }
 
+  async function analyzeAgentInstruction() {
+    if (!agentInstruction.trim()) return;
+    setAgentBusy(true);
+    setPhase("saving");
+    setErrMsg("");
+    try {
+      const analyzed = await analyzeOpsInstruction(agentInstruction);
+      const validated = await validateAgentResult(analyzed);
+      setAgentResult(analyzed);
+      setAgentValidation(validated);
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1200);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function transcribeAudio(blob) {
+    setTranscribing(true);
+    try {
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+
+      const r = await fetch("/api/transcribe-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/webm" }),
+      });
+      const data = await r.json().catch(function(){return{};});
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      if (data.text) setAgentInstruction(data.text);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  async function toggleVoiceInput() {
+    if (recording && recorder) {
+      recorder.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
+      mediaRecorder.onstop = function(){
+        stream.getTracks().forEach(function(t){t.stop();});
+        setRecording(false);
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        transcribeAudio(blob);
+      };
+      setRecorder(mediaRecorder);
+      mediaRecorder.start();
+      setRecording(true);
+    } catch (e) {
+      setErrMsg("No se pudo iniciar el micrófono.");
+      setPhase("error");
+    }
+  }
+
+  async function executeAgentInstruction() {
+    if (!agentValidation || !agentValidation.can_execute) return;
+    setAgentBusy(true);
+    setPhase("saving");
+    setErrMsg("");
+    try {
+      const execRes = await executeAgentAction(agentValidation, {
+        calcRoute: calcR,
+        creatorMeta: getCreatorMeta("ai"),
+      });
+      setAgentInstruction("");
+      setAgentResult(null);
+      setAgentValidation(null);
+      if (execRes && execRes.warning) {
+        setErrMsg(`Vuelo creado, pero WhatsApp falló: ${execRes.warning}`);
+        setPhase("error");
+        setTimeout(function(){setPhase("ready");}, 2200);
+        return;
+      }
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1200);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
+  var creators=useMemo(function(){
+    var s=new Set();fs.forEach(function(f){s.add(getCreatorLabel(f));});return["all"].concat(Array.from(s).sort());
+  },[fs]);
+  var recentFlights=useMemo(function(){
+    var now=new Date();var start7=new Date(now);start7.setDate(now.getDate()-7);var start30=new Date(now);start30.setDate(now.getDate()-30);
+    return fs
+      .filter(function(f){
+        if(recentAc!=="all"&&f.ac!==recentAc)return false;
+        if(recentCreator!=="all"&&getCreatorLabel(f)!==recentCreator)return false;
+        if(recentSource!=="all"&&String(f.creation_source||"manual")!==recentSource)return false;
+        var d=new Date((f.created_at||f.date||today)+"T00:00:00");
+        if(recentDate==="today"&&tds(d)!==today)return false;
+        if(recentDate==="7d"&&d<start7)return false;
+        if(recentDate==="30d"&&d<start30)return false;
+        return true;
+      })
+      .sort(function(a,b){return String(b.created_at||"").localeCompare(String(a.created_at||""))||String(b.date||"").localeCompare(String(a.date||""));});
+  },[fs,recentAc,recentCreator,recentDate,recentSource,today]);
+  var activeForMgmt=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp";});},[fs]);
+  var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
+  var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
+  var requestsByPerson=useMemo(function(){var o={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=f.rb||"No disponible";o[k]=(o[k]||0)+1;});return Object.entries(o).sort(function(a,b){return b[1]-a[1];});},[fs]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
+  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"recent",l:"🕘 Recientes"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
 
   return(
     <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 39px,#1a2d4a22 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#1a2d4a22 40px)",backgroundSize:"40px 40px"}}>
 
       <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <img src="/logo-192.png" alt="AirPalace" style={{width:30,height:30,borderRadius:8,objectFit:"cover",border:"1px solid #334155"}}/>
+            <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
+          </div>
         </div>
         <div style={{display:"flex",gap:6}}>
           {Object.values(AC).map(function(a){var p=pos[a.id],atB=p===a.base,ms=mt[a.id]||"disponible",ml=MST[ms];return(
@@ -462,7 +659,7 @@ export default function App(){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3,padding:"10px 14px 0"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:3,padding:"10px 14px 0"}}>
         {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"9px 4px",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",background:vw===t.k?"#fff":"rgba(255,255,255,.07)",color:vw===t.k?"#0f172a":"#94a3b8"}}>{t.l}</button>;})}
       </div>
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
@@ -526,6 +723,38 @@ export default function App(){
             </div></div>);})}
       </div>}
 
+      {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
+        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:10,marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
+              <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
+            </select>
+            <select value={recentSource} onChange={function(e){setRecentSource(e.target.value);}} style={IS}>
+              <option value="all">Tipo: Todos</option><option value="manual">Manual</option><option value="ai">AI</option>
+            </select>
+            <select value={recentCreator} onChange={function(e){setRecentCreator(e.target.value);}} style={IS}>
+              {creators.map(function(c){return <option key={c} value={c}>{c==="all"?"Creador: Todos":c}</option>;})}
+            </select>
+            <select value={recentDate} onChange={function(e){setRecentDate(e.target.value);}} style={IS}>
+              <option value="all">Fecha: Todas</option><option value="today">Hoy</option><option value="7d">7 días</option><option value="30d">30 días</option>
+            </select>
+          </div>
+        </div>
+        {recentFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:22}}>Sin resultados</div>
+        :recentFlights.slice(0,60).map(function(f){var s=STS[f.st]||STS.prog;return(
+          <div key={f.id} style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:12,marginBottom:8,borderLeft:"4px solid "+(AC[f.ac]?.clr||"#64748b")}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>{f.date} · {ftm(f.time)}</div>
+              <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
+            </div>
+            <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
+            <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
+            <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+            <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
+          </div>);})}
+      </div>}
+
       {vw==="plan"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:16}}>
           <div style={{fontWeight:800,fontSize:16,color:"#0f172a"}}>🧭 Planificación de vuelo</div>
@@ -577,6 +806,15 @@ export default function App(){
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
               </div>
             </div>);})}
+        </div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>📊 Analítica operativa</div>
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginBottom:6}}>Vuelos programados por aeronave</div>
+          {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
+          {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
+          {requestsByPerson.length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0f172a",borderRadius:999}}/></div></div>;})}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
@@ -637,6 +875,44 @@ export default function App(){
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
         {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}</div>}
       </div>
+
+      <button
+        onClick={function(){setAgentOpen(function(v){return !v;});}}
+        style={{position:"fixed",right:16,bottom:88,zIndex:950,width:52,height:52,borderRadius:"50%",border:"1px solid #334155",background:"linear-gradient(145deg,#0f172a,#1e293b)",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}
+        aria-label="AI Agent"
+      >
+        🤖
+      </button>
+
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"rgba(255,255,255,.98)",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid #dbeafe"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>🤖 AI Agent</div>
+          <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
+        </div>
+        <textarea
+          value={agentInstruction}
+          onChange={function(e){setAgentInstruction(e.target.value);}}
+          placeholder="Escribe una instrucción..."
+          style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
+        />
+        <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+          {transcribing?"⏳ Transcribiendo...":recording?"⏹️ Detener grabación":"🎤 Grabar voz"}
+        </button>
+        <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+        </button>
+        {agentValidation&&<div style={{marginTop:8,border:"1px solid #e2e8f0",borderRadius:10,padding:9,background:"#f8fafc"}}>
+          <div style={{fontSize:11,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+          <div style={{fontSize:11,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+          <div style={{fontSize:11,color:"#334155"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+          {agentValidation.missing_fields.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+          {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
+          {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
+          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
+          </button>
+        </div>}
+      </div>}
 
       <div style={{height:70}}/>
     </div>
