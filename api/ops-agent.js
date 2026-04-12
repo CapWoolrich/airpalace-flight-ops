@@ -134,6 +134,7 @@ export default async function handler(req, res) {
         format: {
           type: "json_schema",
           name: "ops_agent_result",
+          strict: true,
           schema: {
             type: "object",
             additionalProperties: false,
@@ -144,7 +145,7 @@ export default async function handler(req, res) {
               human_summary: { type: "string" },
               payload: {
                 type: "object",
-                additionalProperties: true,
+                additionalProperties: false,
                 properties: {
                   flight_id: { type: ["string", "number", "null"] },
                   date: { type: ["string", "null"] },
