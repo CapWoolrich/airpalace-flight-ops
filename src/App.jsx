@@ -173,6 +173,7 @@ export default function App(){
   var[agentResult,setAgentResult]=useState(null);
   var[agentValidation,setAgentValidation]=useState(null);
   var[agentBusy,setAgentBusy]=useState(false);
+  var[agentOpen,setAgentOpen]=useState(false);
   var today=tds(new Date());
 
   function toErrorMessage(e) {
@@ -504,7 +505,10 @@ export default function App(){
 
       <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <img src="/logo-192.png" alt="AirPalace" style={{width:30,height:30,borderRadius:8,objectFit:"cover",border:"1px solid #334155"}}/>
+            <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
+          </div>
         </div>
         <div style={{display:"flex",gap:6}}>
           {Object.values(AC).map(function(a){var p=pos[a.id],atB=p===a.base,ms=mt[a.id]||"disponible",ml=MST[ms];return(
@@ -732,6 +736,41 @@ export default function App(){
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
         {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}</div>}
       </div>
+
+      <button
+        onClick={function(){setAgentOpen(function(v){return !v;});}}
+        style={{position:"fixed",right:16,bottom:88,zIndex:950,width:52,height:52,borderRadius:"50%",border:"1px solid #334155",background:"linear-gradient(145deg,#0f172a,#1e293b)",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}
+        aria-label="AI Agent"
+      >
+        🤖
+      </button>
+
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"rgba(255,255,255,.98)",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid #dbeafe"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>🤖 AI Agent</div>
+          <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
+        </div>
+        <textarea
+          value={agentInstruction}
+          onChange={function(e){setAgentInstruction(e.target.value);}}
+          placeholder="Escribe una instrucción..."
+          style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
+        />
+        <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+        </button>
+        {agentValidation&&<div style={{marginTop:8,border:"1px solid #e2e8f0",borderRadius:10,padding:9,background:"#f8fafc"}}>
+          <div style={{fontSize:11,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+          <div style={{fontSize:11,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+          <div style={{fontSize:11,color:"#334155"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+          {agentValidation.missing_fields.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+          {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
+          {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
+          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
+          </button>
+        </div>}
+      </div>}
 
       <div style={{height:70}}/>
     </div>

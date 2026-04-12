@@ -10,6 +10,7 @@ import {
   buildConflictWarning,
   buildPositionWarning,
   isActiveFlight,
+  normalizeAgentWithAliases,
   normalizeAgentResult,
 } from "./agentUtils";
 
@@ -29,7 +30,7 @@ async function getLastKnownPosition(ac) {
 }
 
 export async function validateAgentResult(agentResult) {
-  const result = normalizeAgentResult(agentResult);
+  const result = normalizeAgentWithAliases(normalizeAgentResult(agentResult));
 
   if (!result.action || !AGENT_ACTIONS.includes(result.action)) {
     result.errors.push("Acción inválida o ausente.");
@@ -50,7 +51,12 @@ export async function validateAgentResult(agentResult) {
     }
   }
 
-  if (result.payload.st && !VALID_FLIGHT_STATUSES.includes(result.payload.st)) {
+  const flightStatusActions = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight"];
+  if (
+    flightStatusActions.includes(result.action) &&
+    result.payload.st &&
+    !VALID_FLIGHT_STATUSES.includes(result.payload.st)
+  ) {
     result.errors.push(`Estatus de vuelo inválido: ${result.payload.st}`);
   }
 

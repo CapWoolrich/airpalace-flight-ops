@@ -1,4 +1,4 @@
-import { normalizeAgentResult } from "./agentUtils";
+import { normalizeAgentResult, normalizeAgentWithAliases } from "./agentUtils";
 
 export async function analyzeOpsInstruction(instruction) {
   const response = await fetch("/api/ops-agent", {
@@ -22,5 +22,5 @@ export async function analyzeOpsInstruction(instruction) {
     throw new Error(backendMessage);
   }
 
-  return normalizeAgentResult(data);
+  return normalizeAgentWithAliases(normalizeAgentResult(data), instruction);
 }

@@ -1,6 +1,29 @@
 import OpenAI from "openai";
 
 const MODEL = "gpt-4.1-mini";
+const AIRCRAFT_ALIASES = {
+  n540jl: "N540JL",
+  m2: "N540JL",
+  n35ea: "N35EA",
+  phenom: "N35EA",
+  p300e: "N35EA",
+};
+const REQUESTER_ALIASES = {
+  "jabib chapur": "Jabib C",
+  "j chapur": "Jabib C",
+  jabib: "Jabib C",
+  omar: "Omar C",
+  gibran: "Gibran C",
+  jose: "Jose C",
+  anuar: "Anuar C",
+};
+const AIRPORT_ALIASES = {
+  kopf: "Opa-Locka Exec",
+  opf: "Opa-Locka Exec",
+  merida: "Merida",
+  mid: "Merida",
+  mmmd: "Merida",
+};
 const OPS_AGENT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -155,6 +178,62 @@ function getOutputText(response) {
   return textFromOutput?.text || "";
 }
 
+function normalizeText(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+function aliasMatch(aliases, text) {
+  const haystack = normalizeText(text);
+  const ordered = Object.keys(aliases).sort((a, b) => b.length - a.length);
+  const hit = ordered.find((alias) => haystack.includes(alias));
+  return hit ? aliases[hit] : null;
+}
+
+function aliasExact(aliases, value) {
+  return aliases[normalizeText(value)] || null;
+}
+
+function normalizeOpsResult(raw, instruction) {
+  const result = mergeWithTemplate(raw);
+  const payload = result.payload;
+  const text = normalizeText(instruction);
+
+  payload.ac = aliasExact(AIRCRAFT_ALIASES, payload.ac) || payload.ac || aliasMatch(AIRCRAFT_ALIASES, text);
+  payload.rb = aliasExact(REQUESTER_ALIASES, payload.rb) || payload.rb || aliasMatch(REQUESTER_ALIASES, text);
+  payload.orig = aliasExact(AIRPORT_ALIASES, payload.orig) || payload.orig;
+  payload.dest = aliasExact(AIRPORT_ALIASES, payload.dest) || payload.dest;
+
+  if (!payload.orig && /\b(merida|mid|mmmd)\b/.test(text)) payload.orig = "Merida";
+  if (!payload.dest && /\b(kopf|opf)\b/.test(text)) payload.dest = "Opa-Locka Exec";
+
+  if (result.action === "change_aircraft_status") {
+    const stAsStatus = normalizeText(payload.st);
+    if (!payload.status_change && ["aog", "mantenimiento", "disponible"].includes(stAsStatus)) {
+      payload.status_change = stAsStatus;
+    }
+    if (!payload.status_change) {
+      payload.status_change = aliasMatch(
+        { aog: "aog", mantenimiento: "mantenimiento", disponible: "disponible" },
+        text
+      );
+    }
+    payload.st = null;
+  }
+
+  if (
+    result.action === "create_flight" &&
+    Number(payload.pm || 0) + Number(payload.pw || 0) + Number(payload.pc || 0) === 0
+  ) {
+    const paxMatch = text.match(/(\d+)\s*(personas|pasajeros|pax)/);
+    if (paxMatch) {
+      const paxNote = `PAX total: ${Number(paxMatch[1])} (sin desglose)`;
+      payload.nt = payload.nt ? `${payload.nt} | ${paxNote}` : paxNote;
+    }
+  }
+
+  return result;
+}
+
 function validateSchemaForStructuredOutputs(schema, path = "root") {
   if (!schema || typeof schema !== "object") return null;
 
@@ -250,7 +329,7 @@ export default async function handler(req, res) {
       return sendJsonError(res, 502, "Model returned invalid JSON.");
     }
 
-    return res.status(200).json(mergeWithTemplate(parsed));
+    return res.status(200).json(normalizeOpsResult(parsed, instruction));
   } catch (error) {
     const status = Number(error?.status) || Number(error?.code) || 500;
     const safeStatus = [400, 401, 403, 404, 408, 409, 422, 429, 500, 502, 503, 504].includes(status)
