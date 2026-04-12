@@ -374,6 +374,8 @@ export default function App(){
           pc: flight.pc,
           bg: flight.bg,
           st: flight.st,
+          updated_by_email: creatorMeta.created_by_email,
+          updated_by_name: creatorMeta.created_by_name,
           updated_at: new Date().toISOString(),
         })
         .eq("id", flight.id);
