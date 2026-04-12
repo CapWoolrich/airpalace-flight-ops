@@ -636,6 +636,47 @@ export default function App(){
               </div>
             </div>);})}
         </div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🤖 AI Agent</div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
+            Escribe una instrucción operacional en lenguaje natural.
+          </div>
+          <textarea
+            value={agentInstruction}
+            onChange={function(e){setAgentInstruction(e.target.value);}}
+            placeholder="Ej: Programa N540JL Merida a Puebla el 15 de abril a las 08:00..."
+            style={{width:"100%",minHeight:92,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
+          />
+          <button
+            onClick={analyzeAgentInstruction}
+            disabled={!agentInstruction.trim()||agentBusy}
+            style={{width:"100%",padding:11,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
+          >
+            {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+          </button>
+
+          {agentValidation&&<div style={{marginTop:10,border:"1px solid #e2e8f0",borderRadius:10,padding:10,background:"#f8fafc"}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:4}}>Resumen</div>
+            <div style={{fontSize:12,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+            <div style={{fontSize:12,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+            <div style={{fontSize:12,color:"#334155"}}>Requiere confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+            {agentValidation.human_summary&&<div style={{fontSize:12,color:"#334155",marginTop:4}}>{agentValidation.human_summary}</div>}
+            {agentValidation.missing_fields.length>0&&<div style={{fontSize:12,color:"#92400e",marginTop:6}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+            {agentValidation.warnings.length>0&&<div style={{marginTop:6,fontSize:12,color:"#92400e"}}>
+              {agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}
+            </div>}
+            {agentValidation.errors.length>0&&<div style={{marginTop:6,fontSize:12,color:"#b91c1c"}}>
+              {agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}
+            </div>}
+            <button
+              onClick={executeAgentInstruction}
+              disabled={!agentValidation.can_execute||agentBusy}
+              style={{width:"100%",marginTop:10,padding:11,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
+            >
+              {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
+            </button>
+          </div>}
+        </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
 
