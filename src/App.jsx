@@ -203,14 +203,12 @@ export default function App(){
       created_by_user_id: currentUser?.id || null,
       created_by_user_email: email,
       created_by_user_name: resolvedName,
-      created_by_email: email,
-      created_by_name: resolvedName,
       creation_source: source,
     };
   }
 
   function getCreatorLabel(f) {
-    return f.updated_by_name || f.updated_by_email || f.created_by_name || f.created_by_user_name || f.created_by_email || f.created_by_user_email || "sistema";
+    return f.created_by_user_name || f.created_by_user_email || "Por sistema";
   }
 
   function formatCreatedAt(ts) {

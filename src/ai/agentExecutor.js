@@ -19,8 +19,6 @@ function createFlightLegs(payload, routeResult) {
     created_by_user_id: creatorMeta.created_by_user_id || null,
     created_by_user_email: creatorMeta.created_by_user_email || null,
     created_by_user_name: creatorMeta.created_by_user_name || null,
-    created_by_email: creatorMeta.created_by_email || creatorMeta.created_by_user_email || null,
-    created_by_name: creatorMeta.created_by_name || creatorMeta.created_by_user_name || null,
     creation_source: creatorMeta.creation_source || "ai",
   };
 
@@ -67,13 +65,10 @@ export async function executeAgentAction(agentResult, options = {}) {
     }
 
     case "edit_flight": {
-      const editorMeta = options.creatorMeta || {};
       const updates = {};
       ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
         if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
       });
-      updates.updated_by_email = editorMeta.created_by_email || editorMeta.created_by_user_email || null;
-      updates.updated_by_name = editorMeta.created_by_name || editorMeta.created_by_user_name || null;
       updates.updated_at = new Date().toISOString();
 
       const { error } = await supabase
