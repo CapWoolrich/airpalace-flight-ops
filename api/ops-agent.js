@@ -42,18 +42,72 @@ function mergeWithTemplate(raw) {
   };
 }
 
+function sendJsonError(res, status, message) {
+  return res.status(status).json({ error: message });
+}
+
+async function readInstruction(req) {
+  // Vercel can provide req.body as object, string, or undefined depending on headers/runtime.
+  if (req?.body && typeof req.body === "object") {
+    return String(req.body.instruction || "").trim();
+  }
+
+  if (typeof req?.body === "string") {
+    try {
+      const parsed = JSON.parse(req.body);
+      return String(parsed?.instruction || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  // Fallback for edge cases where the raw body needs to be read as a stream.
+  if (req && typeof req.on === "function") {
+    const rawBody = await new Promise((resolve) => {
+      let data = "";
+      req.on("data", (chunk) => {
+        data += chunk;
+      });
+      req.on("end", () => resolve(data));
+      req.on("error", () => resolve(""));
+    });
+
+    if (!rawBody) return "";
+    try {
+      const parsed = JSON.parse(rawBody);
+      return String(parsed?.instruction || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  return "";
+}
+
+function getOutputText(response) {
+  if (typeof response?.output_text === "string" && response.output_text.trim()) {
+    return response.output_text;
+  }
+
+  const textFromOutput = (response?.output || [])
+    .flatMap((item) => item?.content || [])
+    .find((content) => content?.type === "output_text" && typeof content?.text === "string");
+
+  return textFromOutput?.text || "";
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return sendJsonError(res, 405, "Method not allowed. Use POST /api/ops-agent.");
   }
 
   if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "OPENAI_API_KEY is not configured." });
+    return sendJsonError(res, 500, "OPENAI_API_KEY is not configured on the server.");
   }
 
-  const instruction = String(req.body?.instruction || "").trim();
+  const instruction = await readInstruction(req);
   if (!instruction) {
-    return res.status(400).json({ error: "instruction is required" });
+    return sendJsonError(res, 400, "instruction is required");
   }
 
   try {
@@ -143,21 +197,29 @@ export default async function handler(req, res) {
       },
     });
 
+    const outputText = getOutputText(response);
+    if (!outputText) {
+      return sendJsonError(
+        res,
+        502,
+        "OpenAI response did not include parseable text output."
+      );
+    }
+
     let parsed;
     try {
-      parsed = JSON.parse(response.output_text);
+      parsed = JSON.parse(outputText);
     } catch {
-      return res.status(502).json({
-        ...mergeWithTemplate(null),
-        errors: ["El modelo devolvió JSON inválido."],
-      });
+      return sendJsonError(res, 502, "Model returned invalid JSON.");
     }
 
     return res.status(200).json(mergeWithTemplate(parsed));
   } catch (error) {
-    return res.status(500).json({
-      ...mergeWithTemplate(null),
-      errors: [error?.message || "OpenAI request failed"],
-    });
+    const status = Number(error?.status) || Number(error?.code) || 500;
+    const safeStatus = [400, 401, 403, 404, 408, 409, 422, 429, 500, 502, 503, 504].includes(status)
+      ? status
+      : 500;
+    const message = error?.message || "OpenAI request failed.";
+    return sendJsonError(res, safeStatus, message);
   }
 }

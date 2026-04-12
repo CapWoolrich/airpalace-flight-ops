@@ -15,7 +15,11 @@ export async function analyzeOpsInstruction(instruction) {
   }
 
   if (!response.ok) {
-    throw new Error(data?.error || "No se pudo analizar la instrucción.");
+    const backendMessage =
+      data?.error ||
+      (Array.isArray(data?.errors) ? data.errors.join(" | ") : "") ||
+      `Error ${response.status}`;
+    throw new Error(backendMessage);
   }
 
   return normalizeAgentResult(data);

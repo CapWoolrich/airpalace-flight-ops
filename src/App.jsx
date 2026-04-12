@@ -175,6 +175,13 @@ export default function App(){
   var[agentBusy,setAgentBusy]=useState(false);
   var today=tds(new Date());
 
+  function toErrorMessage(e) {
+    if (!e) return "Error desconocido";
+    if (typeof e === "string") return e;
+    if (typeof e?.message === "string" && e.message) return e.message;
+    return String(e);
+  }
+
   useEffect(function () {
     (async function () {
       try {
@@ -298,7 +305,7 @@ export default function App(){
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
     } catch (e) {
-      setErrMsg(e.message || String(e));
+      setErrMsg(toErrorMessage(e));
       setPhase("error");
     }
   }
@@ -335,7 +342,7 @@ export default function App(){
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
     } catch (e) {
-      setErrMsg(e.message || String(e));
+      setErrMsg(toErrorMessage(e));
       setPhase("error");
     }
   }
