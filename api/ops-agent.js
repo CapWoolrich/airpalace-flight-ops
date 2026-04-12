@@ -1,6 +1,65 @@
 import OpenAI from "openai";
 
 const MODEL = "gpt-4.1-mini";
+const OPS_AGENT_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    action: { type: ["string", "null"] },
+    confidence: { type: "number" },
+    requires_confirmation: { type: "boolean" },
+    human_summary: { type: "string" },
+    payload: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        flight_id: { type: ["string", "number", "null"] },
+        date: { type: ["string", "null"] },
+        ac: { type: ["string", "null"] },
+        orig: { type: ["string", "null"] },
+        dest: { type: ["string", "null"] },
+        time: { type: ["string", "null"] },
+        rb: { type: ["string", "null"] },
+        nt: { type: "string" },
+        pm: { type: "number" },
+        pw: { type: "number" },
+        pc: { type: "number" },
+        bg: { type: "number" },
+        st: { type: "string" },
+        status_change: { type: ["string", "null"] },
+      },
+      required: [
+        "flight_id",
+        "date",
+        "ac",
+        "orig",
+        "dest",
+        "time",
+        "rb",
+        "nt",
+        "pm",
+        "pw",
+        "pc",
+        "bg",
+        "st",
+        "status_change",
+      ],
+    },
+    missing_fields: { type: "array", items: { type: "string" } },
+    warnings: { type: "array", items: { type: "string" } },
+    errors: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "action",
+    "confidence",
+    "requires_confirmation",
+    "human_summary",
+    "payload",
+    "missing_fields",
+    "warnings",
+    "errors",
+  ],
+};
 
 const RESPONSE_TEMPLATE = {
   action: "create_flight",
@@ -96,6 +155,36 @@ function getOutputText(response) {
   return textFromOutput?.text || "";
 }
 
+function validateSchemaForStructuredOutputs(schema, path = "root") {
+  if (!schema || typeof schema !== "object") return null;
+
+  if (schema.type === "object") {
+    if (schema.additionalProperties !== false) {
+      return `${path}: additionalProperties must be false`;
+    }
+
+    const keys = Object.keys(schema.properties || {});
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    if (keys.length !== required.length || keys.some((k) => !required.includes(k))) {
+      return `${path}: required must list every property key`;
+    }
+  }
+
+  if (schema.type === "object" && schema.properties) {
+    for (const [key, child] of Object.entries(schema.properties)) {
+      const nestedError = validateSchemaForStructuredOutputs(child, `${path}.properties.${key}`);
+      if (nestedError) return nestedError;
+    }
+  }
+
+  if (schema.items && typeof schema.items === "object") {
+    const nestedError = validateSchemaForStructuredOutputs(schema.items, `${path}.items`);
+    if (nestedError) return nestedError;
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return sendJsonError(res, 405, "Method not allowed. Use POST /api/ops-agent.");
@@ -111,6 +200,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    const schemaValidationError = validateSchemaForStructuredOutputs(OPS_AGENT_JSON_SCHEMA);
+    if (schemaValidationError) {
+      return sendJsonError(res, 500, `Invalid Structured Output schema: ${schemaValidationError}`);
+    }
+
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const response = await client.responses.create({
@@ -135,65 +229,7 @@ export default async function handler(req, res) {
           type: "json_schema",
           name: "ops_agent_result",
           strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              action: { type: ["string", "null"] },
-              confidence: { type: "number" },
-              requires_confirmation: { type: "boolean" },
-              human_summary: { type: "string" },
-              payload: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  flight_id: { type: ["string", "number", "null"] },
-                  date: { type: ["string", "null"] },
-                  ac: { type: ["string", "null"] },
-                  orig: { type: ["string", "null"] },
-                  dest: { type: ["string", "null"] },
-                  time: { type: ["string", "null"] },
-                  rb: { type: ["string", "null"] },
-                  nt: { type: "string" },
-                  pm: { type: "number" },
-                  pw: { type: "number" },
-                  pc: { type: "number" },
-                  bg: { type: "number" },
-                  st: { type: "string" },
-                  status_change: { type: ["string", "null"] },
-                },
-                required: [
-                  "flight_id",
-                  "date",
-                  "ac",
-                  "orig",
-                  "dest",
-                  "time",
-                  "rb",
-                  "nt",
-                  "pm",
-                  "pw",
-                  "pc",
-                  "bg",
-                  "st",
-                  "status_change",
-                ],
-              },
-              missing_fields: { type: "array", items: { type: "string" } },
-              warnings: { type: "array", items: { type: "string" } },
-              errors: { type: "array", items: { type: "string" } },
-            },
-            required: [
-              "action",
-              "confidence",
-              "requires_confirmation",
-              "human_summary",
-              "payload",
-              "missing_fields",
-              "warnings",
-              "errors",
-            ],
-          },
+          schema: OPS_AGENT_JSON_SCHEMA,
         },
       },
     });
