@@ -174,6 +174,11 @@ export default function App(){
   var[agentValidation,setAgentValidation]=useState(null);
   var[agentBusy,setAgentBusy]=useState(false);
   var[agentOpen,setAgentOpen]=useState(false);
+  var[currentUser,setCurrentUser]=useState(null);
+  var[recentAc,setRecentAc]=useState("all");
+  var[recentCreator,setRecentCreator]=useState("all");
+  var[recentDate,setRecentDate]=useState("30d");
+  var[recentSource,setRecentSource]=useState("all");
   var today=tds(new Date());
 
   function toErrorMessage(e) {
@@ -182,6 +187,35 @@ export default function App(){
     if (typeof e?.message === "string" && e.message) return e.message;
     return String(e);
   }
+
+  function getCreatorMeta(source) {
+    return {
+      created_by_user_id: currentUser?.id || null,
+      created_by_user_email: currentUser?.email || null,
+      created_by_user_name:
+        currentUser?.user_metadata?.full_name ||
+        currentUser?.user_metadata?.name ||
+        currentUser?.email ||
+        null,
+      creation_source: source,
+    };
+  }
+
+  function getCreatorLabel(f) {
+    return f.created_by_user_name || f.created_by_user_email || "sistema";
+  }
+
+  function formatCreatedAt(ts) {
+    if (!ts) return "No disponible";
+    var d=new Date(ts);if(isNaN(d.getTime()))return"No disponible";
+    return d.toLocaleDateString("es-MX")+" "+d.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+  }
+
+  useEffect(function () {
+    supabase.auth.getUser().then(function (r) {
+      setCurrentUser(r?.data?.user || null);
+    });
+  }, []);
 
   useEffect(function () {
     (async function () {
@@ -265,6 +299,7 @@ export default function App(){
     }
 
     setPhase("saving");
+    const creatorMeta = getCreatorMeta("manual");
 
     const rt = calcR(
       flight.orig,
@@ -283,19 +318,21 @@ export default function App(){
             ...flight,
             dest: stop.c,
             nt: (flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest,
+            ...creatorMeta,
           },
           {
             ...flight,
             orig: stop.c,
             time: "STBY",
             nt: "Tras recarga",
+            ...creatorMeta,
           },
         ];
 
         const { error } = await supabase.from("flights").insert(legs);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("flights").insert([flight]);
+        const { error } = await supabase.from("flights").insert([{ ...flight, ...creatorMeta }]);
         if (error) throw error;
       }
 
@@ -476,7 +513,10 @@ export default function App(){
     setPhase("saving");
     setErrMsg("");
     try {
-      await executeAgentAction(agentValidation, { calcRoute: calcR });
+      await executeAgentAction(agentValidation, {
+        calcRoute: calcR,
+        creatorMeta: getCreatorMeta("ai"),
+      });
       setAgentInstruction("");
       setAgentResult(null);
       setAgentValidation(null);
@@ -495,10 +535,31 @@ export default function App(){
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
+  var creators=useMemo(function(){
+    var s=new Set();fs.forEach(function(f){s.add(getCreatorLabel(f));});return["all"].concat(Array.from(s).sort());
+  },[fs]);
+  var recentFlights=useMemo(function(){
+    var now=new Date();var start7=new Date(now);start7.setDate(now.getDate()-7);var start30=new Date(now);start30.setDate(now.getDate()-30);
+    return fs
+      .filter(function(f){
+        if(recentAc!=="all"&&f.ac!==recentAc)return false;
+        if(recentCreator!=="all"&&getCreatorLabel(f)!==recentCreator)return false;
+        if(recentSource!=="all"&&String(f.creation_source||"manual")!==recentSource)return false;
+        var d=new Date((f.created_at||f.date||today)+"T00:00:00");
+        if(recentDate==="today"&&tds(d)!==today)return false;
+        if(recentDate==="7d"&&d<start7)return false;
+        if(recentDate==="30d"&&d<start30)return false;
+        return true;
+      })
+      .sort(function(a,b){return String(b.created_at||"").localeCompare(String(a.created_at||""))||String(b.date||"").localeCompare(String(a.date||""));});
+  },[fs,recentAc,recentCreator,recentDate,recentSource,today]);
+  var activeForMgmt=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp";});},[fs]);
+  var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
+  var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
+  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"recent",l:"🕘 Recientes"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
 
   return(
     <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 39px,#1a2d4a22 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#1a2d4a22 40px)",backgroundSize:"40px 40px"}}>
@@ -520,7 +581,7 @@ export default function App(){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3,padding:"10px 14px 0"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:3,padding:"10px 14px 0"}}>
         {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"9px 4px",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",background:vw===t.k?"#fff":"rgba(255,255,255,.07)",color:vw===t.k?"#0f172a":"#94a3b8"}}>{t.l}</button>;})}
       </div>
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
@@ -584,6 +645,37 @@ export default function App(){
             </div></div>);})}
       </div>}
 
+      {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
+        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:10,marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
+              <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
+            </select>
+            <select value={recentSource} onChange={function(e){setRecentSource(e.target.value);}} style={IS}>
+              <option value="all">Tipo: Todos</option><option value="manual">Manual</option><option value="ai">AI</option>
+            </select>
+            <select value={recentCreator} onChange={function(e){setRecentCreator(e.target.value);}} style={IS}>
+              {creators.map(function(c){return <option key={c} value={c}>{c==="all"?"Creador: Todos":c}</option>;})}
+            </select>
+            <select value={recentDate} onChange={function(e){setRecentDate(e.target.value);}} style={IS}>
+              <option value="all">Fecha: Todas</option><option value="today">Hoy</option><option value="7d">7 días</option><option value="30d">30 días</option>
+            </select>
+          </div>
+        </div>
+        {recentFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:22}}>Sin resultados</div>
+        :recentFlights.slice(0,60).map(function(f){var s=STS[f.st]||STS.prog;return(
+          <div key={f.id} style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:12,marginBottom:8,borderLeft:"4px solid "+(AC[f.ac]?.clr||"#64748b")}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>{f.date} · {ftm(f.time)}</div>
+              <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
+            </div>
+            <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
+            <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
+            <div style={{fontSize:11,color:"#475569",marginTop:4}}>Creado: {formatCreatedAt(f.created_at)} · Por: {getCreatorLabel(f)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+          </div>);})}
+      </div>}
+
       {vw==="plan"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:16}}>
           <div style={{fontWeight:800,fontSize:16,color:"#0f172a"}}>🧭 Planificación de vuelo</div>
@@ -637,45 +729,11 @@ export default function App(){
             </div>);})}
         </div>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
-          <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🤖 AI Agent</div>
-          <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
-            Escribe una instrucción operacional en lenguaje natural.
-          </div>
-          <textarea
-            value={agentInstruction}
-            onChange={function(e){setAgentInstruction(e.target.value);}}
-            placeholder="Ej: Programa N540JL Merida a Puebla el 15 de abril a las 08:00..."
-            style={{width:"100%",minHeight:92,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
-          />
-          <button
-            onClick={analyzeAgentInstruction}
-            disabled={!agentInstruction.trim()||agentBusy}
-            style={{width:"100%",padding:11,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
-          >
-            {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
-          </button>
-
-          {agentValidation&&<div style={{marginTop:10,border:"1px solid #e2e8f0",borderRadius:10,padding:10,background:"#f8fafc"}}>
-            <div style={{fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:4}}>Resumen</div>
-            <div style={{fontSize:12,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
-            <div style={{fontSize:12,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
-            <div style={{fontSize:12,color:"#334155"}}>Requiere confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
-            {agentValidation.human_summary&&<div style={{fontSize:12,color:"#334155",marginTop:4}}>{agentValidation.human_summary}</div>}
-            {agentValidation.missing_fields.length>0&&<div style={{fontSize:12,color:"#92400e",marginTop:6}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
-            {agentValidation.warnings.length>0&&<div style={{marginTop:6,fontSize:12,color:"#92400e"}}>
-              {agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}
-            </div>}
-            {agentValidation.errors.length>0&&<div style={{marginTop:6,fontSize:12,color:"#b91c1c"}}>
-              {agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}
-            </div>}
-            <button
-              onClick={executeAgentInstruction}
-              disabled={!agentValidation.can_execute||agentBusy}
-              style={{width:"100%",marginTop:10,padding:11,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
-            >
-              {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
-            </button>
-          </div>}
+          <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>📊 Analítica operativa</div>
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginBottom:6}}>Vuelos programados por aeronave</div>
+          {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
+          {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}

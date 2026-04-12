@@ -2,6 +2,7 @@ import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
 
 function createFlightLegs(payload, routeResult) {
+  const creatorMeta = payload.creator_meta || {};
   const baseFlight = {
     date: payload.date,
     ac: payload.ac,
@@ -15,6 +16,10 @@ function createFlightLegs(payload, routeResult) {
     pc: Number(payload.pc || 0),
     bg: Number(payload.bg || 0),
     st: payload.st || "prog",
+    created_by_user_id: creatorMeta.created_by_user_id || null,
+    created_by_user_email: creatorMeta.created_by_user_email || null,
+    created_by_user_name: creatorMeta.created_by_user_name || null,
+    creation_source: creatorMeta.creation_source || "ai",
   };
 
   if (routeResult && !routeResult.dir && routeResult.stops.length > 0) {
@@ -44,6 +49,7 @@ export async function executeAgentAction(agentResult, options = {}) {
 
   switch (result.action) {
     case "create_flight": {
+      payload.creator_meta = options.creatorMeta || payload.creator_meta || {};
       const routeResult = typeof calcRoute === "function"
         ? calcRoute(payload.orig, payload.dest, payload.ac, {
             m: payload.pm,
