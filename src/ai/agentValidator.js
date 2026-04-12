@@ -69,6 +69,12 @@ export async function validateAgentResult(agentResult) {
     }
 
     if (result.payload.ac && result.payload.date && result.payload.time) {
+      const nowRef = new Date("2026-04-09T12:00:00-06:00");
+      const flightDate = new Date(`${result.payload.date}T12:00:00-06:00`);
+      if (flightDate < nowRef) {
+        result.errors.push("No se puede programar un vuelo en una fecha pasada.");
+      }
+
       const { data: statusRows } = await supabase
         .from("aircraft_status")
         .select("status")
@@ -113,6 +119,6 @@ export async function validateAgentResult(agentResult) {
 
   return {
     ...result,
-    can_execute: result.errors.length === 0,
+    can_execute: result.errors.length === 0 && !result.requires_confirmation,
   };
 }

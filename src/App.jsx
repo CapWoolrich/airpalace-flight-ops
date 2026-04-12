@@ -189,20 +189,28 @@ export default function App(){
   }
 
   function getCreatorMeta(source) {
+    var email = currentUser?.email || null;
+    var local = email ? email.split("@")[0] : "";
+    var fallbackName = local
+      ? local.replace(/[._-]+/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();})
+      : null;
+    var resolvedName =
+      currentUser?.user_metadata?.full_name ||
+      currentUser?.user_metadata?.name ||
+      fallbackName ||
+      email;
     return {
       created_by_user_id: currentUser?.id || null,
-      created_by_user_email: currentUser?.email || null,
-      created_by_user_name:
-        currentUser?.user_metadata?.full_name ||
-        currentUser?.user_metadata?.name ||
-        currentUser?.email ||
-        null,
+      created_by_user_email: email,
+      created_by_user_name: resolvedName,
+      created_by_email: email,
+      created_by_name: resolvedName,
       creation_source: source,
     };
   }
 
   function getCreatorLabel(f) {
-    return f.created_by_user_name || f.created_by_user_email || "sistema";
+    return f.updated_by_name || f.updated_by_email || f.created_by_name || f.created_by_user_name || f.created_by_email || f.created_by_user_email || "sistema";
   }
 
   function formatCreatedAt(ts) {
@@ -350,6 +358,7 @@ export default function App(){
 
   async function editFlight(flight) {
     setPhase("saving");
+    const creatorMeta = getCreatorMeta("manual");
 
     try {
       const { error } = await supabase
@@ -367,6 +376,8 @@ export default function App(){
           pc: flight.pc,
           bg: flight.bg,
           st: flight.st,
+          updated_by_email: creatorMeta.created_by_email,
+          updated_by_name: creatorMeta.created_by_name,
           updated_at: new Date().toISOString(),
         })
         .eq("id", flight.id);
@@ -556,6 +567,7 @@ export default function App(){
   var activeForMgmt=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp";});},[fs]);
   var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
   var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
+  var requestsByPerson=useMemo(function(){var o={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=f.rb||"No disponible";o[k]=(o[k]||0)+1;});return Object.entries(o).sort(function(a,b){return b[1]-a[1];});},[fs]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
@@ -672,7 +684,8 @@ export default function App(){
             </div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
             <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
-            <div style={{fontSize:11,color:"#475569",marginTop:4}}>Creado: {formatCreatedAt(f.created_at)} · Por: {getCreatorLabel(f)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+            <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Por: {getCreatorLabel(f)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+            <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
           </div>);})}
       </div>}
 
@@ -734,6 +747,8 @@ export default function App(){
           {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
           <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
           {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
+          {requestsByPerson.length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0f172a",borderRadius:999}}/></div></div>;})}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}

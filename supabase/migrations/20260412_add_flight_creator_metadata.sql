@@ -3,6 +3,10 @@ alter table if exists public.flights
   add column if not exists created_by_user_id text,
   add column if not exists created_by_user_email text,
   add column if not exists created_by_user_name text,
+  add column if not exists created_by_email text,
+  add column if not exists created_by_name text,
+  add column if not exists updated_by_email text,
+  add column if not exists updated_by_name text,
   add column if not exists creation_source text;
 
 -- Optional lightweight check for source values.
