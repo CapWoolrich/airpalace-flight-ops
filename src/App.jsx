@@ -1,5 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import { analyzeOpsInstruction } from "./ai/agentClient";
+import { validateAgentResult } from "./ai/agentValidator";
+import { executeAgentAction } from "./ai/agentExecutor";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -166,6 +169,10 @@ export default function App(){
   var EF={ac:"N35EA",orig:"",dest:"",date:tds(new Date()),time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
   var[nf,setNf]=useState(EF);
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
+  var[agentInstruction,setAgentInstruction]=useState("");
+  var[agentResult,setAgentResult]=useState(null);
+  var[agentValidation,setAgentValidation]=useState(null);
+  var[agentBusy,setAgentBusy]=useState(false);
   var today=tds(new Date());
 
   useEffect(function () {
@@ -435,6 +442,46 @@ export default function App(){
     else addFlight(nf);
   }
 
+  async function analyzeAgentInstruction() {
+    if (!agentInstruction.trim()) return;
+    setAgentBusy(true);
+    setPhase("saving");
+    setErrMsg("");
+    try {
+      const analyzed = await analyzeOpsInstruction(agentInstruction);
+      const validated = await validateAgentResult(analyzed);
+      setAgentResult(analyzed);
+      setAgentValidation(validated);
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1200);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
+  async function executeAgentInstruction() {
+    if (!agentValidation || !agentValidation.can_execute) return;
+    setAgentBusy(true);
+    setPhase("saving");
+    setErrMsg("");
+    try {
+      await executeAgentAction(agentValidation, { calcRoute: calcR });
+      setAgentInstruction("");
+      setAgentResult(null);
+      setAgentValidation(null);
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1200);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
@@ -577,6 +624,47 @@ export default function App(){
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
               </div>
             </div>);})}
+        </div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🤖 AI Agent</div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>
+            Escribe una instrucción operacional en lenguaje natural.
+          </div>
+          <textarea
+            value={agentInstruction}
+            onChange={function(e){setAgentInstruction(e.target.value);}}
+            placeholder="Ej: Programa N540JL Merida a Puebla el 15 de abril a las 08:00..."
+            style={{width:"100%",minHeight:92,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
+          />
+          <button
+            onClick={analyzeAgentInstruction}
+            disabled={!agentInstruction.trim()||agentBusy}
+            style={{width:"100%",padding:11,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
+          >
+            {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+          </button>
+
+          {agentValidation&&<div style={{marginTop:10,border:"1px solid #e2e8f0",borderRadius:10,padding:10,background:"#f8fafc"}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:4}}>Resumen</div>
+            <div style={{fontSize:12,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+            <div style={{fontSize:12,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+            <div style={{fontSize:12,color:"#334155"}}>Requiere confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+            {agentValidation.human_summary&&<div style={{fontSize:12,color:"#334155",marginTop:4}}>{agentValidation.human_summary}</div>}
+            {agentValidation.missing_fields.length>0&&<div style={{fontSize:12,color:"#92400e",marginTop:6}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+            {agentValidation.warnings.length>0&&<div style={{marginTop:6,fontSize:12,color:"#92400e"}}>
+              {agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}
+            </div>}
+            {agentValidation.errors.length>0&&<div style={{marginTop:6,fontSize:12,color:"#b91c1c"}}>
+              {agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}
+            </div>}
+            <button
+              onClick={executeAgentInstruction}
+              disabled={!agentValidation.can_execute||agentBusy}
+              style={{width:"100%",marginTop:10,padding:11,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}
+            >
+              {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
+            </button>
+          </div>}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
