@@ -10,11 +10,32 @@ function pad(n) {
   return String(n).padStart(2, "0");
 }
 
-function localIcsDateTime(dateStr, timeStr) {
-  const baseTime = timeStr && timeStr !== "STBY" ? `${timeStr}:00` : "12:00:00";
-  const d = new Date(`${dateStr}T${baseTime}`);
-  if (Number.isNaN(d.getTime())) return "19700101T120000";
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+function parseLocalParts(dateStr, timeStr) {
+  const date = String(dateStr || "").split("-");
+  const time = String(timeStr && timeStr !== "STBY" ? timeStr : "12:00").split(":");
+  const y = Number(date[0] || 1970);
+  const m = Number(date[1] || 1);
+  const d = Number(date[2] || 1);
+  const hh = Number(time[0] || 12);
+  const mm = Number(time[1] || 0);
+  return { y, m, d, hh, mm, ss: 0 };
+}
+
+function localIcsDateTime(parts) {
+  return `${parts.y}${pad(parts.m)}${pad(parts.d)}T${pad(parts.hh)}${pad(parts.mm)}${pad(parts.ss || 0)}`;
+}
+
+function addMinutesLocal(parts, mins) {
+  const dt = new Date(Date.UTC(parts.y, parts.m - 1, parts.d, parts.hh, parts.mm, parts.ss || 0));
+  dt.setUTCMinutes(dt.getUTCMinutes() + mins);
+  return {
+    y: dt.getUTCFullYear(),
+    m: dt.getUTCMonth() + 1,
+    d: dt.getUTCDate(),
+    hh: dt.getUTCHours(),
+    mm: dt.getUTCMinutes(),
+    ss: dt.getUTCSeconds(),
+  };
 }
 
 function timezoneForDeparture(orig) {
@@ -66,12 +87,11 @@ export function buildFlightIcs(eventType, payload = {}) {
   const uid = buildUid(payload);
   const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const tzid = timezoneForDeparture(payload.orig);
-  const dtStart = localIcsDateTime(payload.date, payload.time);
+  const startParts = parseLocalParts(payload.date, payload.time);
+  const dtStart = localIcsDateTime(startParts);
   const blockMins = Math.max(30, Number(payload.block_minutes || 60));
-  const end = new Date(new Date(`${payload.date}T${payload.time && payload.time !== "STBY" ? payload.time : "12:00"}:00`).getTime() + blockMins * 60000);
-  const dtEnd = Number.isNaN(end.getTime())
-    ? localIcsDateTime(payload.date, "13:00")
-    : `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}T${pad(end.getHours())}${pad(end.getMinutes())}${pad(end.getSeconds())}`;
+  const endParts = addMinutesLocal(startParts, blockMins);
+  const dtEnd = localIcsDateTime(endParts);
 
   const sequence = Number(payload.sequence || (eventType === "flight_created" ? 0 : 1));
   const method = eventType === "flight_cancelled" ? "CANCEL" : "REQUEST";
