@@ -271,12 +271,17 @@ export default function App(){
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ flight, label }),
       });
+      const data = await r.json().catch(function(){return{};});
       if (!r.ok) {
-        const data = await r.json().catch(function(){return{};});
         throw new Error(data.error || `HTTP ${r.status}`);
       }
+      if (data.warning) {
+        setErrMsg(`Vuelo guardado correctamente. WhatsApp parcial: ${data.warning}`);
+        setPhase("error");
+        setTimeout(function(){setPhase("ready");}, 2200);
+      }
     } catch (e) {
-      setErrMsg(`Vuelo guardado, pero WhatsApp falló: ${e.message || String(e)}`);
+      setErrMsg(`Vuelo guardado correctamente, pero WhatsApp falló: ${e.message || String(e)}`);
       setPhase("error");
       setTimeout(function(){setPhase("ready");}, 2200);
     }

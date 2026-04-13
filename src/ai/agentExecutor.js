@@ -56,11 +56,11 @@ export async function executeAgentAction(agentResult, options = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ flight, label: "PROGRAMADO" }),
     });
+    const payload = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const payload = await r.json().catch(() => ({}));
       return payload.error || `HTTP ${r.status}`;
     }
-    return null;
+    return payload.warning || null;
   }
 
   async function sendPush(title, body) {
