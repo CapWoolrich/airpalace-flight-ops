@@ -197,16 +197,24 @@ function getOutputText(response) {
 function normalizeText(v) {
   return String(v || "").trim().toLowerCase();
 }
+function compactText(v) {
+  return normalizeText(v).replace(/[\s-]/g, "");
+}
 
 function aliasMatch(aliases, text) {
   const haystack = normalizeText(text);
+  const haystackCompact = compactText(text);
   const ordered = Object.keys(aliases).sort((a, b) => b.length - a.length);
-  const hit = ordered.find((alias) => haystack.includes(alias));
+  const hit = ordered.find((alias) => haystack.includes(alias) || haystackCompact.includes(compactText(alias)));
   return hit ? aliases[hit] : null;
 }
 
 function aliasExact(aliases, value) {
-  return aliases[normalizeText(value)] || null;
+  const key = normalizeText(value);
+  if (aliases[key]) return aliases[key];
+  const keyCompact = compactText(value);
+  const found = Object.keys(aliases).find((alias) => compactText(alias) === keyCompact);
+  return found ? aliases[found] : null;
 }
 
 function toISODate(year, month, day) {

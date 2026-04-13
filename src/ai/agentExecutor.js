@@ -89,7 +89,15 @@ export async function executeAgentAction(agentResult, options = {}) {
 
       let { error } = await supabase.from("flights").update(updates).eq("id", payload.flight_id);
       if (error) throw error;
-      return { ok: true, message: "Vuelo editado correctamente." };
+      const waError = await sendWhatsApp({
+        ac: updates.ac || payload.ac,
+        orig: updates.orig || payload.orig,
+        dest: updates.dest || payload.dest,
+        date: updates.date || payload.date,
+        time: updates.time || payload.time,
+        rb: updates.rb || payload.rb,
+      });
+      return { ok: true, message: "Vuelo editado correctamente.", warning: waError };
     }
 
     case "cancel_flight": {

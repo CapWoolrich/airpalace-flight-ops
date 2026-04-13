@@ -29,8 +29,8 @@ async function getLastKnownPosition(ac) {
   return data?.[0]?.dest || null;
 }
 
-export async function validateAgentResult(agentResult) {
-  const result = normalizeAgentWithAliases(normalizeAgentResult(agentResult));
+export async function validateAgentResult(agentResult, instruction = "") {
+  const result = normalizeAgentWithAliases(normalizeAgentResult(agentResult), instruction);
 
   if (!result.action || !AGENT_ACTIONS.includes(result.action)) {
     result.errors.push("Acción inválida o ausente.");

@@ -76,6 +76,8 @@ function calcR(orig,dest,id,px,bg){
 function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
+function apTz(ap){if(!ap)return null;var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
+function etaText(f){if(!f||!f.date||!f.time||f.time==="STBY")return null;var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;var dt=new Date(f.date+"T"+f.time+":00");if(isNaN(dt.getTime()))return null;var arr=new Date(dt.getTime()+bm*60000),ap=findAP(f.dest),tz=apTz(ap);if(!tz)return null;return new Intl.DateTimeFormat("es-MX",{hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit",timeZone:tz}).format(arr);}
 
 // ═══ SEED DATA ═══
 var SEED=[
@@ -176,13 +178,19 @@ export default function App(){
   var[agentBusy,setAgentBusy]=useState(false);
   var[agentOpen,setAgentOpen]=useState(false);
   var[currentUser,setCurrentUser]=useState(null);
+  var[actorName,setActorName]=useState("");
   var[recording,setRecording]=useState(false);
   var[transcribing,setTranscribing]=useState(false);
   var[recorder,setRecorder]=useState(null);
+  var[maintPlan,setMaintPlan]=useState(function(){
+    try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
+  });
   var[recentAc,setRecentAc]=useState("all");
   var[recentCreator,setRecentCreator]=useState("all");
   var[recentDate,setRecentDate]=useState("30d");
   var[recentSource,setRecentSource]=useState("all");
+  var[anMonth,setAnMonth]=useState("all");
+  var[anYear,setAnYear]=useState(String(new Date().getFullYear()));
   var today=tds(new Date());
 
   function toErrorMessage(e) {
@@ -199,7 +207,28 @@ export default function App(){
   }
 
   function getCreatorLabel(f) {
-    return "Por sistema";
+    var m=String(f.nt||"").match(/\[By:\s*([^\]]+)\]/i);
+    return m&&m[1]?m[1].trim():"Por sistema";
+  }
+
+  function noteWithActor(note, actor) {
+    var clean=String(note||"").replace(/\s*\[By:\s*[^\]]+\]\s*/gi,"").trim();
+    return actor ? (clean?`${clean} [By: ${actor}]`:`[By: ${actor}]`) : clean;
+  }
+
+  function getAcStatus(acId, dateStr) {
+    var status=mt[acId]||"disponible";
+    var plan=maintPlan[acId];
+    if(status==="mantenimiento"&&plan&&plan.from&&plan.to&&dateStr){
+      if(dateStr>=plan.from&&dateStr<=plan.to)return"mantenimiento";
+      if(dateStr>plan.to)return"disponible";
+    }
+    return status;
+  }
+
+  function saveMaintPlan(nextPlan) {
+    setMaintPlan(nextPlan);
+    try{localStorage.setItem("airpalace_maint_plan",JSON.stringify(nextPlan));}catch{}
   }
 
   function formatCreatedAt(ts) {
@@ -211,6 +240,7 @@ export default function App(){
   useEffect(function () {
     supabase.auth.getUser().then(function (r) {
       setCurrentUser(r?.data?.user || null);
+      if (r?.data?.user?.email) setActorName(r.data.user.email);
     });
   }, []);
 
@@ -315,7 +345,7 @@ export default function App(){
   }, []);
 
   async function addFlight(flight) {
-    const aircraftStatus = mt[flight.ac] || "disponible";
+    const aircraftStatus = getAcStatus(flight.ac, flight.date);
 
     if (aircraftStatus === "aog" || aircraftStatus === "mantenimiento") {
       setErrMsg(`La aeronave ${flight.ac} está en ${aircraftStatus.toUpperCase()}`);
@@ -342,14 +372,14 @@ export default function App(){
           {
             ...flight,
             dest: stop.c,
-            nt: (flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest,
+            nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
             ...creatorMeta,
           },
           {
             ...flight,
             orig: stop.c,
             time: "STBY",
-            nt: "Tras recarga",
+            nt: noteWithActor("Tras recarga", actorName),
             ...creatorMeta,
           },
         ];
@@ -357,7 +387,7 @@ export default function App(){
         await safeInsertFlights(legs);
         await autoSendWhatsApp(legs[0], "PROGRAMADO");
       } else {
-        const created = { ...flight, ...creatorMeta };
+        const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
         await safeInsertFlights([created]);
         await autoSendWhatsApp(created, "PROGRAMADO");
       }
@@ -386,7 +416,7 @@ export default function App(){
           dest: flight.dest,
           time: flight.time,
           rb: flight.rb,
-          nt: flight.nt,
+          nt: noteWithActor(flight.nt, actorName),
           pm: flight.pm,
           pw: flight.pw,
           pc: flight.pc,
@@ -396,6 +426,7 @@ export default function App(){
           updated_by_name: creatorMeta.created_by_name,
           updated_at: new Date().toISOString(),
         });
+      await autoSendWhatsApp(flight, "MODIFICADO");
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
       setSf(false);
@@ -460,11 +491,18 @@ export default function App(){
           {
             ac: acId,
             status: newSt,
+            maintenance_from: newSt==="mantenimiento"?(maintPlan[acId]?.from||null):null,
+            maintenance_to: newSt==="mantenimiento"?(maintPlan[acId]?.to||null):null,
             updated_at: new Date().toISOString(),
           },
         ]);
 
-      if (error) throw error;
+      if (error) {
+        const { error: fallbackError } = await supabase
+          .from("aircraft_status")
+          .upsert([{ ac: acId, status: newSt, updated_at: new Date().toISOString() }]);
+        if (fallbackError) throw fallbackError;
+      }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -507,6 +545,11 @@ export default function App(){
 
   function handleSave() {
     if (!nf.orig||!nf.dest||!nf.time||!nf.rb) return;
+    if (!actorName.trim()) {
+      setErrMsg("Indica quién está programando/editando este vuelo.");
+      setPhase("error");
+      return;
+    }
     if (editId !== null) editFlight(nf);
     else addFlight(nf);
   }
@@ -518,7 +561,7 @@ export default function App(){
     setErrMsg("");
     try {
       const analyzed = await analyzeOpsInstruction(agentInstruction);
-      const validated = await validateAgentResult(analyzed);
+      const validated = await validateAgentResult(analyzed, agentInstruction);
       setAgentResult(analyzed);
       setAgentValidation(validated);
       setPhase("saved");
@@ -637,6 +680,35 @@ export default function App(){
   var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
   var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
   var requestsByPerson=useMemo(function(){var o={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=f.rb||"No disponible";o[k]=(o[k]||0)+1;});return Object.entries(o).sort(function(a,b){return b[1]-a[1];});},[fs]);
+  var tomorrow=useMemo(function(){var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);return tds(d);},[today]);
+  var opsAlerts=useMemo(function(){
+    var unavailable=Object.keys(AC).filter(function(id){return getAcStatus(id,today)!=="disponible";});
+    var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
+    var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
+    var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
+    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var pending=fs.filter(function(f){return f.st==="prog";}).length;
+    return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
+  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan]);
+  var filteredAnalytics=useMemo(function(){
+    return fs.filter(function(f){
+      if(anYear!=="all"&&String(f.date||"").slice(0,4)!==anYear)return false;
+      if(anMonth!=="all"&&String(f.date||"").slice(5,7)!==anMonth)return false;
+      return true;
+    });
+  },[fs,anYear,anMonth]);
+  var metrics=useMemo(function(){
+    var byReq={},byAc={},byDest={},bySt={},byMonth={},byYear={},hrsMonth={},hrsYear={};
+    filteredAnalytics.forEach(function(f){
+      var ym=String(f.date||"").slice(0,7),yr=String(f.date||"").slice(0,4);
+      byReq[f.rb||"No disponible"]=(byReq[f.rb||"No disponible"]||0)+1;
+      byAc[f.ac]=(byAc[f.ac]||0)+1;byDest[f.dest]=(byDest[f.dest]||0)+1;bySt[f.st]=(bySt[f.st]||0)+1;
+      byMonth[ym]=(byMonth[ym]||0)+1;byYear[yr]=(byYear[yr]||0)+1;
+      var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg),h=(r?r.bm:60)/60;
+      hrsMonth[ym]=(hrsMonth[ym]||0)+h;hrsYear[yr]=(hrsYear[yr]||0)+h;
+    });
+    return {byReq,byAc,byDest,bySt,byMonth,byYear,hrsMonth,hrsYear,cancelled:filteredAnalytics.filter(function(f){return f.st==="canc";}).length};
+  },[filteredAnalytics]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
@@ -702,6 +774,7 @@ export default function App(){
             </div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:17}}>{f.orig} <span style={{color:"#94a3b8"}}>→</span> {f.dest}</div>
             <div style={{color:"#64748b",fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
+            {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:3}}>🕓 ETA local destino: {etaText(f)}</div>}
             {rt&&<div style={{marginTop:6,fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:8,padding:"6px 8px"}}>
               {"~"+rt.aw+" NM | "}<strong>{Math.floor(rt.bm/60)+"h"+("0"+(rt.bm%60)).slice(-2)+"m block"}</strong>
               {rt.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
@@ -723,6 +796,7 @@ export default function App(){
               <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a></div>
               <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
               <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
+              {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
             </div></div>);})}
       </div>}
 
@@ -799,12 +873,23 @@ export default function App(){
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
           <div style={{background:"#d1fae5",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{fs.filter(function(f){return f.st==="prog";}).length}</div><div style={{fontSize:10,color:"#059669",fontWeight:700}}>Programados</div></div>
         </div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:12,marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🚨 Alertas operativas</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+            {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <div key={r[0]} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 6px",textAlign:"center"}}><div style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{r[1]}</div><div style={{fontSize:10,color:"#64748b"}}>{r[0]}</div></div>;})}
+          </div>
+        </div>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>✈️ Estado de flota</div>
-          {Object.values(AC).map(function(a){var ms=mt[a.id]||"disponible",ml=MST[ms],p=pos[a.id];return(
+          {Object.values(AC).map(function(a){var ms=getAcStatus(a.id,today),ml=MST[ms],p=pos[a.id],plan=maintPlan[a.id]||{};return(
             <div key={a.id} style={{marginBottom:10,padding:12,borderRadius:12,border:"1.5px solid "+(ms!=="disponible"?ml.c:"#e2e8f0")}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
+              {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
+                <input type="date" value={plan.from||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{from:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.to||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{to:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+              </div>
               <div style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
               </div>
@@ -812,12 +897,30 @@ export default function App(){
         </div>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>📊 Analítica operativa</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+            <select value={anMonth} onChange={function(e){setAnMonth(e.target.value);}} style={IS}>
+              <option value="all">Mes: Todos</option>
+              {["01","02","03","04","05","06","07","08","09","10","11","12"].map(function(m,i){return <option key={m} value={m}>{MN[i]}</option>;})}
+            </select>
+            <select value={anYear} onChange={function(e){setAnYear(e.target.value);}} style={IS}>
+              <option value="all">Año: Todos</option>
+              {Array.from(new Set(fs.map(function(f){return String(f.date||"").slice(0,4);}).filter(Boolean))).sort().map(function(y){return <option key={y} value={y}>{y}</option>;})}
+            </select>
+          </div>
           <div style={{fontSize:12,fontWeight:700,color:"#334155",marginBottom:6}}>Vuelos programados por aeronave</div>
           {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
           <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
           {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
           <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
           {requestsByPerson.length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0f172a",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Top destinos</div>
+          {Object.keys(metrics.byDest).length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:Object.entries(metrics.byDest).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(r){var max=Math.max.apply(null,Object.values(metrics.byDest));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0ea5e9",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos por estatus</div>
+          {Object.keys(metrics.bySt).length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:Object.entries(metrics.bySt).map(function(r){var max=Math.max.apply(null,Object.values(metrics.bySt));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{(STS[r[0]]||{l:r[0]}).l}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#7c3aed",borderRadius:999}}/></div></div>;})}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+            <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Cancelaciones</div><div style={{fontSize:19,fontWeight:800,color:"#dc2626"}}>{metrics.cancelled}</div></div>
+            <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Utilización estimada</div><div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>{Object.values(metrics.byAc).reduce(function(a,b){return a+b;},0)} vuelos</div></div>
+          </div>
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
@@ -853,6 +956,8 @@ export default function App(){
           </div>
           <label style={LS}>Notas</label>
           <input type="text" placeholder="Ferry, observaciones..." value={nf.nt} onChange={function(e){setNf(function(p){return Object.assign({},p,{nt:e.target.value});});}} style={IS}/>
+          <label style={LS}>Programado/Editado por</label>
+          <input type="text" placeholder="Nombre o correo" value={actorName} onChange={function(e){setActorName(e.target.value);}} style={IS}/>
           <button onClick={handleSave} disabled={!nf.orig||!nf.dest||!nf.time||!nf.rb||phase==="saving"} style={{width:"100%",padding:15,border:"none",borderRadius:14,fontSize:16,fontWeight:700,cursor:"pointer",marginTop:10,background:nf.orig&&nf.dest&&nf.time&&nf.rb?"#0f172a":"#cbd5e1",color:"#fff"}}>{phase==="saving"?"⏳ Guardando...":editId!==null?"✅ Guardar cambios":"✈️ Programar vuelo"}</button>
         </div>
       </div>}
@@ -882,16 +987,17 @@ export default function App(){
       <button
         onClick={function(){setAgentOpen(function(v){return !v;});}}
         style={{position:"fixed",right:16,bottom:88,zIndex:950,width:52,height:52,borderRadius:"50%",border:"1px solid #334155",background:"linear-gradient(145deg,#0f172a,#1e293b)",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}
-        aria-label="AI Agent"
+        aria-label="AI Pilot"
       >
-        🤖
+        👨🏼‍✈️
       </button>
 
       {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"rgba(255,255,255,.98)",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid #dbeafe"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>🤖 AI Agent</div>
+          <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>👨🏼‍✈️ AI Pilot</div>
           <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
         </div>
+        <div style={{fontSize:11,color:"#475569",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
         <textarea
           value={agentInstruction}
           onChange={function(e){setAgentInstruction(e.target.value);}}

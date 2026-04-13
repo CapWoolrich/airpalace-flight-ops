@@ -94,6 +94,10 @@ function normalizeText(v) {
   return String(v || "").trim().toLowerCase();
 }
 
+function compactText(v) {
+  return normalizeText(v).replace(/[\s-]/g, "");
+}
+
 function toISODate(year, month, day) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -149,14 +153,21 @@ function parseDateFromInstruction(text) {
 
 function findAliasValue(aliases, text) {
   const haystack = normalizeText(text);
+  const haystackCompact = compactText(text);
   const sorted = Object.keys(aliases).sort((a, b) => b.length - a.length);
-  const match = sorted.find((alias) => haystack.includes(alias));
+  const match = sorted.find((alias) => {
+    const normalizedAlias = normalizeText(alias);
+    return haystack.includes(normalizedAlias) || haystackCompact.includes(compactText(normalizedAlias));
+  });
   return match ? aliases[match] : null;
 }
 
 function normalizeExactAlias(aliases, value) {
   const key = normalizeText(value);
-  return aliases[key] || null;
+  if (aliases[key]) return aliases[key];
+  const keyCompact = compactText(value);
+  const found = Object.keys(aliases).find((alias) => compactText(alias) === keyCompact);
+  return found ? aliases[found] : null;
 }
 
 export function normalizeAgentWithAliases(input, instruction = "") {
