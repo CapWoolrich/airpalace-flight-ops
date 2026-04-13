@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
+import { buildOpsPush } from "../lib/opsNotifications";
 
 function createFlightLegs(payload, routeResult) {
   const creatorMeta = payload.creator_meta || {};
@@ -63,12 +64,12 @@ export async function executeAgentAction(agentResult, options = {}) {
     return payload.warning || null;
   }
 
-  async function sendPush(title, body) {
+  async function sendPush(title, body, url) {
     try {
       await fetch("/api/send-push-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body, url: "/" }),
+        body: JSON.stringify({ title, body, url: url || "/" }),
       });
     } catch {}
   }
@@ -87,7 +88,8 @@ export async function executeAgentAction(agentResult, options = {}) {
       const legs = createFlightLegs(payload, routeResult);
       await safeInsert(legs);
       const waError = await sendWhatsApp(legs[0]);
-      await sendPush("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time || "STBY"}`);
+      const programmedPush = buildOpsPush("flight_programmed", legs[0]);
+      await sendPush(programmedPush.title, programmedPush.body, programmedPush.url);
       return { ok: true, message: "Vuelo creado correctamente.", warning: waError };
     }
 
@@ -108,7 +110,14 @@ export async function executeAgentAction(agentResult, options = {}) {
         time: updates.time || payload.time,
         rb: updates.rb || payload.rb,
       });
-      await sendPush("Vuelo modificado", `${updates.ac || payload.ac} actualizado`);
+      const modifiedPush = buildOpsPush("flight_modified", {
+        ac: updates.ac || payload.ac,
+        orig: updates.orig || payload.orig,
+        dest: updates.dest || payload.dest,
+        date: updates.date || payload.date,
+        time: updates.time || payload.time,
+      });
+      await sendPush(modifiedPush.title, modifiedPush.body, modifiedPush.url);
       return { ok: true, message: "Vuelo editado correctamente.", warning: waError };
     }
 
@@ -118,7 +127,8 @@ export async function executeAgentAction(agentResult, options = {}) {
         .update({ st: "canc", updated_at: new Date().toISOString() })
         .eq("id", payload.flight_id);
       if (error) throw error;
-      await sendPush("Vuelo cancelado", `ID ${payload.flight_id} cancelado`);
+      const cancelledPush = buildOpsPush("flight_cancelled", { ac: payload.ac, orig: payload.orig, dest: payload.dest });
+      await sendPush(cancelledPush.title, cancelledPush.body, cancelledPush.url);
       return { ok: true, message: "Vuelo cancelado correctamente." };
     }
 
@@ -131,8 +141,14 @@ export async function executeAgentAction(agentResult, options = {}) {
         },
       ]);
       if (error) throw error;
-      if (payload.status_change === "aog") await sendPush("AOG", `Alerta AOG: ${payload.ac} quedó fuera de servicio.`);
-      if (payload.status_change === "mantenimiento") await sendPush("Mantenimiento", `${payload.ac} en mantenimiento.`);
+      if (payload.status_change === "aog") {
+        const aogPush = buildOpsPush("aog", { ac: payload.ac });
+        await sendPush(aogPush.title, aogPush.body, aogPush.url);
+      }
+      if (payload.status_change === "mantenimiento") {
+        const maintPush = buildOpsPush("maintenance", { ac: payload.ac, maintenanceEndDate: payload.maintenance_end_date });
+        await sendPush(maintPush.title, maintPush.body, maintPush.url);
+      }
       return { ok: true, message: "Estado de aeronave actualizado." };
     }
 
