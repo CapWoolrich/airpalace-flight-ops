@@ -1164,18 +1164,22 @@ export default function App(){
       </div>}
 
       {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
-        <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:400,padding:24}} onClick={function(e){e.stopPropagation();}}>
-          <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>✅ Vuelo {ntf.lbl}</div>
-          <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>✈️ {ntf.fl.orig} → {ntf.fl.dest}</div>
-          <div style={{background:"#f8fafc",borderRadius:12,padding:12,border:"1px solid #e2e8f0",fontSize:13,color:"#334155",lineHeight:1.6}}>
-            <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
-            <div><strong>Hora:</strong> {ftm(ntf.fl.time)}</div>
+        <div style={{background:"#fff",borderRadius:22,width:"100%",maxWidth:400,padding:"24px 22px",boxShadow:"0 20px 45px rgba(15,23,42,.25)"}} onClick={function(e){e.stopPropagation();}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#0f172a",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
+          </div>
+          <div style={{fontSize:21,fontWeight:900,color:"#0f172a",lineHeight:1.2,marginBottom:4}}>{ntf.fl.orig} <span style={{color:"#94a3b8"}}>→</span> {ntf.fl.dest}</div>
+          <div style={{fontSize:12,color:"#64748b",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
+          <div style={{background:"#f8fafc",borderRadius:14,padding:"12px 13px",border:"1px solid #e2e8f0",fontSize:13,color:"#334155",lineHeight:1.7}}>
             <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
+            <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
+            <div><strong>Hora salida:</strong> {ftm(ntf.fl.time)}</div>
             <div><strong>Solicitó:</strong> {ntf.fl.rb||"-"}</div>
             <div><strong>PAX:</strong> {(ntf.fl.pm||0)+(ntf.fl.pw||0)+(ntf.fl.pc||0)}</div>
             {ntf.fl.nt&&<div><strong>Notas:</strong> {ntf.fl.nt}</div>}
           </div>
-          <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:12}}>Cerrar</button>
+          <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:"pointer",marginTop:14}}>Cerrar</button>
         </div>
       </div>}
 
