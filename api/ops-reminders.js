@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
   const { data: tomorrowFlights, error: tomorrowErr } = await supabase
     .from("flights")
-    .select("id, ac, st, date")
+    .select("id, ac, st, date, time, orig, dest, rb, nt, pm, pw, pc")
     .eq("date", tomorrow)
     .neq("st", "canc")
     .neq("st", "comp")
@@ -65,6 +65,7 @@ export default async function handler(req, res) {
     events.push({
       key: `tomorrow_${tomorrow}`,
       ac: tomorrowFlights[0].ac,
+      flight: tomorrowFlights[0],
       payload: buildOpsPush("tomorrow_flight", { ac: tomorrowFlights[0].ac }),
     });
   }
@@ -100,7 +101,7 @@ export default async function handler(req, res) {
     if (event.key.startsWith("tomorrow_")) {
       await sendOperationalEmail({
         eventType: "tomorrow_flight_reminder",
-        payload: { event_label: "Vuelo de mañana", ac: event.ac || "Aeronave", date: tomorrow },
+        payload: { event_label: "Vuelo de mañana", ...(event.flight || {}), ac: event.ac || "Aeronave", date: tomorrow },
       });
     }
     if (event.key.startsWith("conflict_")) {

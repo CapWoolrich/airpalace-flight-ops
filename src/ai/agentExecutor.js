@@ -46,9 +46,9 @@ export async function executeAgentAction(agentResult, options = {}) {
   const calcRoute = options.calcRoute;
 
   async function safeInsert(rows) {
-    const first = await supabase.from("flights").insert(rows);
+    const first = await supabase.from("flights").insert(rows).select("*");
     if (first.error) throw first.error;
-    return true;
+    return first.data || [];
   }
 
   async function sendWhatsApp(flight) {
@@ -101,13 +101,16 @@ export async function executeAgentAction(agentResult, options = {}) {
         : null;
 
       const legs = createFlightLegs(payload, routeResult);
-      await safeInsert(legs);
-      const waError = await sendWhatsApp(legs[0]);
+      const insertedLegs = await safeInsert(legs);
+      const primaryLeg = insertedLegs[0] || legs[0];
+      const waError = await sendWhatsApp(primaryLeg);
       const emailWarning = await sendEmail("flight_created", {
         event_label: "Vuelo programado",
-        ...legs[0],
+        ...primaryLeg,
+        flight_id: primaryLeg?.id || null,
+        block_minutes: routeResult?.bm || 60,
       });
-      const programmedPush = buildOpsPush("flight_programmed", legs[0]);
+      const programmedPush = buildOpsPush("flight_programmed", primaryLeg);
       await sendPush(programmedPush.title, programmedPush.body, programmedPush.url);
       return { ok: true, message: "Vuelo creado correctamente.", warning: [waError, emailWarning].filter(Boolean).join(" | ") || null };
     }
@@ -139,6 +142,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       await sendPush(modifiedPush.title, modifiedPush.body, modifiedPush.url);
       const emailWarning = await sendEmail("flight_updated", {
         event_label: "Vuelo modificado",
+        flight_id: payload.flight_id,
         ac: updates.ac || payload.ac,
         orig: updates.orig || payload.orig,
         dest: updates.dest || payload.dest,
@@ -157,7 +161,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       if (error) throw error;
       const cancelledPush = buildOpsPush("flight_cancelled", { ac: payload.ac, orig: payload.orig, dest: payload.dest });
       await sendPush(cancelledPush.title, cancelledPush.body, cancelledPush.url);
-      await sendEmail("flight_cancelled", { event_label: "Vuelo cancelado", ac: payload.ac, orig: payload.orig, dest: payload.dest, date: payload.date, time: payload.time });
+      await sendEmail("flight_cancelled", { event_label: "Vuelo cancelado", flight_id: payload.flight_id, ac: payload.ac, orig: payload.orig, dest: payload.dest, date: payload.date, time: payload.time, rb: payload.rb });
       return { ok: true, message: "Vuelo cancelado correctamente." };
     }
 

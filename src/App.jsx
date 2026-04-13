@@ -263,8 +263,9 @@ export default function App(){
   }, []);
 
   async function safeInsertFlights(rows) {
-    const { error } = await supabase.from("flights").insert(rows);
+    const { data, error } = await supabase.from("flights").insert(rows).select("*");
     if (error) throw error;
+    return data || [];
   }
 
   async function safeUpdateFlight(id, updates) {
@@ -296,13 +297,17 @@ export default function App(){
   }
 
   function buildFlightEmailPayload(flight, eventLabel) {
+    var routeEst=(flight?.orig&&flight?.dest&&flight?.ac)?calcR(flight.orig,flight.dest,flight.ac,{m:flight.pm,w:flight.pw,c:flight.pc},flight.bg):null;
     return {
       event_label: eventLabel,
+      id: flight?.id || null,
+      flight_id: flight?.id || null,
       date: flight?.date || "",
       ac: flight?.ac || "",
       orig: flight?.orig || "",
       dest: flight?.dest || "",
       time: flight?.time || "STBY",
+      block_minutes: routeEst?.bm || 60,
       eta_local: etaText(flight) || "",
       rb: flight?.rb || "",
       pm: Number(flight?.pm || 0),
@@ -467,17 +472,19 @@ export default function App(){
           },
         ];
 
-        await safeInsertFlights(legs);
-        await autoSendWhatsApp(legs[0], "PROGRAMADO");
-        await autoSendEmail("flight_created", buildFlightEmailPayload(legs[0], "Vuelo programado"), "Vuelo guardado correctamente");
-        var programmedPush = buildOpsPush("flight_programmed", legs[0]);
+        const insertedLegs = await safeInsertFlights(legs);
+        var firstLeg = insertedLegs[0] || legs[0];
+        await autoSendWhatsApp(firstLeg, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(firstLeg, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedPush = buildOpsPush("flight_programmed", firstLeg);
         await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
-        await safeInsertFlights([created]);
-        await autoSendWhatsApp(created, "PROGRAMADO");
-        await autoSendEmail("flight_created", buildFlightEmailPayload(created, "Vuelo programado"), "Vuelo guardado correctamente");
-        var programmedSinglePush = buildOpsPush("flight_programmed", created);
+        const insertedSingle = await safeInsertFlights([created]);
+        var createdSaved = insertedSingle[0] || created;
+        await autoSendWhatsApp(createdSaved, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(createdSaved, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedSinglePush = buildOpsPush("flight_programmed", createdSaved);
         await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
       }
 

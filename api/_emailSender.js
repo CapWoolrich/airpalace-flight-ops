@@ -1,4 +1,5 @@
 import { buildOperationalEmail } from "./_emailTemplate.js";
+import { buildFlightIcs } from "./_calendarInvite.js";
 
 function parseCsvEmails(raw) {
   return String(raw || "")
@@ -15,20 +16,35 @@ const ROUTING = {
   flight_created: ["ops", "pilots", "owners"],
   flight_updated: ["ops", "pilots", "owners"],
   flight_cancelled: ["ops", "pilots", "owners"],
-  aircraft_aog: ["ops", "owners"],
-  aircraft_maintenance: ["ops", "owners"],
-  operational_conflict: ["ops", "owners"],
+  aircraft_aog: ["ops"],
+  aircraft_maintenance: ["ops"],
+  operational_conflict: ["ops"],
   tomorrow_flight_reminder: ["ops", "pilots"],
 };
 
-function recipientsFromGroups(eventType) {
+const OWNER_BY_REQUESTOR = {
+  "jabib c": "jachapur@thepalacecompany.com",
+  "anuar c": "achapur@thepalacecompany.com",
+  "omar c": "ochapur@thepalacecompany.com",
+  "gibran c": "gchapur@thepalacecompany.com",
+  "jose c": "jchapur@thepalacecompany.com",
+};
+
+function mappedOwnerForRequestor(rb) {
+  const key = String(rb || "").trim().toLowerCase();
+  return OWNER_BY_REQUESTOR[key] || null;
+}
+
+function recipientsFromGroups(eventType, payload = {}) {
   const groups = {
     ops: parseCsvEmails(process.env.OPS_EMAILS),
     pilots: parseCsvEmails(process.env.PILOTS_EMAILS),
-    owners: parseCsvEmails(process.env.OWNERS_EMAILS),
   };
   const route = ROUTING[eventType] || [];
-  return uniq(route.flatMap((g) => groups[g] || []));
+  const base = route.flatMap((g) => groups[g] || []);
+  const includeRequestorOwner = ["flight_created", "flight_updated", "flight_cancelled", "tomorrow_flight_reminder"].includes(eventType);
+  const ownerEmail = includeRequestorOwner ? mappedOwnerForRequestor(payload?.rb) : null;
+  return uniq(ownerEmail ? base.concat(ownerEmail) : base);
 }
 
 function missingEnvError() {
@@ -52,7 +68,7 @@ export async function sendOperationalEmail({
       ? recipientsOverride
       : opsOnly
         ? parseCsvEmails(process.env.OPS_EMAILS)
-        : recipientsFromGroups(eventType)
+        : recipientsFromGroups(eventType, payload)
   );
 
   if (!recipients.length) {
@@ -80,6 +96,7 @@ export async function sendOperationalEmail({
   const template = buildOperationalEmail(eventType, payload);
   const from = process.env.EMAIL_FROM;
   const replyTo = process.env.EMAIL_REPLY_TO || undefined;
+  const icsAttachment = buildFlightIcs(eventType, payload);
 
   const sendOne = async (to) => {
     try {
@@ -96,6 +113,7 @@ export async function sendOperationalEmail({
           subject: template.subject,
           html: template.html,
           text: template.text,
+          attachments: icsAttachment ? [icsAttachment] : undefined,
         }),
       });
       const data = await r.json().catch(() => ({}));
