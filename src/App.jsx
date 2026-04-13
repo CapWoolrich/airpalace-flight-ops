@@ -135,6 +135,7 @@ async function loadMaintFromDb() {
 var LS={fontSize:12,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,marginTop:8};
 var IS={width:"100%",padding:"11px 13px",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:14,color:"#1e293b",background:"#f8fafc",outline:"none",marginBottom:4,boxSizing:"border-box"};
 var NB={background:"#f1f5f9",border:"none",borderRadius:8,width:36,height:36,fontSize:20,cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center"};
+var META_FIELDS=["created_by_email","created_by_name","updated_by_email","updated_by_name"];
 
 // ═══ COMPONENTS ═══
 function ApIn({value,onChange,label}){
@@ -405,6 +406,7 @@ export default function App(){
 
   async function editFlight(flight) {
     setPhase("saving");
+    const creatorMeta = getCreatorMeta("manual");
 
     try {
       await safeUpdateFlight(flight.id, {
@@ -420,6 +422,8 @@ export default function App(){
           pc: flight.pc,
           bg: flight.bg,
           st: flight.st,
+          updated_by_email: creatorMeta.created_by_email,
+          updated_by_name: creatorMeta.created_by_name,
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
