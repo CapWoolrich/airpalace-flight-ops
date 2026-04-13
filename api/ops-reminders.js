@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { buildOpsPush } from "../src/lib/opsNotifications";
+import { buildOpsPush } from "../src/lib/opsNotifications.js";
+import { sendOperationalEmail } from "./_emailSender.js";
 
 function ymd(d) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
@@ -61,7 +62,11 @@ export default async function handler(req, res) {
     .limit(1);
   if (tomorrowErr) throw tomorrowErr;
   if ((tomorrowFlights || []).length) {
-    events.push({ key: `tomorrow_${tomorrow}`, payload: buildOpsPush("tomorrow_flight", { ac: tomorrowFlights[0].ac }) });
+    events.push({
+      key: `tomorrow_${tomorrow}`,
+      ac: tomorrowFlights[0].ac,
+      payload: buildOpsPush("tomorrow_flight", { ac: tomorrowFlights[0].ac }),
+    });
   }
 
   const { data: operationalFlights, error: opErr } = await supabase
@@ -79,7 +84,7 @@ export default async function handler(req, res) {
   const conflictKey = Object.keys(idx).find((k) => idx[k] > 1);
   if (conflictKey) {
     const ac = conflictKey.split("|")[0];
-    events.push({ key: `conflict_${today}`, payload: buildOpsPush("operational_conflict", { ac }) });
+    events.push({ key: `conflict_${today}`, ac, payload: buildOpsPush("operational_conflict", { ac }) });
   }
 
   const sent = [];
@@ -92,6 +97,18 @@ export default async function handler(req, res) {
     if (existing?.event_key) continue;
 
     await sendPushToAll(supabase, event.payload);
+    if (event.key.startsWith("tomorrow_")) {
+      await sendOperationalEmail({
+        eventType: "tomorrow_flight_reminder",
+        payload: { event_label: "Vuelo de mañana", ac: event.ac || "Aeronave", date: tomorrow },
+      });
+    }
+    if (event.key.startsWith("conflict_")) {
+      await sendOperationalEmail({
+        eventType: "operational_conflict",
+        payload: { event_label: "Conflicto operativo", ac: event.ac || "Aeronave", date: today },
+      });
+    }
     await supabase.from("push_notification_events").insert([{ event_key: event.key }]);
     sent.push(event.key);
   }

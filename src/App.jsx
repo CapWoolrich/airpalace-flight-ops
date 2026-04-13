@@ -295,6 +295,49 @@ export default function App(){
     }
   }
 
+  function buildFlightEmailPayload(flight, eventLabel) {
+    return {
+      event_label: eventLabel,
+      date: flight?.date || "",
+      ac: flight?.ac || "",
+      orig: flight?.orig || "",
+      dest: flight?.dest || "",
+      time: flight?.time || "STBY",
+      eta_local: etaText(flight) || "",
+      rb: flight?.rb || "",
+      pm: Number(flight?.pm || 0),
+      pw: Number(flight?.pw || 0),
+      pc: Number(flight?.pc || 0),
+      notes: String(flight?.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim(),
+      actor: actorName || "",
+      edited_by: actorName || "",
+      created_by: actorName || "",
+    };
+  }
+
+  async function autoSendEmail(eventType, payload, okPrefix) {
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventType, payload }),
+      });
+      const data = await r.json().catch(function(){return{};});
+      if (!r.ok) {
+        throw new Error(data.error || "No se pudo enviar el correo.");
+      }
+      if (data.warning) {
+        setErrMsg(`${okPrefix}, pero correo parcial: ${data.warning}`);
+        setPhase("error");
+        setTimeout(function(){setPhase("ready");}, 2200);
+      }
+    } catch (e) {
+      setErrMsg(`${okPrefix}, pero no se pudo enviar el correo: ${e.message || String(e)}`);
+      setPhase("error");
+      setTimeout(function(){setPhase("ready");}, 2200);
+    }
+  }
+
   async function sendPushEvent(title, body, url){
     try{
       await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:url||"/"})});
@@ -426,12 +469,14 @@ export default function App(){
 
         await safeInsertFlights(legs);
         await autoSendWhatsApp(legs[0], "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(legs[0], "Vuelo programado"), "Vuelo guardado correctamente");
         var programmedPush = buildOpsPush("flight_programmed", legs[0]);
         await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
         await safeInsertFlights([created]);
         await autoSendWhatsApp(created, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(created, "Vuelo programado"), "Vuelo guardado correctamente");
         var programmedSinglePush = buildOpsPush("flight_programmed", created);
         await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
       }
@@ -471,6 +516,7 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
+      await autoSendEmail("flight_updated", buildFlightEmailPayload(flight, "Vuelo modificado"), "Vuelo guardado correctamente");
       var modifiedPush = buildOpsPush("flight_modified", flight);
       await sendPushEvent(modifiedPush.title, modifiedPush.body, modifiedPush.url);
 
@@ -499,6 +545,7 @@ export default function App(){
       if (error) throw error;
       const cancelledPush = buildOpsPush("flight_cancelled", flightToCancel || { ac: "Aeronave" });
       await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+      await autoSendEmail("flight_cancelled", buildFlightEmailPayload(flightToCancel || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -525,6 +572,7 @@ export default function App(){
       if(newSt==="canc"){
         const cancelledPush = buildOpsPush("flight_cancelled", existing || { ac: "Aeronave" });
         await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+        await autoSendEmail("flight_cancelled", buildFlightEmailPayload(existing || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
       }
 
       setPhase("saved");
@@ -560,10 +608,12 @@ export default function App(){
       if(newSt==="aog"){
         var aogPush=buildOpsPush("aog",{ac:acId});
         await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
+        await autoSendEmail("aircraft_aog", { event_label:"AOG", ac: acId, actor: actorName }, "Estado guardado correctamente");
       }
       if(newSt==="mantenimiento"){
         var maintPush=buildOpsPush("maintenance",{ac:acId,maintenanceEndDate:maintPlan[acId]?.to});
         await sendPushEvent(maintPush.title, maintPush.body, maintPush.url);
+        await autoSendEmail("aircraft_maintenance", { event_label:"Mantenimiento", ac: acId, maintenance_end_date: maintPlan[acId]?.to || "", actor: actorName }, "Estado guardado correctamente");
       }
 
       setPhase("saved");
