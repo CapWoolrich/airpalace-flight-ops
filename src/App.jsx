@@ -4,6 +4,7 @@ import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
 import { subscribeToPush } from "./lib/push";
+import { buildOpsPush } from "./lib/opsNotifications";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -294,9 +295,9 @@ export default function App(){
     }
   }
 
-  async function sendPushEvent(title, body){
+  async function sendPushEvent(title, body, url){
     try{
-      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:"/"})});
+      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:url||"/"})});
     }catch{}
   }
 
@@ -425,12 +426,14 @@ export default function App(){
 
         await safeInsertFlights(legs);
         await autoSendWhatsApp(legs[0], "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time||"STBY"}`);
+        var programmedPush = buildOpsPush("flight_programmed", legs[0]);
+        await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
         await safeInsertFlights([created]);
         await autoSendWhatsApp(created, "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${created.ac} · ${created.orig} → ${created.dest} · ${created.date} ${created.time||"STBY"}`);
+        var programmedSinglePush = buildOpsPush("flight_programmed", created);
+        await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
@@ -468,7 +471,8 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
-      await sendPushEvent("Vuelo modificado", `${flight.ac} · ${flight.orig} → ${flight.dest} · ${flight.time||"STBY"}`);
+      var modifiedPush = buildOpsPush("flight_modified", flight);
+      await sendPushEvent(modifiedPush.title, modifiedPush.body, modifiedPush.url);
 
       setNtf({ fl: flight, lbl: "MODIFICADO" });
       setSf(false);
@@ -486,13 +490,15 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: flightToCancel } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-      await sendPushEvent("Vuelo cancelado", `ID ${id} marcado como cancelado.`);
+      const cancelledPush = buildOpsPush("flight_cancelled", flightToCancel || { ac: "Aeronave" });
+      await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -506,6 +512,7 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: existing } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .update({
@@ -515,6 +522,10 @@ export default function App(){
         .eq("id", id);
 
       if (error) throw error;
+      if(newSt==="canc"){
+        const cancelledPush = buildOpsPush("flight_cancelled", existing || { ac: "Aeronave" });
+        await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+      }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -547,11 +558,12 @@ export default function App(){
         if (fallbackError) throw fallbackError;
       }
       if(newSt==="aog"){
-        await sendPushEvent("AOG", `Alerta AOG: ${acId} quedó fuera de servicio.`);
+        var aogPush=buildOpsPush("aog",{ac:acId});
+        await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
       }
       if(newSt==="mantenimiento"){
-        var to=maintPlan[acId]?.to;
-        await sendPushEvent("Mantenimiento", `Mantenimiento: ${acId}${to?` en mantenimiento hasta ${new Date(to+"T12:00:00").toLocaleDateString("es-MX")}`:" en mantenimiento"}.`);
+        var maintPush=buildOpsPush("maintenance",{ac:acId,maintenanceEndDate:maintPlan[acId]?.to});
+        await sendPushEvent(maintPush.title, maintPush.body, maintPush.url);
       }
 
       setPhase("saved");
@@ -560,6 +572,20 @@ export default function App(){
       setErrMsg(e.message || String(e));
       setPhase("error");
     }
+  }
+
+  async function persistMaintenanceDates(acId, nextPlanForAc) {
+    try {
+      await supabase.from("aircraft_status").upsert([
+        {
+          ac: acId,
+          status: mt[acId] || "disponible",
+          maintenance_start_date: nextPlanForAc?.from || null,
+          maintenance_end_date: nextPlanForAc?.to || null,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+    } catch {}
   }
 
   async function restore() {
@@ -731,7 +757,8 @@ export default function App(){
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
-  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs,today]);
+  var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
+  var conflictList=useMemo(function(){var m={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[operationalFlights]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -779,10 +806,10 @@ export default function App(){
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
     var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
     var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
-    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var conflicts=0,idx={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
     var pending=fs.filter(function(f){return f.st==="prog";}).length;
     return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
-  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan]);
+  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan,operationalFlights]);
   var filteredAnalytics=useMemo(function(){
     return fs.filter(function(f){
       if(anYear!=="all"&&String(f.date||"").slice(0,4)!==anYear)return false;
@@ -806,13 +833,15 @@ export default function App(){
   useEffect(function(){
     if(conflictList.length>0){
       var ac=conflictList[0]?.ac||"Aeronave";
-      sendPushOnce("push_conflict_"+today,"Conflicto operativo",`Conflicto operativo detectado en ${ac}.`);
+      var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
+      sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
     }
     var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);
     var tomFlights=fs.filter(function(f){return f.date===t2&&f.st!=="canc";});
     if(tomFlights.length>0){
       var f0=tomFlights[0];
-      sendPushOnce("push_tomorrow_"+t2, "Vuelo de mañana", `Recordatorio: tienes un vuelo mañana en ${f0.ac}.`);
+      var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
+      sendPushOnce("push_tomorrow_"+t2, tomorrowPush.title, tomorrowPush.body);
     }
   },[conflictList,fs,today]);
 
@@ -999,8 +1028,8 @@ export default function App(){
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
-                <input type="date" value={plan.from||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{from:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
-                <input type="date" value={plan.to||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{to:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
               <div style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
