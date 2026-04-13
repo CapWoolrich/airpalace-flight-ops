@@ -78,7 +78,6 @@ function calcR(orig,dest,id,px,bg){
 function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
-function makeIcsUrl(f){function p(n){return("0"+n).slice(-2);}function fmt(x){return x.y+p(x.m)+p(x.d)+"T"+p(x.h)+p(x.min)+"00";}function parse(date,time){var d=String(date||"").split("-"),t=String(time&&time!=="STBY"?time:"12:00").split(":");return{y:+(d[0]||1970),m:+(d[1]||1),d:+(d[2]||1),h:+(t[0]||12),min:+(t[1]||0)};}function addMins(x,mins){var dt=new Date(Date.UTC(x.y,x.m-1,x.d,x.h,x.min,0));dt.setUTCMinutes(dt.getUTCMinutes()+mins);return{y:dt.getUTCFullYear(),m:dt.getUTCMonth()+1,d:dt.getUTCDate(),h:dt.getUTCHours(),min:dt.getUTCMinutes()};}var s=parse(f.date,f.time),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg),dur=(rt?rt.bm:60),e=addMins(s,dur);var uid=(f.id||[f.ac,f.date,f.time,f.orig,f.dest].join("-")).replace(/[^a-zA-Z0-9_-]/g,"")+"@airpalace.app";var tz="America/Merida",o=String(f.orig||"").toLowerCase();if(o.indexOf("cancun")>=0||o.indexOf("cancún")>=0||o.indexOf("cozumel")>=0)tz="America/Cancun";var n=new Date(),stamp=n.getUTCFullYear()+p(n.getUTCMonth()+1)+p(n.getUTCDate())+"T"+p(n.getUTCHours())+p(n.getUTCMinutes())+"00Z";var txt=["BEGIN:VCALENDAR","PRODID:-//AirPalace//Flight Ops//ES","VERSION:2.0","CALSCALE:GREGORIAN","METHOD:REQUEST","BEGIN:VEVENT","UID:flight-"+uid,"DTSTAMP:"+stamp,"SEQUENCE:0","STATUS:CONFIRMED","DTSTART;TZID="+tz+":"+fmt(s),"DTEND;TZID="+tz+":"+fmt(e),"SUMMARY:"+f.ac+" "+f.orig+"-"+f.dest,"DESCRIPTION:Ruta\\: "+f.orig+" -> "+f.dest+"\\nSolicitó\\: "+(f.rb||"-"),"END:VEVENT","END:VCALENDAR"].join("\r\n");return"data:text/calendar;charset=utf-8,"+encodeURIComponent(txt);}
 function apTz(ap){if(!ap)return null;var i4=String(ap.i4||"").toUpperCase(),i3=String(ap.i3||"").toUpperCase(),city=String(ap.c||"").toLowerCase();if(i4==="MMMD"||i3==="MID"||city.indexOf("merida")>=0||city.indexOf("mérida")>=0)return"America/Merida";if(i4==="MMUN"||i3==="CUN"||city.indexOf("cancun")>=0||city.indexOf("cancún")>=0)return"America/Cancun";if(i4==="MMCZ"||i3==="CZM"||city.indexOf("cozumel")>=0)return"America/Cancun";if(i4==="MMTO"||i3==="TLC"||city.indexOf("toluca")>=0)return"America/Mexico_City";if(i4==="MMMX"||i3==="MEX"||city.indexOf("cdmx")>=0||city.indexOf("mexico city")>=0)return"America/Mexico_City";if(i4==="KOPF"||i3==="OPF")return"America/New_York";if(i4==="KFLL"||i3==="FLL")return"America/New_York";if(i4==="KMIA"||i3==="MIA")return"America/New_York";if(i4==="KMCO"||i3==="MCO")return"America/New_York";var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
 function tzOffsetMin(ts,tz){try{var parts=new Intl.DateTimeFormat("en-US",{timeZone:tz,timeZoneName:"shortOffset",hour:"2-digit"}).formatToParts(new Date(ts));var label=(parts.find(function(p){return p.type==="timeZoneName";})||{}).value||"GMT+0";var m=label.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);if(!m)return 0;var sign=m[1]==="-"?-1:1;return sign*((+m[2]||0)*60+(+m[3]||0));}catch{return 0;}}
 function originLocalToUtc(dateStr,timeStr,originTz){var d=String(dateStr||"").split("-"),t=String(timeStr||"00:00").split(":"),y=+d[0],m=(+d[1]||1)-1,da=+d[2]||1,h=+t[0]||0,mi=+t[1]||0;var guess=Date.UTC(y,m,da,h,mi,0);var off1=tzOffsetMin(guess,originTz),utc=guess-off1*60000,off2=tzOffsetMin(utc,originTz);return guess-off2*60000;}
@@ -285,16 +284,16 @@ export default function App(){
       });
       const data = await r.json().catch(function(){return{};});
       if (!r.ok) {
-        throw new Error(data.error || `HTTP ${r.status}`);
+        throw new Error(data.error || "No se pudo contactar el servicio de WhatsApp.");
       }
-      if (data.warning) {
-        setErrMsg(`Vuelo guardado correctamente. WhatsApp parcial: ${data.warning}`);
-        setPhase("error");
+      if (data.ok===false || data.warning) {
+        setErrMsg(`Vuelo guardado correctamente, pero ${data.warning || "no se pudo enviar WhatsApp."}`);
+        setPhase("warn");
         setTimeout(function(){setPhase("ready");}, 2200);
       }
     } catch (e) {
-      setErrMsg(`Vuelo guardado correctamente, pero WhatsApp falló: ${e.message || String(e)}`);
-      setPhase("error");
+      setErrMsg(`Vuelo guardado correctamente, pero no se pudo enviar WhatsApp.`);
+      setPhase("warn");
       setTimeout(function(){setPhase("ready");}, 2200);
     }
   }
@@ -1167,14 +1166,14 @@ export default function App(){
       {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
         <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:400,padding:24}} onClick={function(e){e.stopPropagation();}}>
           <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>✅ Vuelo {ntf.lbl}</div>
-          <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>✈️ {ntf.fl.orig} → {ntf.fl.dest} · {fdt(ntf.fl.date)}</div>
-          <div style={{background:"#f0fdf4",borderRadius:12,padding:12,marginBottom:12,border:"1px solid #86efac"}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:8}}>💬 WhatsApp</div>
-            <button onClick={function(){autoSendWhatsApp(ntf.fl, ntf.lbl);}} style={{display:"block",width:"100%",background:"#16a34a",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none",border:"none",cursor:"pointer"}}>📤 Enviar WhatsApp</button>
-          </div>
-          <div style={{background:"#dbeafe",borderRadius:12,padding:12,border:"1px solid #93c5fd"}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#1d4ed8",marginBottom:8}}>📅 Calendario</div>
-            <a href={makeIcsUrl(ntf.fl)} download={"airpalace-"+(ntf.fl?.ac||"vuelo")+"-"+(ntf.fl?.date||"evento")+".ics"} style={{display:"block",background:"#1d4ed8",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none"}}>📅 Agregar al calendario (.ics)</a>
+          <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>✈️ {ntf.fl.orig} → {ntf.fl.dest}</div>
+          <div style={{background:"#f8fafc",borderRadius:12,padding:12,border:"1px solid #e2e8f0",fontSize:13,color:"#334155",lineHeight:1.6}}>
+            <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
+            <div><strong>Hora:</strong> {ftm(ntf.fl.time)}</div>
+            <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
+            <div><strong>Solicitó:</strong> {ntf.fl.rb||"-"}</div>
+            <div><strong>PAX:</strong> {(ntf.fl.pm||0)+(ntf.fl.pw||0)+(ntf.fl.pc||0)}</div>
+            {ntf.fl.nt&&<div><strong>Notas:</strong> {ntf.fl.nt}</div>}
           </div>
           <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:12}}>Cerrar</button>
         </div>
@@ -1183,6 +1182,7 @@ export default function App(){
       <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:900}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
+        {phase==="warn"&&<div style={{background:"#f59e0b",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(245,158,11,.45)",textAlign:"center",maxWidth:340}}>⚠️ {errMsg}</div>}
         {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}</div>}
       </div>
 
