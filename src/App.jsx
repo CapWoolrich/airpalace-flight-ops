@@ -4,6 +4,7 @@ import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
 import { subscribeToPush } from "./lib/push";
+import { buildOpsPush } from "./lib/opsNotifications";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -77,6 +78,7 @@ function calcR(orig,dest,id,px,bg){
 function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
+function makeIcsUrl(f){var st=(f.time&&f.time!=="STBY"?f.time:"12:00")+":00",s=new Date(f.date+"T"+st),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg),dur=(rt?rt.bm:60),e=new Date(s.getTime()+dur*60000);function p(n){return("0"+n).slice(-2);}function fmt(d){return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"T"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());}var uid=(f.id||[f.ac,f.date,f.time,f.orig,f.dest].join("-")).replace(/[^a-zA-Z0-9_-]/g,"")+"@airpalace.app";var tz="America/Merida",o=String(f.orig||"").toLowerCase();if(o.indexOf("cancun")>=0||o.indexOf("cancún")>=0||o.indexOf("cozumel")>=0)tz="America/Cancun";var txt=["BEGIN:VCALENDAR","PRODID:-//AirPalace//Flight Ops//ES","VERSION:2.0","CALSCALE:GREGORIAN","METHOD:REQUEST","BEGIN:VEVENT","UID:flight-"+uid,"DTSTAMP:"+fmt(new Date()),"SEQUENCE:0","STATUS:CONFIRMED","DTSTART;TZID="+tz+":"+fmt(s),"DTEND;TZID="+tz+":"+fmt(e),"SUMMARY:"+f.ac+" "+f.orig+"-"+f.dest,"DESCRIPTION:Ruta\\: "+f.orig+" -> "+f.dest+"\\nSolicitó\\: "+(f.rb||"-"),"END:VEVENT","END:VCALENDAR"].join("\r\n");return"data:text/calendar;charset=utf-8,"+encodeURIComponent(txt);}
 function apTz(ap){if(!ap)return null;var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
 function etaText(f){if(!f||!f.date||!f.time||f.time==="STBY")return null;var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;var dt=new Date(f.date+"T"+f.time+":00");if(isNaN(dt.getTime()))return null;var arr=new Date(dt.getTime()+bm*60000),ap=findAP(f.dest),tz=apTz(ap);if(!tz)return null;return new Intl.DateTimeFormat("es-MX",{hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit",timeZone:tz}).format(arr);}
 
@@ -262,8 +264,9 @@ export default function App(){
   }, []);
 
   async function safeInsertFlights(rows) {
-    const { error } = await supabase.from("flights").insert(rows);
+    const { data, error } = await supabase.from("flights").insert(rows).select("*");
     if (error) throw error;
+    return data || [];
   }
 
   async function safeUpdateFlight(id, updates) {
@@ -294,9 +297,56 @@ export default function App(){
     }
   }
 
-  async function sendPushEvent(title, body){
+  function buildFlightEmailPayload(flight, eventLabel) {
+    var routeEst=(flight?.orig&&flight?.dest&&flight?.ac)?calcR(flight.orig,flight.dest,flight.ac,{m:flight.pm,w:flight.pw,c:flight.pc},flight.bg):null;
+    return {
+      event_label: eventLabel,
+      id: flight?.id || null,
+      flight_id: flight?.id || null,
+      date: flight?.date || "",
+      ac: flight?.ac || "",
+      orig: flight?.orig || "",
+      dest: flight?.dest || "",
+      time: flight?.time || "STBY",
+      block_minutes: routeEst?.bm || 60,
+      eta_local: etaText(flight) || "",
+      rb: flight?.rb || "",
+      pm: Number(flight?.pm || 0),
+      pw: Number(flight?.pw || 0),
+      pc: Number(flight?.pc || 0),
+      notes: String(flight?.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim(),
+      actor: actorName || "",
+      edited_by: actorName || "",
+      created_by: actorName || "",
+    };
+  }
+
+  async function autoSendEmail(eventType, payload, okPrefix) {
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventType, payload }),
+      });
+      const data = await r.json().catch(function(){return{};});
+      if (!r.ok) {
+        throw new Error(data.error || "No se pudo enviar el correo.");
+      }
+      if (data.warning) {
+        setErrMsg(`${okPrefix}, pero correo parcial: ${data.warning}`);
+        setPhase("error");
+        setTimeout(function(){setPhase("ready");}, 2200);
+      }
+    } catch (e) {
+      setErrMsg(`${okPrefix}, pero no se pudo enviar el correo: ${e.message || String(e)}`);
+      setPhase("error");
+      setTimeout(function(){setPhase("ready");}, 2200);
+    }
+  }
+
+  async function sendPushEvent(title, body, url){
     try{
-      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:"/"})});
+      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:url||"/"})});
     }catch{}
   }
 
@@ -423,14 +473,20 @@ export default function App(){
           },
         ];
 
-        await safeInsertFlights(legs);
-        await autoSendWhatsApp(legs[0], "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time||"STBY"}`);
+        const insertedLegs = await safeInsertFlights(legs);
+        var firstLeg = insertedLegs[0] || legs[0];
+        await autoSendWhatsApp(firstLeg, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(firstLeg, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedPush = buildOpsPush("flight_programmed", firstLeg);
+        await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
-        await safeInsertFlights([created]);
-        await autoSendWhatsApp(created, "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${created.ac} · ${created.orig} → ${created.dest} · ${created.date} ${created.time||"STBY"}`);
+        const insertedSingle = await safeInsertFlights([created]);
+        var createdSaved = insertedSingle[0] || created;
+        await autoSendWhatsApp(createdSaved, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(createdSaved, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedSinglePush = buildOpsPush("flight_programmed", createdSaved);
+        await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
@@ -468,7 +524,9 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
-      await sendPushEvent("Vuelo modificado", `${flight.ac} · ${flight.orig} → ${flight.dest} · ${flight.time||"STBY"}`);
+      await autoSendEmail("flight_updated", buildFlightEmailPayload(flight, "Vuelo modificado"), "Vuelo guardado correctamente");
+      var modifiedPush = buildOpsPush("flight_modified", flight);
+      await sendPushEvent(modifiedPush.title, modifiedPush.body, modifiedPush.url);
 
       setNtf({ fl: flight, lbl: "MODIFICADO" });
       setSf(false);
@@ -486,13 +544,16 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: flightToCancel } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-      await sendPushEvent("Vuelo cancelado", `ID ${id} marcado como cancelado.`);
+      const cancelledPush = buildOpsPush("flight_cancelled", flightToCancel || { ac: "Aeronave" });
+      await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+      await autoSendEmail("flight_cancelled", buildFlightEmailPayload(flightToCancel || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -506,6 +567,7 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: existing } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .update({
@@ -515,6 +577,11 @@ export default function App(){
         .eq("id", id);
 
       if (error) throw error;
+      if(newSt==="canc"){
+        const cancelledPush = buildOpsPush("flight_cancelled", existing || { ac: "Aeronave" });
+        await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+        await autoSendEmail("flight_cancelled", buildFlightEmailPayload(existing || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
+      }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -547,11 +614,14 @@ export default function App(){
         if (fallbackError) throw fallbackError;
       }
       if(newSt==="aog"){
-        await sendPushEvent("AOG", `Alerta AOG: ${acId} quedó fuera de servicio.`);
+        var aogPush=buildOpsPush("aog",{ac:acId});
+        await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
+        await autoSendEmail("aircraft_aog", { event_label:"AOG", ac: acId, actor: actorName }, "Estado guardado correctamente");
       }
       if(newSt==="mantenimiento"){
-        var to=maintPlan[acId]?.to;
-        await sendPushEvent("Mantenimiento", `Mantenimiento: ${acId}${to?` en mantenimiento hasta ${new Date(to+"T12:00:00").toLocaleDateString("es-MX")}`:" en mantenimiento"}.`);
+        var maintPush=buildOpsPush("maintenance",{ac:acId,maintenanceEndDate:maintPlan[acId]?.to});
+        await sendPushEvent(maintPush.title, maintPush.body, maintPush.url);
+        await autoSendEmail("aircraft_maintenance", { event_label:"Mantenimiento", ac: acId, maintenance_end_date: maintPlan[acId]?.to || "", actor: actorName }, "Estado guardado correctamente");
       }
 
       setPhase("saved");
@@ -560,6 +630,20 @@ export default function App(){
       setErrMsg(e.message || String(e));
       setPhase("error");
     }
+  }
+
+  async function persistMaintenanceDates(acId, nextPlanForAc) {
+    try {
+      await supabase.from("aircraft_status").upsert([
+        {
+          ac: acId,
+          status: mt[acId] || "disponible",
+          maintenance_start_date: nextPlanForAc?.from || null,
+          maintenance_end_date: nextPlanForAc?.to || null,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+    } catch {}
   }
 
   async function restore() {
@@ -731,7 +815,8 @@ export default function App(){
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
-  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs,today]);
+  var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
+  var conflictList=useMemo(function(){var m={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[operationalFlights]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -779,10 +864,10 @@ export default function App(){
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
     var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
     var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
-    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var conflicts=0,idx={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
     var pending=fs.filter(function(f){return f.st==="prog";}).length;
     return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
-  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan]);
+  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan,operationalFlights]);
   var filteredAnalytics=useMemo(function(){
     return fs.filter(function(f){
       if(anYear!=="all"&&String(f.date||"").slice(0,4)!==anYear)return false;
@@ -806,13 +891,15 @@ export default function App(){
   useEffect(function(){
     if(conflictList.length>0){
       var ac=conflictList[0]?.ac||"Aeronave";
-      sendPushOnce("push_conflict_"+today,"Conflicto operativo",`Conflicto operativo detectado en ${ac}.`);
+      var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
+      sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
     }
     var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);
     var tomFlights=fs.filter(function(f){return f.date===t2&&f.st!=="canc";});
     if(tomFlights.length>0){
       var f0=tomFlights[0];
-      sendPushOnce("push_tomorrow_"+t2, "Vuelo de mañana", `Recordatorio: tienes un vuelo mañana en ${f0.ac}.`);
+      var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
+      sendPushOnce("push_tomorrow_"+t2, tomorrowPush.title, tomorrowPush.body);
     }
   },[conflictList,fs,today]);
 
@@ -999,8 +1086,8 @@ export default function App(){
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
-                <input type="date" value={plan.from||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{from:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
-                <input type="date" value={plan.to||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{to:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
               <div style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
@@ -1085,7 +1172,7 @@ export default function App(){
           </div>
           <div style={{background:"#dbeafe",borderRadius:12,padding:12,border:"1px solid #93c5fd"}}>
             <div style={{fontSize:13,fontWeight:700,color:"#1d4ed8",marginBottom:8}}>📅 Calendario</div>
-            <a href={makeCalUrl(ntf.fl)} target="_blank" rel="noreferrer" style={{display:"block",background:"#1d4ed8",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none"}}>📅 Abrir Google Calendar</a>
+            <a href={makeIcsUrl(ntf.fl)} download={"airpalace-"+(ntf.fl?.ac||"vuelo")+"-"+(ntf.fl?.date||"evento")+".ics"} style={{display:"block",background:"#1d4ed8",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none"}}>📅 Agregar al calendario (.ics)</a>
           </div>
           <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:12}}>Cerrar</button>
         </div>
