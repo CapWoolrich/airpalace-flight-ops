@@ -1,14 +1,4 @@
-function fdt(d) {
-  try {
-    return new Date(`${d}T12:00:00`).toLocaleDateString("es-MX", { weekday: "short", month: "short", day: "numeric" });
-  } catch {
-    return d || "";
-  }
-}
-function editorFromNotes(nt) {
-  const m = String(nt || "").match(/\[By:\s*([^\]]+)\]/i);
-  return (m && m[1] ? m[1].trim() : "") || "Sistema";
-}
+import { buildWhatsAppFlightMessage } from "./_whatsappMessage";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -24,21 +14,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "flight payload incomplete" });
   }
 
-  const pax = Number(flight.pm || 0) + Number(flight.pw || 0) + Number(flight.pc || 0);
-  const notes = (flight.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim() || "-";
-  const editor = editorFromNotes(flight.nt);
-  const text = [
-    "*AirPalace Flight Ops*",
-    `📌 ${label}`,
-    `📅 ${fdt(flight.date)}`,
-    `🛩️ ${flight.ac}`,
-    `📍 ${flight.orig} ➜ ${flight.dest}`,
-    `🕓 ${flight.time || "STBY"}`,
-    `👤 Solicitó: ${flight.rb || "-"}`,
-    `👥 Pax: ${pax}`,
-    `📝 Notas: ${notes}`,
-    `✏️ Editó: ${editor}`,
-  ].join("\n");
+  // Canonical builder: siempre genera un único cuerpo para evitar duplicados.
+  const text = buildWhatsAppFlightMessage(flight, label);
   const results = await Promise.all(phones.map(async (phone) => {
     const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(process.env.CALLMEBOT_APIKEY)}`;
     try {
