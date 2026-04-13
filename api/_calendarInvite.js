@@ -6,11 +6,52 @@ function esc(v) {
     .replace(/;/g, "\\;");
 }
 
-function toUtcIcs(dateStr, timeStr) {
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
+
+function localIcsDateTime(dateStr, timeStr) {
   const baseTime = timeStr && timeStr !== "STBY" ? `${timeStr}:00` : "12:00:00";
   const d = new Date(`${dateStr}T${baseTime}`);
-  if (Number.isNaN(d.getTime())) return "19700101T120000Z";
-  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  if (Number.isNaN(d.getTime())) return "19700101T120000";
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function timezoneForDeparture(orig) {
+  const key = String(orig || "").toLowerCase();
+  if (key.includes("merida") || key.includes("mérida") || key.includes("mmmd") || key.includes("mid")) return "America/Merida";
+  if (key.includes("cancun") || key.includes("cancún") || key.includes("mmun") || key.includes("cun")) return "America/Cancun";
+  if (key.includes("cozumel") || key.includes("mmcz") || key.includes("czm")) return "America/Cancun";
+  return "America/Merida";
+}
+
+function vtimezoneBlock(tzid) {
+  if (tzid === "America/Cancun") {
+    return [
+      "BEGIN:VTIMEZONE",
+      "TZID:America/Cancun",
+      "X-LIC-LOCATION:America/Cancun",
+      "BEGIN:STANDARD",
+      "TZOFFSETFROM:-0500",
+      "TZOFFSETTO:-0500",
+      "TZNAME:EST",
+      "DTSTART:19700101T000000",
+      "END:STANDARD",
+      "END:VTIMEZONE",
+    ];
+  }
+  return [
+    "BEGIN:VTIMEZONE",
+    "TZID:America/Merida",
+    "X-LIC-LOCATION:America/Merida",
+    "BEGIN:STANDARD",
+    "TZOFFSETFROM:-0600",
+    "TZOFFSETTO:-0600",
+    "TZNAME:CST",
+    "DTSTART:19700101T000000",
+    "END:STANDARD",
+    "END:VTIMEZONE",
+  ];
 }
 
 function buildUid(payload = {}) {
@@ -24,12 +65,13 @@ export function buildFlightIcs(eventType, payload = {}) {
 
   const uid = buildUid(payload);
   const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const dtStart = toUtcIcs(payload.date, payload.time);
+  const tzid = timezoneForDeparture(payload.orig);
+  const dtStart = localIcsDateTime(payload.date, payload.time);
   const blockMins = Math.max(30, Number(payload.block_minutes || 60));
   const end = new Date(new Date(`${payload.date}T${payload.time && payload.time !== "STBY" ? payload.time : "12:00"}:00`).getTime() + blockMins * 60000);
   const dtEnd = Number.isNaN(end.getTime())
-    ? toUtcIcs(payload.date, "13:00")
-    : end.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    ? localIcsDateTime(payload.date, "13:00")
+    : `${end.getFullYear()}${pad(end.getMonth() + 1)}${pad(end.getDate())}T${pad(end.getHours())}${pad(end.getMinutes())}${pad(end.getSeconds())}`;
 
   const sequence = Number(payload.sequence || (eventType === "flight_created" ? 0 : 1));
   const method = eventType === "flight_cancelled" ? "CANCEL" : "REQUEST";
@@ -51,13 +93,14 @@ export function buildFlightIcs(eventType, payload = {}) {
     "VERSION:2.0",
     "CALSCALE:GREGORIAN",
     `METHOD:${method}`,
+    ...vtimezoneBlock(tzid),
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${dtStamp}`,
     `SEQUENCE:${sequence}`,
     `STATUS:${status}`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
+    `DTSTART;TZID=${tzid}:${dtStart}`,
+    `DTEND;TZID=${tzid}:${dtEnd}`,
     `SUMMARY:${esc(summary)}`,
     `DESCRIPTION:${esc(description)}`,
     `LOCATION:${esc(`${payload.orig || "-"} -> ${payload.dest || "-"}`)}`,
