@@ -5,6 +5,10 @@ function fdt(d) {
     return d || "";
   }
 }
+function editorFromNotes(nt) {
+  const m = String(nt || "").match(/\[By:\s*([^\]]+)\]/i);
+  return (m && m[1] ? m[1].trim() : "") || "Sistema";
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -18,7 +22,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "flight payload incomplete" });
   }
 
-  const text = `*AirPalace*\n${label}\n${fdt(flight.date)}\n${flight.ac}\n${flight.orig} -> ${flight.dest}\n${flight.time || "STBY"}\n${flight.rb || "-"}`;
+  const pax = Number(flight.pm || 0) + Number(flight.pw || 0) + Number(flight.pc || 0);
+  const notes = (flight.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim() || "-";
+  const editor = editorFromNotes(flight.nt);
+  const text = [
+    "*AirPalace Flight Ops*",
+    `📌 ${label}`,
+    `📅 ${fdt(flight.date)}`,
+    `🛩️ ${flight.ac}`,
+    `📍 ${flight.orig} ➜ ${flight.dest}`,
+    `🕓 ${flight.time || "STBY"}`,
+    `👤 Solicitó: ${flight.rb || "-"}`,
+    `👥 Pax: ${pax}`,
+    `📝 Notas: ${notes}`,
+    `✏️ Editó: ${editor}`,
+  ].join("\n");
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(process.env.CALLMEBOT_PHONE)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(process.env.CALLMEBOT_APIKEY)}`;
 
   try {

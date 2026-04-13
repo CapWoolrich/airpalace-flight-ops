@@ -193,6 +193,7 @@ export default function App(){
   var[recentSource,setRecentSource]=useState("all");
   var[anMonth,setAnMonth]=useState("all");
   var[anYear,setAnYear]=useState(String(new Date().getFullYear()));
+  var[listAlertFilter,setListAlertFilter]=useState("all");
   var today=tds(new Date());
 
   function toErrorMessage(e) {
@@ -597,15 +598,16 @@ export default function App(){
   }
 
   async function enablePushNotifications(){
-    if(!import.meta.env.VITE_VAPID_PUBLIC_KEY){
+    var publicKey=import.meta.env.VITE_VAPID_PUBLIC_KEY||import.meta.env.VITE_PUBLIC_VAPID_KEY;
+    if(!publicKey){
       setPushState("error");
-      setErrMsg("Falta VITE_VAPID_PUBLIC_KEY para notificaciones push.");
+      setErrMsg("Falta la llave pública VAPID (VITE_VAPID_PUBLIC_KEY) para notificaciones push.");
       setPhase("error");
       return;
     }
     setPushState("saving");
     try{
-      const sub=await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+      const sub=await subscribeToPush(publicKey);
       const r=await fetch("/api/save-push-subscription",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
       if(!r.ok){const d=await r.json().catch(function(){return{};});throw new Error(d.error||`HTTP ${r.status}`);}
       setPushState("ok");
@@ -619,16 +621,17 @@ export default function App(){
   async function transcribeAudio(blob) {
     setTranscribing(true);
     try {
-      const buffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
+      const base64 = await new Promise(function(resolve,reject){
+        var fr=new FileReader();
+        fr.onloadend=function(){var s=String(fr.result||"");resolve((s.split(",")[1]||""));};
+        fr.onerror=function(){reject(new Error("No se pudo leer el audio grabado."));};
+        fr.readAsDataURL(blob);
+      });
 
       const r = await fetch("/api/transcribe-audio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/webm" }),
+        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/mp4" }),
       });
       const data = await r.json().catch(function(){return{};});
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -647,21 +650,24 @@ export default function App(){
       return;
     }
     try {
+      if (typeof MediaRecorder === "undefined") throw new Error("Tu navegador no soporta grabación de audio.");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const chunks = [];
-      const mediaRecorder = new MediaRecorder(stream);
+      var mimeCandidates=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
+      var selected=mimeCandidates.find(function(m){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m);})||"";
+      const mediaRecorder = selected?new MediaRecorder(stream,{mimeType:selected}):new MediaRecorder(stream);
       mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
       mediaRecorder.onstop = function(){
         stream.getTracks().forEach(function(t){t.stop();});
         setRecording(false);
-        const blob = new Blob(chunks, { type: "audio/webm" });
+        const blob = new Blob(chunks, { type: selected || chunks[0]?.type || "audio/mp4" });
         transcribeAudio(blob);
       };
       setRecorder(mediaRecorder);
       mediaRecorder.start();
       setRecording(true);
     } catch (e) {
-      setErrMsg("No se pudo iniciar el micrófono.");
+      setErrMsg(e?.message || "No se pudo iniciar el micrófono.");
       setPhase("error");
     }
   }
@@ -698,6 +704,24 @@ export default function App(){
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
+  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs]);
+  var listFlights=useMemo(function(){
+    if(listAlertFilter==="conflicts")return conflictList;
+    if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
+    if(listAlertFilter==="tomorrow"){var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);return fs.filter(function(f){return f.date===t2&&f.st!=="canc";});}
+    if(listAlertFilter==="pending")return fs.filter(function(f){return f.st==="prog";});
+    return upcoming;
+  },[listAlertFilter,conflictList,fs,today,upcoming]);
+  function onAlertClick(lbl){
+    if(lbl==="Cambios recientes"){setVw("recent");setRecentDate("today");return;}
+    setVw("list");
+    if(lbl==="Conflictos")setListAlertFilter("conflicts");
+    else if(lbl==="Vuelos hoy")setListAlertFilter("today");
+    else if(lbl==="Vuelos mañana")setListAlertFilter("tomorrow");
+    else if(lbl==="Pendientes")setListAlertFilter("pending");
+    else setListAlertFilter("all");
+    if(lbl==="Mantenimiento"){setVw("gest");}
+  }
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
   var creators=useMemo(function(){
@@ -835,9 +859,9 @@ export default function App(){
       </div>}
 
       {vw==="list"&&<div style={{padding:"0 14px 24px"}}>
-        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 Próximos vuelos</div>
-        {upcoming.length===0?<div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div>
-        :upcoming.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
+        <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 {listAlertFilter==="conflicts"?"Vuelos con conflictos":"Próximos vuelos"}</div>
+        {listFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div>
+        :listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
           <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
             <div style={{background:"rgba(255,255,255,.95)",borderLeft:"4px solid "+a.clr,borderRadius:10,padding:"8px 12px"}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
@@ -924,7 +948,7 @@ export default function App(){
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:12,marginBottom:12}}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🚨 Alertas operativas</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-            {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <div key={r[0]} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 6px",textAlign:"center"}}><div style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{r[1]}</div><div style={{fontSize:10,color:"#64748b"}}>{r[0]}</div></div>;})}
+            {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <button key={r[0]} onClick={function(){onAlertClick(r[0]);}} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 6px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{r[1]}</div><div style={{fontSize:10,color:"#64748b"}}>{r[0]}</div></button>;})}
           </div>
         </div>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
