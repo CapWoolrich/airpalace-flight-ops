@@ -1,51 +1,11 @@
 import { buildOperationalEmail } from "./_emailTemplate.js";
 import { buildFlightIcs } from "./_calendarInvite.js";
-
-function parseCsvEmails(raw) {
-  return String(raw || "")
-    .split(",")
-    .map((v) => v.trim().toLowerCase())
-    .filter((v) => !!v && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v));
-}
+import { computeEmailRecipients, parseCsvEmails } from "./_emailRecipients.js";
 
 function uniq(arr) {
   return Array.from(new Set(arr));
 }
 
-const ROUTING = {
-  flight_created: ["ops", "pilots", "owners"],
-  flight_updated: ["ops", "pilots", "owners"],
-  flight_cancelled: ["ops", "pilots", "owners"],
-  aircraft_aog: ["ops"],
-  aircraft_maintenance: ["ops"],
-  operational_conflict: ["ops"],
-  tomorrow_flight_reminder: ["ops", "pilots"],
-};
-
-const OWNER_BY_REQUESTOR = {
-  "jabib c": "jachapur@thepalacecompany.com",
-  "anuar c": "achapur@thepalacecompany.com",
-  "omar c": "ochapur@thepalacecompany.com",
-  "gibran c": "gchapur@thepalacecompany.com",
-  "jose c": "jchapur@thepalacecompany.com",
-};
-
-function mappedOwnerForRequestor(rb) {
-  const key = String(rb || "").trim().toLowerCase();
-  return OWNER_BY_REQUESTOR[key] || null;
-}
-
-function recipientsFromGroups(eventType, payload = {}) {
-  const groups = {
-    ops: parseCsvEmails(process.env.OPS_EMAILS),
-    pilots: parseCsvEmails(process.env.PILOTS_EMAILS),
-  };
-  const route = ROUTING[eventType] || [];
-  const base = route.flatMap((g) => groups[g] || []);
-  const includeRequestorOwner = ["flight_created", "flight_updated", "flight_cancelled", "tomorrow_flight_reminder"].includes(eventType);
-  const ownerEmail = includeRequestorOwner ? mappedOwnerForRequestor(payload?.rb) : null;
-  return uniq(ownerEmail ? base.concat(ownerEmail) : base);
-}
 
 function missingEnvError() {
   if (!process.env.RESEND_API_KEY) return "Falta configurar RESEND_API_KEY.";
@@ -66,9 +26,9 @@ export async function sendOperationalEmail({
   const recipients = uniq(
     recipientsOverride?.length
       ? recipientsOverride
-      : opsOnly
+        : opsOnly
         ? parseCsvEmails(process.env.OPS_EMAILS)
-        : recipientsFromGroups(eventType, payload)
+        : computeEmailRecipients({ eventType, requestor: payload?.rb, env: process.env }).finalRecipients
   );
 
   if (!recipients.length) {

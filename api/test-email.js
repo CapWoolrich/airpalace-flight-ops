@@ -1,22 +1,15 @@
 import { sendOperationalEmail } from "./_emailSender.js";
-
-const OWNER_BY_REQUESTOR = {
-  "jabib c": "jachapur@thepalacecompany.com",
-  "anuar c": "achapur@thepalacecompany.com",
-  "omar c": "ochapur@thepalacecompany.com",
-  "gibran c": "gchapur@thepalacecompany.com",
-  "jose c": "jchapur@thepalacecompany.com",
-};
-
-function parseCsv(raw) {
-  return String(raw || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean);
-}
+import { computeEmailRecipients } from "./_emailRecipients.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ error: "Método no permitido." });
   const requestor = String(req.body?.requestor || req.query?.requestor || "Jabib C");
-  const mapped = OWNER_BY_REQUESTOR[requestor.trim().toLowerCase()] || null;
-  const recipients = Array.from(new Set(parseCsv(process.env.OPS_EMAILS).concat(mapped ? [mapped] : [])));
+  const routingPreview = computeEmailRecipients({
+    eventType: "flight_created",
+    requestor,
+    env: process.env,
+  });
+  const recipients = routingPreview.finalRecipients;
 
   const result = await sendOperationalEmail({
     eventType: "flight_created",
@@ -49,7 +42,7 @@ export default async function handler(req, res) {
     warning: result.warning || null,
     message: "Prueba de correo ejecutada.",
     requestor,
-    mapped_owner_email: mapped,
+    mapped_owner_email: routingPreview.ownerRecipient,
     from: process.env.EMAIL_FROM || null,
     reply_to: process.env.EMAIL_REPLY_TO || null,
     attempted: result.attempted,
