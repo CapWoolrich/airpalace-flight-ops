@@ -83,6 +83,13 @@ export default function AuthGate({ children }) {
             boxShadow: "0 10px 30px rgba(0,0,0,.25)",
           }}
         >
+          <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
+            <img
+              src="/logo-192.png"
+              alt="AirPalace"
+              style={{width:54,height:54,borderRadius:12,border:"1px solid #334155",objectFit:"cover"}}
+            />
+          </div>
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>AirPalace Login</h2>
 
           <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
