@@ -1,5 +1,6 @@
 import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
+import { buildOpsPush } from "../lib/opsNotifications";
 
 function createFlightLegs(payload, routeResult) {
   const creatorMeta = payload.creator_meta || {};
@@ -45,9 +46,9 @@ export async function executeAgentAction(agentResult, options = {}) {
   const calcRoute = options.calcRoute;
 
   async function safeInsert(rows) {
-    const first = await supabase.from("flights").insert(rows);
+    const first = await supabase.from("flights").insert(rows).select("*");
     if (first.error) throw first.error;
-    return true;
+    return first.data || [];
   }
 
   async function sendWhatsApp(flight) {
@@ -63,14 +64,29 @@ export async function executeAgentAction(agentResult, options = {}) {
     return payload.warning || null;
   }
 
-  async function sendPush(title, body) {
+  async function sendPush(title, body, url) {
     try {
       await fetch("/api/send-push-notification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body, url: "/" }),
+        body: JSON.stringify({ title, body, url: url || "/" }),
       });
     } catch {}
+  }
+
+  async function sendEmail(eventType, payload) {
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventType, payload }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) return data.error || "No se pudo enviar correo.";
+      return data.warning || null;
+    } catch (e) {
+      return e?.message || "No se pudo enviar correo.";
+    }
   }
 
   switch (result.action) {
@@ -85,10 +101,18 @@ export async function executeAgentAction(agentResult, options = {}) {
         : null;
 
       const legs = createFlightLegs(payload, routeResult);
-      await safeInsert(legs);
-      const waError = await sendWhatsApp(legs[0]);
-      await sendPush("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time || "STBY"}`);
-      return { ok: true, message: "Vuelo creado correctamente.", warning: waError };
+      const insertedLegs = await safeInsert(legs);
+      const primaryLeg = insertedLegs[0] || legs[0];
+      const waError = await sendWhatsApp(primaryLeg);
+      const emailWarning = await sendEmail("flight_created", {
+        event_label: "Vuelo programado",
+        ...primaryLeg,
+        flight_id: primaryLeg?.id || null,
+        block_minutes: routeResult?.bm || 60,
+      });
+      const programmedPush = buildOpsPush("flight_programmed", primaryLeg);
+      await sendPush(programmedPush.title, programmedPush.body, programmedPush.url);
+      return { ok: true, message: "Vuelo creado correctamente.", warning: [waError, emailWarning].filter(Boolean).join(" | ") || null };
     }
 
     case "edit_flight": {
@@ -108,8 +132,25 @@ export async function executeAgentAction(agentResult, options = {}) {
         time: updates.time || payload.time,
         rb: updates.rb || payload.rb,
       });
-      await sendPush("Vuelo modificado", `${updates.ac || payload.ac} actualizado`);
-      return { ok: true, message: "Vuelo editado correctamente.", warning: waError };
+      const modifiedPush = buildOpsPush("flight_modified", {
+        ac: updates.ac || payload.ac,
+        orig: updates.orig || payload.orig,
+        dest: updates.dest || payload.dest,
+        date: updates.date || payload.date,
+        time: updates.time || payload.time,
+      });
+      await sendPush(modifiedPush.title, modifiedPush.body, modifiedPush.url);
+      const emailWarning = await sendEmail("flight_updated", {
+        event_label: "Vuelo modificado",
+        flight_id: payload.flight_id,
+        ac: updates.ac || payload.ac,
+        orig: updates.orig || payload.orig,
+        dest: updates.dest || payload.dest,
+        date: updates.date || payload.date,
+        time: updates.time || payload.time,
+        rb: updates.rb || payload.rb,
+      });
+      return { ok: true, message: "Vuelo editado correctamente.", warning: [waError, emailWarning].filter(Boolean).join(" | ") || null };
     }
 
     case "cancel_flight": {
@@ -118,7 +159,9 @@ export async function executeAgentAction(agentResult, options = {}) {
         .update({ st: "canc", updated_at: new Date().toISOString() })
         .eq("id", payload.flight_id);
       if (error) throw error;
-      await sendPush("Vuelo cancelado", `ID ${payload.flight_id} cancelado`);
+      const cancelledPush = buildOpsPush("flight_cancelled", { ac: payload.ac, orig: payload.orig, dest: payload.dest });
+      await sendPush(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+      await sendEmail("flight_cancelled", { event_label: "Vuelo cancelado", flight_id: payload.flight_id, ac: payload.ac, orig: payload.orig, dest: payload.dest, date: payload.date, time: payload.time, rb: payload.rb });
       return { ok: true, message: "Vuelo cancelado correctamente." };
     }
 
@@ -131,8 +174,16 @@ export async function executeAgentAction(agentResult, options = {}) {
         },
       ]);
       if (error) throw error;
-      if (payload.status_change === "aog") await sendPush("AOG", `Alerta AOG: ${payload.ac} quedó fuera de servicio.`);
-      if (payload.status_change === "mantenimiento") await sendPush("Mantenimiento", `${payload.ac} en mantenimiento.`);
+      if (payload.status_change === "aog") {
+        const aogPush = buildOpsPush("aog", { ac: payload.ac });
+        await sendPush(aogPush.title, aogPush.body, aogPush.url);
+        await sendEmail("aircraft_aog", { event_label: "AOG", ac: payload.ac });
+      }
+      if (payload.status_change === "mantenimiento") {
+        const maintPush = buildOpsPush("maintenance", { ac: payload.ac, maintenanceEndDate: payload.maintenance_end_date });
+        await sendPush(maintPush.title, maintPush.body, maintPush.url);
+        await sendEmail("aircraft_maintenance", { event_label: "Mantenimiento", ac: payload.ac, maintenance_end_date: payload.maintenance_end_date });
+      }
       return { ok: true, message: "Estado de aeronave actualizado." };
     }
 
