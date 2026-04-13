@@ -87,7 +87,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       const legs = createFlightLegs(payload, routeResult);
       await safeInsert(legs);
       const waError = await sendWhatsApp(legs[0]);
-      await sendPush("Vuelo creado (AI)", `${legs[0].ac} ${legs[0].orig} → ${legs[0].dest} (${legs[0].date})`);
+      await sendPush("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time || "STBY"}`);
       return { ok: true, message: "Vuelo creado correctamente.", warning: waError };
     }
 
@@ -108,7 +108,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         time: updates.time || payload.time,
         rb: updates.rb || payload.rb,
       });
-      await sendPush("Vuelo editado (AI)", `${updates.ac || payload.ac} actualizado`);
+      await sendPush("Vuelo modificado", `${updates.ac || payload.ac} actualizado`);
       return { ok: true, message: "Vuelo editado correctamente.", warning: waError };
     }
 
@@ -118,7 +118,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         .update({ st: "canc", updated_at: new Date().toISOString() })
         .eq("id", payload.flight_id);
       if (error) throw error;
-      await sendPush("Vuelo cancelado (AI)", `ID ${payload.flight_id} cancelado`);
+      await sendPush("Vuelo cancelado", `ID ${payload.flight_id} cancelado`);
       return { ok: true, message: "Vuelo cancelado correctamente." };
     }
 
@@ -131,7 +131,8 @@ export async function executeAgentAction(agentResult, options = {}) {
         },
       ]);
       if (error) throw error;
-      await sendPush("Estado aeronave (AI)", `${payload.ac} en ${payload.status_change}`);
+      if (payload.status_change === "aog") await sendPush("AOG", `Alerta AOG: ${payload.ac} quedó fuera de servicio.`);
+      if (payload.status_change === "mantenimiento") await sendPush("Mantenimiento", `${payload.ac} en mantenimiento.`);
       return { ok: true, message: "Estado de aeronave actualizado." };
     }
 

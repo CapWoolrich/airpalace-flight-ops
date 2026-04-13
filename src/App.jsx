@@ -125,11 +125,18 @@ async function loadMaintFromDb() {
   if (error) throw error;
 
   const mapped = {};
+  const plan = {};
   (data || []).forEach((row) => {
     mapped[row.ac] = row.status;
+    if (row.maintenance_start_date || row.maintenance_end_date) {
+      plan[row.ac] = {
+        from: row.maintenance_start_date || "",
+        to: row.maintenance_end_date || "",
+      };
+    }
   });
 
-  return mapped;
+  return { statusByAc: mapped, planByAc: plan };
 }
 
 // ═══ STYLES ═══
@@ -293,6 +300,14 @@ export default function App(){
     }catch{}
   }
 
+  async function sendPushOnce(key, title, body) {
+    try {
+      if (localStorage.getItem(key) === "1") return;
+      await sendPushEvent(title, body);
+      localStorage.setItem(key, "1");
+    } catch {}
+  }
+
   useEffect(function () {
     (async function () {
       try {
@@ -308,7 +323,7 @@ export default function App(){
           setFsRaw(freshFlights);
         }
 
-        if (!Object.keys(freshMaint).length) {
+        if (!Object.keys(freshMaint.statusByAc).length) {
           const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
             ac,
             status,
@@ -317,9 +332,11 @@ export default function App(){
           const { error } = await supabase.from("aircraft_status").upsert(maintRows);
           if (error) throw error;
           const seededMaint = await loadMaintFromDb();
-          setMtRaw(seededMaint);
+          setMtRaw(seededMaint.statusByAc);
+          saveMaintPlan(Object.assign({},seededMaint.planByAc||{}));
         } else {
-          setMtRaw(freshMaint);
+          setMtRaw(freshMaint.statusByAc);
+          saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
         }
 
         setPhase("ready");
@@ -353,7 +370,8 @@ export default function App(){
         async () => {
           try {
             const freshMaint = await loadMaintFromDb();
-            setMtRaw(freshMaint);
+            setMtRaw(freshMaint.statusByAc);
+            if (Object.keys(freshMaint.planByAc || {}).length) saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
           } catch {}
         }
       )
@@ -407,15 +425,15 @@ export default function App(){
 
         await safeInsertFlights(legs);
         await autoSendWhatsApp(legs[0], "PROGRAMADO");
-        await sendPushEvent("Vuelo creado", `${legs[0].ac} ${legs[0].orig} → ${legs[0].dest} (${legs[0].date})`);
+        await sendPushEvent("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time||"STBY"}`);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
         await safeInsertFlights([created]);
         await autoSendWhatsApp(created, "PROGRAMADO");
-        await sendPushEvent("Vuelo creado", `${created.ac} ${created.orig} → ${created.dest} (${created.date})`);
+        await sendPushEvent("Vuelo programado", `${created.ac} · ${created.orig} → ${created.dest} · ${created.date} ${created.time||"STBY"}`);
       }
 
-      setNtf({ fl: flight, url: makeWaUrl(flight, "PROGRAMADO"), lbl: "PROGRAMADO" });
+      setNtf({ fl: flight, lbl: "PROGRAMADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
@@ -450,9 +468,9 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
-      await sendPushEvent("Vuelo editado", `${flight.ac} ${flight.orig} → ${flight.dest} (${flight.date})`);
+      await sendPushEvent("Vuelo modificado", `${flight.ac} · ${flight.orig} → ${flight.dest} · ${flight.time||"STBY"}`);
 
-      setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
+      setNtf({ fl: flight, lbl: "MODIFICADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
@@ -516,8 +534,8 @@ export default function App(){
           {
             ac: acId,
             status: newSt,
-            maintenance_from: newSt==="mantenimiento"?(maintPlan[acId]?.from||null):null,
-            maintenance_to: newSt==="mantenimiento"?(maintPlan[acId]?.to||null):null,
+            maintenance_start_date: newSt==="mantenimiento"?(maintPlan[acId]?.from||null):null,
+            maintenance_end_date: newSt==="mantenimiento"?(maintPlan[acId]?.to||null):null,
             updated_at: new Date().toISOString(),
           },
         ]);
@@ -528,8 +546,12 @@ export default function App(){
           .upsert([{ ac: acId, status: newSt, updated_at: new Date().toISOString() }]);
         if (fallbackError) throw fallbackError;
       }
-      if(newSt==="aog"||newSt==="mantenimiento"){
-        await sendPushEvent("Alerta de aeronave", `${acId} en ${newSt.toUpperCase()}`);
+      if(newSt==="aog"){
+        await sendPushEvent("AOG", `Alerta AOG: ${acId} quedó fuera de servicio.`);
+      }
+      if(newSt==="mantenimiento"){
+        var to=maintPlan[acId]?.to;
+        await sendPushEvent("Mantenimiento", `Mantenimiento: ${acId}${to?` en mantenimiento hasta ${new Date(to+"T12:00:00").toLocaleDateString("es-MX")}`:" en mantenimiento"}.`);
       }
 
       setPhase("saved");
@@ -709,7 +731,7 @@ export default function App(){
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
-  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs]);
+  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs,today]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -757,7 +779,7 @@ export default function App(){
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
     var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
     var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
-    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
     var pending=fs.filter(function(f){return f.st==="prog";}).length;
     return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
   },[fs,today,tomorrow,todayFs,pos,mt,maintPlan]);
@@ -780,6 +802,19 @@ export default function App(){
     });
     return {byReq,byAc,byDest,bySt,byMonth,byYear,hrsMonth,hrsYear,cancelled:filteredAnalytics.filter(function(f){return f.st==="canc";}).length};
   },[filteredAnalytics]);
+
+  useEffect(function(){
+    if(conflictList.length>0){
+      var ac=conflictList[0]?.ac||"Aeronave";
+      sendPushOnce("push_conflict_"+today,"Conflicto operativo",`Conflicto operativo detectado en ${ac}.`);
+    }
+    var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);
+    var tomFlights=fs.filter(function(f){return f.date===t2&&f.st!=="canc";});
+    if(tomFlights.length>0){
+      var f0=tomFlights[0];
+      sendPushOnce("push_tomorrow_"+t2, "Vuelo de mañana", `Recordatorio: tienes un vuelo mañana en ${f0.ac}.`);
+    }
+  },[conflictList,fs,today]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
@@ -1046,7 +1081,7 @@ export default function App(){
           <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>✈️ {ntf.fl.orig} → {ntf.fl.dest} · {fdt(ntf.fl.date)}</div>
           <div style={{background:"#f0fdf4",borderRadius:12,padding:12,marginBottom:12,border:"1px solid #86efac"}}>
             <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:8}}>💬 WhatsApp</div>
-            <a href={ntf.url} target="_blank" rel="noreferrer" style={{display:"block",background:"#16a34a",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none"}}>📤 Enviar WhatsApp</a>
+            <button onClick={function(){autoSendWhatsApp(ntf.fl, ntf.lbl);}} style={{display:"block",width:"100%",background:"#16a34a",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none",border:"none",cursor:"pointer"}}>📤 Enviar WhatsApp</button>
           </div>
           <div style={{background:"#dbeafe",borderRadius:12,padding:12,border:"1px solid #93c5fd"}}>
             <div style={{fontSize:13,fontWeight:700,color:"#1d4ed8",marginBottom:8}}>📅 Calendario</div>
