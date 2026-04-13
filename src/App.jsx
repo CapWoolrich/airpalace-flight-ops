@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
+import { subscribeToPush } from "./lib/push";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -185,6 +186,7 @@ export default function App(){
   var[maintPlan,setMaintPlan]=useState(function(){
     try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
   });
+  var[pushState,setPushState]=useState("idle");
   var[recentAc,setRecentAc]=useState("all");
   var[recentCreator,setRecentCreator]=useState("all");
   var[recentDate,setRecentDate]=useState("30d");
@@ -208,7 +210,14 @@ export default function App(){
 
   function getCreatorLabel(f) {
     var m=String(f.nt||"").match(/\[By:\s*([^\]]+)\]/i);
-    return m&&m[1]?m[1].trim():"Por sistema";
+    return m&&m[1]?prettyName(m[1].trim()):"Por sistema";
+  }
+
+  function prettyName(v){
+    var raw=String(v||"").trim();
+    if(!raw)return"";
+    var local=raw.includes("@")?raw.split("@")[0]:raw;
+    return local.split(/[._\-\s]+/).filter(Boolean).map(function(p){return p.charAt(0).toUpperCase()+p.slice(1);}).join(" ");
   }
 
   function noteWithActor(note, actor) {
@@ -270,6 +279,12 @@ export default function App(){
       setPhase("error");
       setTimeout(function(){setPhase("ready");}, 2200);
     }
+  }
+
+  async function sendPushEvent(title, body){
+    try{
+      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:"/"})});
+    }catch{}
   }
 
   useEffect(function () {
@@ -386,10 +401,12 @@ export default function App(){
 
         await safeInsertFlights(legs);
         await autoSendWhatsApp(legs[0], "PROGRAMADO");
+        await sendPushEvent("Vuelo creado", `${legs[0].ac} ${legs[0].orig} → ${legs[0].dest} (${legs[0].date})`);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
         await safeInsertFlights([created]);
         await autoSendWhatsApp(created, "PROGRAMADO");
+        await sendPushEvent("Vuelo creado", `${created.ac} ${created.orig} → ${created.dest} (${created.date})`);
       }
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "PROGRAMADO"), lbl: "PROGRAMADO" });
@@ -427,6 +444,7 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
+      await sendPushEvent("Vuelo editado", `${flight.ac} ${flight.orig} → ${flight.dest} (${flight.date})`);
 
       setNtf({ fl: flight, url: makeWaUrl(flight, "MODIFICADO"), lbl: "MODIFICADO" });
       setSf(false);
@@ -450,6 +468,7 @@ export default function App(){
         .eq("id", id);
 
       if (error) throw error;
+      await sendPushEvent("Vuelo cancelado", `ID ${id} marcado como cancelado.`);
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -502,6 +521,9 @@ export default function App(){
           .from("aircraft_status")
           .upsert([{ ac: acId, status: newSt, updated_at: new Date().toISOString() }]);
         if (fallbackError) throw fallbackError;
+      }
+      if(newSt==="aog"||newSt==="mantenimiento"){
+        await sendPushEvent("Alerta de aeronave", `${acId} en ${newSt.toUpperCase()}`);
       }
 
       setPhase("saved");
@@ -571,6 +593,26 @@ export default function App(){
       setPhase("error");
     } finally {
       setAgentBusy(false);
+    }
+  }
+
+  async function enablePushNotifications(){
+    if(!import.meta.env.VITE_VAPID_PUBLIC_KEY){
+      setPushState("error");
+      setErrMsg("Falta VITE_VAPID_PUBLIC_KEY para notificaciones push.");
+      setPhase("error");
+      return;
+    }
+    setPushState("saving");
+    try{
+      const sub=await subscribeToPush(import.meta.env.VITE_VAPID_PUBLIC_KEY);
+      const r=await fetch("/api/save-push-subscription",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
+      if(!r.ok){const d=await r.json().catch(function(){return{};});throw new Error(d.error||`HTTP ${r.status}`);}
+      setPushState("ok");
+    }catch(e){
+      setPushState("error");
+      setErrMsg(e.message||String(e));
+      setPhase("error");
     }
   }
 
@@ -740,6 +782,11 @@ export default function App(){
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
       </div>}
+      <div style={{padding:"0 14px 8px"}}>
+        <button onClick={enablePushNotifications} style={{width:"100%",padding:"8px 10px",border:"1px solid #334155",borderRadius:10,background:"#fff",fontSize:11,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
+          {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
+        </button>
+      </div>
 
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:14,marginBottom:14}}>
@@ -793,9 +840,10 @@ export default function App(){
         :upcoming.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
           <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
             <div style={{background:"rgba(255,255,255,.95)",borderLeft:"4px solid "+a.clr,borderRadius:10,padding:"8px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a></div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
               <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
               <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
+              <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
               {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
             </div></div>);})}
       </div>}
@@ -959,6 +1007,7 @@ export default function App(){
           <label style={LS}>Programado/Editado por</label>
           <input type="text" placeholder="Nombre o correo" value={actorName} onChange={function(e){setActorName(e.target.value);}} style={IS}/>
           <button onClick={handleSave} disabled={!nf.orig||!nf.dest||!nf.time||!nf.rb||phase==="saving"} style={{width:"100%",padding:15,border:"none",borderRadius:14,fontSize:16,fontWeight:700,cursor:"pointer",marginTop:10,background:nf.orig&&nf.dest&&nf.time&&nf.rb?"#0f172a":"#cbd5e1",color:"#fff"}}>{phase==="saving"?"⏳ Guardando...":editId!==null?"✅ Guardar cambios":"✈️ Programar vuelo"}</button>
+          {editId!==null&&<button onClick={function(){if(confirm("¿Cancelar este vuelo?"))chgStatus(editId,"canc");setSf(false);}} style={{width:"100%",padding:12,border:"1.5px solid #dc2626",borderRadius:12,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:8,background:"#fff",color:"#dc2626"}}>❌ Cancelar vuelo</button>}
         </div>
       </div>}
 

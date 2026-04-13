@@ -63,6 +63,16 @@ export async function executeAgentAction(agentResult, options = {}) {
     return null;
   }
 
+  async function sendPush(title, body) {
+    try {
+      await fetch("/api/send-push-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, url: "/" }),
+      });
+    } catch {}
+  }
+
   switch (result.action) {
     case "create_flight": {
       payload.creator_meta = options.creatorMeta || payload.creator_meta || {};
@@ -77,6 +87,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       const legs = createFlightLegs(payload, routeResult);
       await safeInsert(legs);
       const waError = await sendWhatsApp(legs[0]);
+      await sendPush("Vuelo creado (AI)", `${legs[0].ac} ${legs[0].orig} → ${legs[0].dest} (${legs[0].date})`);
       return { ok: true, message: "Vuelo creado correctamente.", warning: waError };
     }
 
@@ -97,6 +108,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         time: updates.time || payload.time,
         rb: updates.rb || payload.rb,
       });
+      await sendPush("Vuelo editado (AI)", `${updates.ac || payload.ac} actualizado`);
       return { ok: true, message: "Vuelo editado correctamente.", warning: waError };
     }
 
@@ -106,6 +118,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         .update({ st: "canc", updated_at: new Date().toISOString() })
         .eq("id", payload.flight_id);
       if (error) throw error;
+      await sendPush("Vuelo cancelado (AI)", `ID ${payload.flight_id} cancelado`);
       return { ok: true, message: "Vuelo cancelado correctamente." };
     }
 
@@ -118,6 +131,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         },
       ]);
       if (error) throw error;
+      await sendPush("Estado aeronave (AI)", `${payload.ac} en ${payload.status_change}`);
       return { ok: true, message: "Estado de aeronave actualizado." };
     }
 
