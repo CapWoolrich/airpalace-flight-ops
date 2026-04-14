@@ -31,6 +31,6 @@ export function computeEmailRecipients({ eventType, requestor, env = process.env
     opsRecipients,
     pilotRecipients,
     finalRecipients,
-    ruleSummary: "Enrutamiento activo para Ops/Pilots. Destinatarios owner deshabilitados.",
+    ruleSummary: "Enrutamiento activo para Ops/Pilots.",
   };
 }

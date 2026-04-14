@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     opsRecipients: preview.opsRecipients,
     pilotRecipients: preview.pilotRecipients,
     finalRecipients: preview.finalRecipients,
-    ownerRuleCheck: "Owner/requestor emails deshabilitados.",
+    routingCheck: "Enrutamiento limitado a Ops/Pilots.",
     explanation: preview.ruleSummary,
   });
 }
