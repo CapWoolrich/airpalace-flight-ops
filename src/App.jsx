@@ -422,7 +422,7 @@ export default function App(){
           try {
             const freshMaint = await loadMaintFromDb();
             setMtRaw(freshMaint.statusByAc);
-            if (Object.keys(freshMaint.planByAc || {}).length) saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
+            saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
           } catch {}
         }
       )
@@ -601,24 +601,24 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const payload = {
+        ac: acId,
+        status: newSt,
+        maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
+        maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
+        updated_at: new Date().toISOString(),
+      };
       const { error } = await supabase
         .from("aircraft_status")
-        .upsert([
-          {
-            ac: acId,
-            status: newSt,
-            maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
-            maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
-            updated_at: new Date().toISOString(),
-          },
-        ]);
+        .upsert([payload]);
 
       if (error) {
-        const { error: fallbackError } = await supabase
-          .from("aircraft_status")
-          .upsert([{ ac: acId, status: newSt, updated_at: new Date().toISOString() }]);
-        if (fallbackError) throw fallbackError;
+        if (String(error.message || "").toLowerCase().includes("maintenance_start_date") || String(error.message || "").toLowerCase().includes("maintenance_end_date")) {
+          throw new Error("Faltan columnas de persistencia en aircraft_status. Ejecuta la migración que agrega maintenance_start_date y maintenance_end_date.");
+        }
+        throw error;
       }
+      setMtRaw(function(prev){return Object.assign({},prev,{[acId]:newSt});});
       if(newSt==="aog"){
         var aogPush=buildOpsPush("aog",{ac:acId});
         await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
@@ -638,18 +638,21 @@ export default function App(){
     }
   }
 
-  async function persistMaintenanceDates(acId, nextPlanForAc) {
+  async function persistMaintenanceDates(acId, nextPlanForAc, statusOverride) {
     try {
       await supabase.from("aircraft_status").upsert([
         {
           ac: acId,
-          status: mt[acId] || "disponible",
+          status: statusOverride || mt[acId] || "disponible",
           maintenance_start_date: nextPlanForAc?.from || null,
           maintenance_end_date: nextPlanForAc?.to || null,
           updated_at: new Date().toISOString(),
         },
       ]);
-    } catch {}
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
   }
 
   async function restore() {
@@ -1091,8 +1094,8 @@ export default function App(){
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
-                <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
-                <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next);}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
               <div style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
