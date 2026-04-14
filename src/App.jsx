@@ -436,12 +436,11 @@ export default function App(){
 
   async function addFlight(flight) {
     const aircraftStatus = getAcStatus(flight.ac, flight.date);
-
-    if (aircraftStatus === "aog" || aircraftStatus === "mantenimiento") {
-      setErrMsg(`La aeronave ${flight.ac} está en ${aircraftStatus.toUpperCase()}`);
-      setPhase("error");
-      return;
-    }
+    const outOfServiceWarning = aircraftStatus === "aog"
+      ? `Advertencia: la aeronave ${flight.ac} actualmente se encuentra fuera de servicio (AOG). El vuelo puede programarse, pero deberá verificarse su disponibilidad antes de la operación.`
+      : aircraftStatus === "mantenimiento"
+        ? `Advertencia: la aeronave ${flight.ac} actualmente está en mantenimiento. El vuelo puede programarse, pero su disponibilidad deberá confirmarse antes de la fecha de salida.`
+        : "";
 
     setPhase("saving");
     const creatorMeta = getCreatorMeta("manual");
@@ -494,8 +493,14 @@ export default function App(){
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
-      setPhase("saved");
-      setTimeout(() => setPhase("ready"), 1500);
+      if (outOfServiceWarning) {
+        setErrMsg(outOfServiceWarning);
+        setPhase("warn");
+        setTimeout(() => setPhase("ready"), 2200);
+      } else {
+        setPhase("saved");
+        setTimeout(() => setPhase("ready"), 1500);
+      }
     } catch (e) {
       setErrMsg(toErrorMessage(e));
       setPhase("error");
@@ -602,8 +607,8 @@ export default function App(){
           {
             ac: acId,
             status: newSt,
-            maintenance_start_date: newSt==="mantenimiento"?(maintPlan[acId]?.from||null):null,
-            maintenance_end_date: newSt==="mantenimiento"?(maintPlan[acId]?.to||null):null,
+            maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
+            maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
             updated_at: new Date().toISOString(),
           },
         ]);
