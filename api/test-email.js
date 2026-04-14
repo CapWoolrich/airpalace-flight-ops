@@ -42,7 +42,6 @@ export default async function handler(req, res) {
     warning: result.warning || null,
     message: "Prueba de correo ejecutada.",
     requestor,
-    mapped_owner_email: routingPreview.ownerRecipient,
     from: process.env.EMAIL_FROM || null,
     reply_to: process.env.EMAIL_REPLY_TO || null,
     attempted: result.attempted,

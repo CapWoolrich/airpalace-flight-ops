@@ -913,8 +913,7 @@ export default function App(){
 
       <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src="/logo-192.png" alt="AirPalace" style={{width:30,height:30,borderRadius:8,objectFit:"cover",border:"1px solid #334155"}}/>
+          <div style={{display:"flex",alignItems:"center"}}>
             <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
           </div>
         </div>

@@ -36,13 +36,10 @@ export default async function handler(req, res) {
     verificationOnly: true,
     requestor: preview.requestor,
     eventType: preview.eventType,
-    ownerRecipient: preview.ownerRecipient,
     opsRecipients: preview.opsRecipients,
     pilotRecipients: preview.pilotRecipients,
     finalRecipients: preview.finalRecipients,
-    ownerRuleCheck: preview.ownerRecipient
-      ? "Incluye solo el owner mapeado del requestor."
-      : "No se incluyó owner por falta de mapeo o por regla del evento.",
+    ownerRuleCheck: "Owner/requestor emails deshabilitados.",
     explanation: preview.ruleSummary,
   });
 }
