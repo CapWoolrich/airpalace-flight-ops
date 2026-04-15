@@ -4,6 +4,7 @@ import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
 import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflictUtils";
+import { getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 
@@ -219,7 +220,7 @@ export default function App(){
   var[anMonth,setAnMonth]=useState("all");
   var[anYear,setAnYear]=useState(String(new Date().getFullYear()));
   var[listAlertFilter,setListAlertFilter]=useState("all");
-  var today=tds(new Date());
+  var today=getOperationalTodayISO();
 
   function toErrorMessage(e) {
     if (!e) return "Error desconocido";
@@ -1131,7 +1132,7 @@ export default function App(){
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
-    if(listAlertFilter==="tomorrow"){var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);return fs.filter(function(f){return f.date===t2&&f.st!=="canc";});}
+    if(listAlertFilter==="tomorrow"){var t2=getOperationalTomorrowISO();return fs.filter(function(f){return f.date===t2&&f.st!=="canc";});}
     if(listAlertFilter==="pending")return fs.filter(function(f){return f.st==="prog";});
     return upcoming;
   },[listAlertFilter,conflictList,fs,today,upcoming]);
@@ -1169,7 +1170,7 @@ export default function App(){
   var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
   var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
   var requestsByPerson=useMemo(function(){var o={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=f.rb||"No disponible";o[k]=(o[k]||0)+1;});return Object.entries(o).sort(function(a,b){return b[1]-a[1];});},[fs]);
-  var tomorrow=useMemo(function(){var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);return tds(d);},[today]);
+  var tomorrow=getOperationalTomorrowISO();
   var opsAlerts=useMemo(function(){
     var unavailable=Object.keys(AC).filter(function(id){return getAcStatus(id,today)!=="disponible";});
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
@@ -1205,14 +1206,13 @@ export default function App(){
       var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
       sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
     }
-    var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);
-    var tomFlights=fs.filter(function(f){return f.date===t2&&f.st!=="canc";});
+    var tomFlights=fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";});
     if(tomFlights.length>0){
       var f0=tomFlights[0];
       var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
-      sendPushOnce("push_tomorrow_"+t2, tomorrowPush.title, tomorrowPush.body);
+      sendPushOnce("push_tomorrow_"+tomorrow, tomorrowPush.title, tomorrowPush.body);
     }
-  },[conflictList,fs,today]);
+  },[conflictList,fs,today,tomorrow]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
