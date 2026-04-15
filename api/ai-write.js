@@ -45,6 +45,55 @@ function validatePayload(action, payload = {}) {
   return null;
 }
 
+function cleanText(v) {
+  return String(v || "").trim().toLowerCase();
+}
+
+async function resolveFlightId(supabase, action, payload = {}) {
+  if (payload.flight_id) return { flightId: payload.flight_id, candidates: [] };
+
+  const filters = {
+    date: payload.date || null,
+    ac: payload.ac || null,
+    orig: payload.orig || null,
+    dest: payload.dest || null,
+    rb: payload.rb || null,
+    time: payload.time || null,
+  };
+
+  const hasAnyFilter = Object.values(filters).some(Boolean);
+  if (!hasAnyFilter) return { flightId: null, candidates: [] };
+
+  let query = supabase
+    .from("flights")
+    .select("id, date, time, ac, orig, dest, rb, st")
+    .neq("st", "canc")
+    .order("date", { ascending: true })
+    .order("time", { ascending: true })
+    .limit(25);
+
+  if (filters.date) query = query.eq("date", filters.date);
+  if (filters.ac) query = query.eq("ac", filters.ac);
+  if (filters.orig) query = query.ilike("orig", filters.orig);
+  if (filters.dest) query = query.ilike("dest", filters.dest);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  let candidates = (data || []).filter((f) => {
+    if (filters.rb && cleanText(f.rb) !== cleanText(filters.rb)) return false;
+    if (filters.time && String(f.time || "") !== String(filters.time || "")) return false;
+    return true;
+  });
+
+  if (action === "cancel_flight") {
+    candidates = candidates.filter((f) => String(f.st || "") !== "canc");
+  }
+
+  if (candidates.length === 1) return { flightId: candidates[0].id, candidates };
+  return { flightId: null, candidates };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
   const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
