@@ -197,6 +197,7 @@ export default function App(){
   var[agentMessages,setAgentMessages]=useState([{role:"assistant",text:"¿En qué te puedo ayudar hoy? Puedo ayudarte a programar vuelos, consultar agenda, revisar aeronaves y responder dudas operativas.",ts:new Date().toISOString()}]);
   var[recorder,setRecorder]=useState(null);
   var[speechRec,setSpeechRec]=useState(null);
+  var liveAnalyzeTimerRef=useRef(null);
   var[maintPlan,setMaintPlan]=useState(function(){
     try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
   });
@@ -437,6 +438,12 @@ export default function App(){
       supabase.removeChannel(maintChannel);
     };
   }, []);
+
+  useEffect(function(){
+    return function(){
+      if (liveAnalyzeTimerRef.current) clearTimeout(liveAnalyzeTimerRef.current);
+    };
+  },[]);
 
   async function addFlight(flight) {
     const aircraftStatus = getAcStatus(flight.ac, flight.date);
@@ -737,6 +744,15 @@ export default function App(){
     }
   }
 
+  function queueLiveAnalyze(nextInstruction) {
+    try {
+      if (liveAnalyzeTimerRef.current) clearTimeout(liveAnalyzeTimerRef.current);
+      liveAnalyzeTimerRef.current = setTimeout(function () {
+        if (!agentBusy && String(nextInstruction || "").trim()) analyzeAgentInstruction();
+      }, 900);
+    } catch {}
+  }
+
   function speakAssistant(text){
     try{
       if(!text||typeof window==="undefined"||!("speechSynthesis" in window))return;
@@ -848,6 +864,7 @@ export default function App(){
           if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
           setAgentInstruction(function(prev){
             const next = `${String(prev||"").trim()} ${finalText.trim()}`.trim();
+            queueLiveAnalyze(next);
             return next;
           });
           setAgentLiveTranscript("");
