@@ -800,7 +800,7 @@ export default function App(){
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           instructions:
-            "Eres AI Pilot de AirPalace. Habla en español profesional y breve. Pide aclaraciones cuando falten datos. No inventes NOTAMs.",
+            "Actúa como front-end de transcripción en tiempo real para AI Pilot. Tu tarea principal es transcribir en español/inglés aeronáutico con alta precisión. No ejecutes acciones operativas por tu cuenta.",
         }),
       });
       const session = await sessionResp.json().catch(function(){return{};});
@@ -839,10 +839,21 @@ export default function App(){
             setAgentVoiceState("listening");
           } else if (msg.type === "response.created") {
             setAgentVoiceState("thinking");
-          } else if (msg.type === "response.audio.delta") {
-            setAgentVoiceState("speaking");
           } else if (msg.type === "response.audio_transcript.delta") {
             setRealtimeText(function(prev){return `${prev}${msg.delta || ""}`.slice(-3000);});
+          } else if (msg.type === "response.audio_transcript.done" && msg.transcript) {
+            const transcript = String(msg.transcript || "").trim();
+            if (transcript) {
+              setAgentInstruction(transcript);
+              queueLiveAnalyze(transcript);
+            }
+            setAgentVoiceState("thinking");
+          } else if (msg.type === "conversation.item.input_audio_transcription.completed" && msg.transcript) {
+            const transcript2 = String(msg.transcript || "").trim();
+            if (transcript2) {
+              setAgentInstruction(transcript2);
+              queueLiveAnalyze(transcript2);
+            }
           } else if (msg.type === "response.done") {
             setAgentVoiceState("idle");
           }
