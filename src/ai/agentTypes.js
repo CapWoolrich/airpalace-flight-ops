@@ -21,6 +21,7 @@ export const EMPTY_AGENT_RESULT = {
   human_summary: "",
   payload: {
     flight_id: null,
+    flight_selector: null,
     date: null,
     ac: null,
     orig: null,
@@ -34,6 +35,8 @@ export const EMPTY_AGENT_RESULT = {
     bg: 0,
     st: "prog",
     status_change: null,
+    maintenance_start_date: null,
+    maintenance_end_date: null,
     airport_code: null,
     query_scope: null,
   },

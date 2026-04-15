@@ -32,6 +32,33 @@ function overlapsByOperationalWindow(baseTime, otherTime, windowMinutes = 90) {
   return Math.abs(a - b) < windowMinutes;
 }
 
+async function resolveFlightReference(payload = {}, action = "edit_flight") {
+  const hasSelectors = Boolean(payload.date || payload.ac || payload.orig || payload.dest || payload.rb || payload.time);
+  if (!hasSelectors) return { flightId: null, candidates: [] };
+
+  let q = supabase
+    .from("flights")
+    .select("id, date, time, ac, orig, dest, rb, st")
+    .neq("st", "canc")
+    .order("date", { ascending: true })
+    .order("time", { ascending: true })
+    .limit(20);
+
+  if (payload.date) q = q.eq("date", payload.date);
+  if (payload.ac) q = q.eq("ac", payload.ac);
+  if (payload.orig) q = q.ilike("orig", payload.orig);
+  if (payload.dest) q = q.ilike("dest", payload.dest);
+
+  const { data } = await q;
+  let candidates = (data || []).filter((f) => {
+    if (payload.rb && String(f.rb || "").toLowerCase() !== String(payload.rb || "").toLowerCase()) return false;
+    if (payload.time && String(f.time || "") !== String(payload.time || "")) return false;
+    return true;
+  });
+  if (action === "cancel_flight") candidates = candidates.filter((f) => String(f.st || "") !== "canc");
+  return { flightId: candidates.length === 1 ? candidates[0].id : null, candidates };
+}
+
 async function getLastKnownPosition(ac) {
   const today = getOperationalTodayISO();
   const { data } = await supabase
@@ -143,11 +170,29 @@ export async function validateAgentResult(agentResult, instruction = "") {
   }
 
   if (result.action === "edit_flight" && !result.payload.flight_id) {
-    result.errors.push("edit_flight requiere flight_id.");
+    const resolved = await resolveFlightReference(result.payload, "edit_flight");
+    if (resolved.flightId) {
+      result.payload.flight_id = resolved.flightId;
+      result.warnings.push("Resolví el vuelo a editar por fecha/ruta/aeronave. Verifica antes de confirmar.");
+    } else if (resolved.candidates.length > 1) {
+      result.errors.push(`Encontré ${resolved.candidates.length} vuelos posibles para editar; necesito más precisión.`);
+      result.missing_fields = Array.from(new Set([...(result.missing_fields || []), "flight_selector"]));
+    } else {
+      result.errors.push("edit_flight requiere flight_id.");
+    }
   }
 
   if (result.action === "cancel_flight" && !result.payload.flight_id) {
-    result.errors.push("cancel_flight requiere flight_id.");
+    const resolved = await resolveFlightReference(result.payload, "cancel_flight");
+    if (resolved.flightId) {
+      result.payload.flight_id = resolved.flightId;
+      result.warnings.push("Resolví el vuelo a cancelar por fecha/ruta/aeronave. Verifica antes de confirmar.");
+    } else if (resolved.candidates.length > 1) {
+      result.errors.push(`Encontré ${resolved.candidates.length} vuelos posibles para cancelar; necesito más precisión.`);
+      result.missing_fields = Array.from(new Set([...(result.missing_fields || []), "flight_selector"]));
+    } else {
+      result.errors.push("cancel_flight requiere flight_id.");
+    }
   }
 
   const friendlyMap = {
@@ -157,6 +202,7 @@ export async function validateAgentResult(agentResult, instruction = "") {
     dest: "Falta el aeropuerto de destino.",
     time: "Falta indicar la hora de salida.",
     rb: "Falta indicar quién solicita el vuelo.",
+    flight_selector: "Necesito más detalle para identificar el vuelo (fecha, hora, ruta o aeronave).",
     airport_code: "Necesito el código ICAO del aeropuerto para consultar NOTAM/restricciones.",
   };
   const clarification_prompts = (result.missing_fields || []).map((f) => friendlyMap[f] || `Falta información: ${f}.`);

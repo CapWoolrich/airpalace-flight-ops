@@ -7,6 +7,7 @@ import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflict
 import { getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
+import { buildAircraftStatusMutation, buildAuditMeta, withFlightCreateMeta, withFlightUpdateMeta } from "./lib/opsMutationBuilders";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -77,7 +78,7 @@ function calcR(orig,dest,id,px,bg){
   for(var i=0;i<FSTOPS.length;i++){var s=FSTOPS[i];if(s.c===orig||s.c===dest)continue;var l1=hv(oa.la,oa.lo,s.la,s.lo),l2=hv(s.la,s.lo,da.la,da.lo),f1=l1*RF/a.kts*a.gph*1.1,f2=l2*RF/a.kts*a.gph*1.1;if(f1<=a.maxGal&&f2<=a.maxGal&&l1+l2<bt){bt=l1+l2;bs={c:s.c,i4:s.i4,bm1:Math.round(l1*RF/a.kts*60+BLK),bm2:Math.round(l2*RF/a.kts*60+BLK)};}}
   return{dir:false,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:bs?[bs]:[]};
 }
-function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
+function getPos(fs, todayIso){var t=todayIso||getOperationalTodayISO(),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
 function apTz(ap){if(!ap)return null;var i4=String(ap.i4||"").toUpperCase(),i3=String(ap.i3||"").toUpperCase(),city=String(ap.c||"").toLowerCase();if(i4==="MMMD"||i3==="MID"||city.indexOf("merida")>=0||city.indexOf("mérida")>=0)return"America/Merida";if(i4==="MMUN"||i3==="CUN"||city.indexOf("cancun")>=0||city.indexOf("cancún")>=0)return"America/Cancun";if(i4==="MMCZ"||i3==="CZM"||city.indexOf("cozumel")>=0)return"America/Cancun";if(i4==="MMTO"||i3==="TLC"||city.indexOf("toluca")>=0)return"America/Mexico_City";if(i4==="MMMX"||i3==="MEX"||city.indexOf("cdmx")>=0||city.indexOf("mexico city")>=0)return"America/Mexico_City";if(i4==="KOPF"||i3==="OPF")return"America/New_York";if(i4==="KFLL"||i3==="FLL")return"America/New_York";if(i4==="KMIA"||i3==="MIA")return"America/New_York";if(i4==="KMCO"||i3==="MCO")return"America/New_York";var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
@@ -176,14 +177,16 @@ export default function App(){
   var[errMsg,setErrMsg]=useState("");
 
   var[vw,setVw]=useState("cal");
-  var[sel,setSel]=useState(tds(new Date()));
-  var[cM,setCM]=useState(new Date().getMonth());
-  var[cY,setCY]=useState(new Date().getFullYear());
+  var initialOpsDate=getOperationalTodayISO();
+  var initialOpsDateParts=initialOpsDate.split("-").map(function(v){return Number(v||0);});
+  var[sel,setSel]=useState(initialOpsDate);
+  var[cM,setCM]=useState(Math.max(0,(initialOpsDateParts[1]||1)-1));
+  var[cY,setCY]=useState(initialOpsDateParts[0]||new Date().getFullYear());
   var[sf,setSf]=useState(false);
   var[editId,setEditId]=useState(null);
   var[fa,setFa]=useState("all");
   var[ntf,setNtf]=useState(null);
-  var EF={ac:"N35EA",orig:"",dest:"",date:tds(new Date()),time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
+  var EF={ac:"N35EA",orig:"",dest:"",date:initialOpsDate,time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
   var[nf,setNf]=useState(EF);
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
   var[agentInstruction,setAgentInstruction]=useState("");
@@ -218,7 +221,7 @@ export default function App(){
   var[recentDate,setRecentDate]=useState("30d");
   var[recentSource,setRecentSource]=useState("all");
   var[anMonth,setAnMonth]=useState("all");
-  var[anYear,setAnYear]=useState(String(new Date().getFullYear()));
+  var[anYear,setAnYear]=useState(String(initialOpsDateParts[0]||new Date().getFullYear()));
   var[listAlertFilter,setListAlertFilter]=useState("all");
   var today=getOperationalTodayISO();
 
@@ -230,9 +233,12 @@ export default function App(){
   }
 
   function getCreatorMeta(source) {
-    return {
-      creation_source: source,
-    };
+    return buildAuditMeta({
+      source,
+      actorEmail: currentUser?.email || actorName || "",
+      actorName: currentUser?.user_metadata?.name || actorName || "",
+      actorUserId: currentUser?.id || "",
+    });
   }
 
   function isAgentWriteAction(action) {
@@ -491,19 +497,17 @@ export default function App(){
         const stop = rt.stops[0];
 
         const legs = [
-          {
+          withFlightCreateMeta({
             ...flight,
             dest: stop.c,
             nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
-            ...creatorMeta,
-          },
-          {
+          }, creatorMeta),
+          withFlightCreateMeta({
             ...flight,
             orig: stop.c,
             time: "STBY",
             nt: noteWithActor("Tras recarga", actorName),
-            ...creatorMeta,
-          },
+          }, creatorMeta),
         ];
 
         const insertedLegs = await safeInsertFlights(legs);
@@ -513,7 +517,7 @@ export default function App(){
         var programmedPush = buildOpsPush("flight_programmed", firstLeg);
         await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
-        const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
+        const created = withFlightCreateMeta({ ...flight, nt: noteWithActor(flight.nt, actorName) }, creatorMeta);
         const insertedSingle = await safeInsertFlights([created]);
         var createdSaved = insertedSingle[0] || created;
         await autoSendWhatsApp(createdSaved, "PROGRAMADO");
@@ -545,7 +549,7 @@ export default function App(){
     const creatorMeta = getCreatorMeta("manual");
 
     try {
-      await safeUpdateFlight(flight.id, {
+      await safeUpdateFlight(flight.id, withFlightUpdateMeta({
           date: flight.date,
           ac: flight.ac,
           orig: flight.orig,
@@ -558,10 +562,7 @@ export default function App(){
           pc: flight.pc,
           bg: flight.bg,
           st: flight.st,
-          updated_by_email: creatorMeta.created_by_email,
-          updated_by_name: creatorMeta.created_by_name,
-          updated_at: new Date().toISOString(),
-        });
+        }, creatorMeta));
       await autoSendWhatsApp(flight, "MODIFICADO");
       await autoSendEmail("flight_updated", buildFlightEmailPayload(flight, "Vuelo modificado"), "Vuelo guardado correctamente");
       var modifiedPush = buildOpsPush("flight_modified", flight);
@@ -580,26 +581,7 @@ export default function App(){
   }
 
   async function delFlight(id) {
-    setPhase("saving");
-
-    try {
-      const { data: flightToCancel } = await supabase.from("flights").select("*").eq("id", id).single();
-      const { error } = await supabase
-        .from("flights")
-        .delete()
-        .eq("id", id);
-
-      if (error) throw error;
-      const cancelledPush = buildOpsPush("flight_cancelled", flightToCancel || { ac: "Aeronave" });
-      await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
-      await autoSendEmail("flight_cancelled", buildFlightEmailPayload(flightToCancel || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
-
-      setPhase("saved");
-      setTimeout(() => setPhase("ready"), 1500);
-    } catch (e) {
-      setErrMsg(e.message || String(e));
-      setPhase("error");
-    }
+    return chgStatus(id, "canc");
   }
 
   async function chgStatus(id, newSt) {
@@ -607,12 +589,12 @@ export default function App(){
 
     try {
       const { data: existing } = await supabase.from("flights").select("*").eq("id", id).single();
+      const creatorMeta = getCreatorMeta("manual");
       const { error } = await supabase
         .from("flights")
-        .update({
+        .update(withFlightUpdateMeta({
           st: newSt,
-          updated_at: new Date().toISOString(),
-        })
+        }, creatorMeta))
         .eq("id", id);
 
       if (error) throw error;
@@ -634,13 +616,13 @@ export default function App(){
     setPhase("saving");
 
     try {
-      const payload = {
+      const creatorMeta = getCreatorMeta("manual");
+      const payload = buildAircraftStatusMutation({
         ac: acId,
-        status: newSt,
+        status_change: newSt,
         maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
         maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
-        updated_at: new Date().toISOString(),
-      };
+      }, creatorMeta);
       const { error } = await supabase
         .from("aircraft_status")
         .upsert([payload]);
@@ -674,13 +656,12 @@ export default function App(){
   async function persistMaintenanceDates(acId, nextPlanForAc, statusOverride) {
     try {
       await supabase.from("aircraft_status").upsert([
-        {
+        buildAircraftStatusMutation({
           ac: acId,
-          status: statusOverride || mt[acId] || "disponible",
+          status_change: statusOverride || mt[acId] || "disponible",
           maintenance_start_date: nextPlanForAc?.from || null,
           maintenance_end_date: nextPlanForAc?.to || null,
-          updated_at: new Date().toISOString(),
-        },
+        }, getCreatorMeta("manual")),
       ]);
     } catch (e) {
       setErrMsg(e.message || String(e));
@@ -1123,7 +1104,7 @@ export default function App(){
     }
   }
 
-  var pos=useMemo(function(){return getPos(fs);},[fs]);
+  var pos=useMemo(function(){return getPos(fs,today);},[fs,today]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
@@ -1152,16 +1133,16 @@ export default function App(){
     var s=new Set();fs.forEach(function(f){s.add(getCreatorLabel(f));});return["all"].concat(Array.from(s).sort());
   },[fs]);
   var recentFlights=useMemo(function(){
-    var now=new Date();var start7=new Date(now);start7.setDate(now.getDate()-7);var start30=new Date(now);start30.setDate(now.getDate()-30);
+    var start7=getOperationalTodayISO(new Date(Date.now()-7*86400000));var start30=getOperationalTodayISO(new Date(Date.now()-30*86400000));
     return fs
       .filter(function(f){
         if(recentAc!=="all"&&f.ac!==recentAc)return false;
         if(recentCreator!=="all"&&getCreatorLabel(f)!==recentCreator)return false;
         if(recentSource!=="all"&&String(f.creation_source||"manual")!==recentSource)return false;
-        var d=new Date((f.created_at||f.date||today)+"T00:00:00");
-        if(recentDate==="today"&&tds(d)!==today)return false;
-        if(recentDate==="7d"&&d<start7)return false;
-        if(recentDate==="30d"&&d<start30)return false;
+        var dIso=String(f.created_at||f.date||today).slice(0,10);
+        if(recentDate==="today"&&dIso!==today)return false;
+        if(recentDate==="7d"&&dIso<start7)return false;
+        if(recentDate==="30d"&&dIso<start30)return false;
         return true;
       })
       .sort(function(a,b){return String(b.created_at||"").localeCompare(String(a.created_at||""))||String(b.date||"").localeCompare(String(a.date||""));});

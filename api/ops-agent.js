@@ -1,37 +1,9 @@
 import OpenAI from "openai";
 import { signAiConfirmation } from "./_aiConfirmation.js";
 import { requireRouteAccess } from "./_routeProtection.js";
-import { getOperationalDateOffsetISO, isPastOperationalDate, parseOperationalDateFromText } from "../src/ai/operationalDate.js";
+import { normalizeAgentWithAliases } from "../src/ai/agentUtils.js";
 
 const MODEL = "gpt-4.1-mini";
-const AIRCRAFT_ALIASES = {
-  n540jl: "N540JL",
-  m2: "N540JL",
-  n35ea: "N35EA",
-  phenom: "N35EA",
-  "phenom 300e": "N35EA",
-  p300e: "N35EA",
-};
-const REQUESTER_ALIASES = {
-  "jabib chapur": "Jabib C",
-  "j chapur": "Jabib C",
-  jabib: "Jabib C",
-  omar: "Omar C",
-  "omar chapur": "Omar C",
-  gibran: "Gibran C",
-  jose: "Jose C",
-  anuar: "Anuar C",
-};
-const AIRPORT_ALIASES = {
-  kopf: "Opa-Locka Exec",
-  opf: "Opa-Locka Exec",
-  "opa locka": "Opa-Locka Exec",
-  "opa-locka": "Opa-Locka Exec",
-  "opa locka exec": "Opa-Locka Exec",
-  merida: "Merida",
-  mid: "Merida",
-  mmmd: "Merida",
-};
 const OPS_AGENT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -60,6 +32,8 @@ const OPS_AGENT_JSON_SCHEMA = {
         status_change: { type: ["string", "null"] },
         airport_code: { type: ["string", "null"] },
         query_scope: { type: ["string", "null"] },
+        maintenance_start_date: { type: ["string", "null"] },
+        maintenance_end_date: { type: ["string", "null"] },
       },
       required: [
         "flight_id",
@@ -78,6 +52,8 @@ const OPS_AGENT_JSON_SCHEMA = {
         "status_change",
         "airport_code",
         "query_scope",
+        "maintenance_start_date",
+        "maintenance_end_date",
       ],
     },
     missing_fields: { type: "array", items: { type: "string" } },
@@ -118,6 +94,8 @@ const RESPONSE_TEMPLATE = {
     status_change: null,
     airport_code: null,
     query_scope: null,
+    maintenance_start_date: null,
+    maintenance_end_date: null,
   },
   missing_fields: [],
   warnings: [],
@@ -199,94 +177,9 @@ function getOutputText(response) {
   return textFromOutput?.text || "";
 }
 
-function normalizeText(v) {
-  return String(v || "").trim().toLowerCase();
-}
-function compactText(v) {
-  return normalizeText(v).replace(/[\s-]/g, "");
-}
-
-function aliasMatch(aliases, text) {
-  const haystack = normalizeText(text);
-  const haystackCompact = compactText(text);
-  const ordered = Object.keys(aliases).sort((a, b) => b.length - a.length);
-  const hit = ordered.find((alias) => haystack.includes(alias) || haystackCompact.includes(compactText(alias)));
-  return hit ? aliases[hit] : null;
-}
-
-function aliasExact(aliases, value) {
-  const key = normalizeText(value);
-  if (aliases[key]) return aliases[key];
-  const keyCompact = compactText(value);
-  const found = Object.keys(aliases).find((alias) => compactText(alias) === keyCompact);
-  return found ? aliases[found] : null;
-}
-
-function parseOperationalDate(text) {
-  return parseOperationalDateFromText(text);
-}
-
 function normalizeOpsResult(raw, instruction) {
-  const result = mergeWithTemplate(raw);
-  const payload = result.payload;
-  const text = normalizeText(instruction);
+  const result = normalizeAgentWithAliases(mergeWithTemplate(raw), instruction);
   const writeActions = new Set(["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"]);
-
-  payload.ac = aliasExact(AIRCRAFT_ALIASES, payload.ac) || payload.ac || aliasMatch(AIRCRAFT_ALIASES, text);
-  payload.rb = aliasExact(REQUESTER_ALIASES, payload.rb) || payload.rb || aliasMatch(REQUESTER_ALIASES, text);
-  payload.orig = aliasExact(AIRPORT_ALIASES, payload.orig) || payload.orig;
-  payload.dest = aliasExact(AIRPORT_ALIASES, payload.dest) || payload.dest;
-
-  if (!payload.orig && /\b(merida|mid|mmmd)\b/.test(text)) payload.orig = "Merida";
-  if (!payload.dest && /\b(kopf|opf)\b/.test(text)) payload.dest = "Opa-Locka Exec";
-
-  if (result.action === "change_aircraft_status") {
-    const stAsStatus = normalizeText(payload.st);
-    if (!payload.status_change && ["aog", "mantenimiento", "disponible"].includes(stAsStatus)) {
-      payload.status_change = stAsStatus;
-    }
-    if (!payload.status_change) {
-      payload.status_change = aliasMatch(
-        { aog: "aog", mantenimiento: "mantenimiento", disponible: "disponible" },
-        text
-      );
-    }
-    payload.st = null;
-  }
-
-  if (
-    result.action === "create_flight" &&
-    Number(payload.pm || 0) + Number(payload.pw || 0) + Number(payload.pc || 0) === 0
-  ) {
-    const paxMatch = text.match(/(\d+)\s*(personas|pasajeros|pax)/);
-    if (paxMatch) {
-      const paxNote = `PAX total: ${Number(paxMatch[1])} (sin desglose)`;
-      payload.nt = payload.nt ? `${payload.nt} | ${paxNote}` : paxNote;
-    }
-  }
-
-  const parsedDate = parseOperationalDate(text);
-  if (parsedDate) {
-    payload.date = parsedDate.date;
-    const refYear = Number(getOperationalDateOffsetISO(0).slice(0, 4));
-    if (parsedDate.explicitYear && parsedDate.explicitYear < refYear) {
-      result.errors.push("La fecha indicada está en un año pasado.");
-    } else if (isPastOperationalDate(parsedDate.date)) {
-      if (parsedDate.impliedYear) {
-        const nextYearDate = `${refYear + 1}${parsedDate.date.slice(4)}`;
-        result.requires_confirmation = true;
-        result.warnings.push(`La fecha ${parsedDate.date} ya pasó. ¿Deseas programarla para ${nextYearDate}?`);
-      } else {
-        result.errors.push("No se puede programar un vuelo en una fecha pasada.");
-      }
-    }
-  }
-
-  if (/\b(notam|restricci[oó]n|restricciones)\b/i.test(text)) {
-    result.action = "query_notam";
-    const codeMatch = text.match(/\b([a-z]{4})\b/i);
-    if (codeMatch) payload.airport_code = codeMatch[1].toUpperCase();
-  }
 
   if (writeActions.has(String(result.action || ""))) {
     result.requires_confirmation = true;
