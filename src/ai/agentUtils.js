@@ -1,9 +1,9 @@
-import { EMPTY_AGENT_RESULT } from "./agentTypes";
+import { EMPTY_AGENT_RESULT } from "./agentTypes.js";
 import {
   getOperationalDateOffsetISO,
   isPastOperationalDate,
   parseOperationalDateFromText,
-} from "./operationalDate";
+} from "./operationalDate.js";
 
 export function cloneEmptyResult() {
   return JSON.parse(JSON.stringify(EMPTY_AGENT_RESULT));

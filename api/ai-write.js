@@ -1,12 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "./_routeProtection.js";
 import { verifyAiConfirmation } from "./_aiConfirmation.js";
-import {
-  buildAircraftStatusMutation,
-  buildAuditMeta,
-  withFlightCreateMeta,
-  withFlightUpdateMeta,
-} from "../src/lib/opsMutationBuilders.js";
+import { buildAuditMeta } from "../src/lib/opsMutationBuilders.js";
+import { applyOpsMutation } from "../src/lib/opsWriteEngine.js";
 import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
 import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "./_opsSideEffects.js";
 
@@ -45,55 +41,6 @@ function validatePayload(action, payload = {}) {
   return null;
 }
 
-function cleanText(v) {
-  return String(v || "").trim().toLowerCase();
-}
-
-async function resolveFlightId(supabase, action, payload = {}) {
-  if (payload.flight_id) return { flightId: payload.flight_id, candidates: [] };
-
-  const filters = {
-    date: payload.date || null,
-    ac: payload.ac || null,
-    orig: payload.orig || null,
-    dest: payload.dest || null,
-    rb: payload.rb || null,
-    time: payload.time || null,
-  };
-
-  const hasAnyFilter = Object.values(filters).some(Boolean);
-  if (!hasAnyFilter) return { flightId: null, candidates: [] };
-
-  let query = supabase
-    .from("flights")
-    .select("id, date, time, ac, orig, dest, rb, st")
-    .neq("st", "canc")
-    .order("date", { ascending: true })
-    .order("time", { ascending: true })
-    .limit(25);
-
-  if (filters.date) query = query.eq("date", filters.date);
-  if (filters.ac) query = query.eq("ac", filters.ac);
-  if (filters.orig) query = query.ilike("orig", filters.orig);
-  if (filters.dest) query = query.ilike("dest", filters.dest);
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  let candidates = (data || []).filter((f) => {
-    if (filters.rb && cleanText(f.rb) !== cleanText(filters.rb)) return false;
-    if (filters.time && String(f.time || "") !== String(filters.time || "")) return false;
-    return true;
-  });
-
-  if (action === "cancel_flight") {
-    candidates = candidates.filter((f) => String(f.st || "") !== "canc");
-  }
-
-  if (candidates.length === 1) return { flightId: candidates[0].id, candidates };
-  return { flightId: null, candidates };
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
   const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
@@ -124,112 +71,52 @@ export default async function handler(req, res) {
   try {
     const sideEffectWarnings = [];
     const actorName = access.user?.user_metadata?.name || access.user?.email || "AI Agent";
-    if (action === "create_flight") {
-      const row = withFlightCreateMeta({
-        date: payload.date,
-        ac: payload.ac,
-        orig: payload.orig,
-        dest: payload.dest,
-        time: payload.time,
-        rb: payload.rb,
-        nt: payload.nt || "",
-        pm: Number(payload.pm || 0),
-        pw: Number(payload.pw || 0),
-        pc: Number(payload.pc || 0),
-        bg: Number(payload.bg || 0),
-        st: payload.st || "prog",
-      }, audit);
-      const { data, error } = await supabase.from("flights").insert([row]).select("*").single();
-      if (error) throw error;
-      const sideEffects = await emitFlightSideEffects({ supabase, eventType: "create", flight: data || row, actorName, sendWhatsapp: true });
-      sideEffectWarnings.push(...(sideEffects.warnings || []));
-      return res.status(200).json({ ok: true, message: "Vuelo creado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
+
+    const mutation = await applyOpsMutation({
+      db: supabase,
+      action,
+      payload,
+      audit,
+      resolveFlight: async (targetPayload, targetAction) => resolveFlightTarget({
+        db: supabase,
+        payload: targetPayload,
+        action: targetAction,
+        limit: 25,
+      }),
+    });
+
+    if (mutation.error === "flight_not_resolved") {
+      if (!mutation.candidates?.length) return bad(res, 400, mutation.message);
+      if (mutation.candidates.length > 1) {
+        return bad(res, 409, mutation.message, { candidates: mutation.candidates.slice(0, 5) });
+      }
+      return bad(res, 400, "No pude resolver el vuelo objetivo.");
     }
 
-    if (action === "edit_flight" || action === "cancel_flight" || action === "duplicate_flight") {
-      const resolved = await resolveFlightTarget({ db: supabase, payload, action, limit: 25 });
-      const flightId = payload.flight_id || resolved.flightId;
-
-      if (!flightId) {
-        if (!resolved.candidates.length) return bad(res, 400, "No encontré un vuelo que coincida para editar/cancelar.");
-        if (resolved.candidates.length > 1) {
-          return bad(res, 409, "Referencia ambigua: encontré múltiples vuelos. Agrega fecha/hora/aeronave para continuar.", {
-            candidates: resolved.candidates.slice(0, 5),
-          });
-        }
-        return bad(res, 400, "No pude resolver el vuelo objetivo.");
-      }
-
-      if (action === "edit_flight") {
-        const updates = {};
-        ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
-          if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
-        });
-        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
-        const { data: updated, error } = await supabase.from("flights").update(withFlightUpdateMeta(updates, audit)).eq("id", flightId).select("*").single();
-        if (error) throw error;
-        const sideEffects = await emitFlightSideEffects({
-          supabase,
-          eventType: "edit",
-          flight: updated || { ...(existing || {}), ...updates },
-          actorName,
-          sendWhatsapp: true,
-        });
-        sideEffectWarnings.push(...(sideEffects.warnings || []));
-        return res.status(200).json({ ok: true, message: "Vuelo editado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
-      }
-
-      if (action === "cancel_flight") {
-        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
-        const { error } = await supabase
-          .from("flights")
-          .update(withFlightUpdateMeta({ st: "canc" }, audit))
-          .eq("id", flightId);
-        if (error) throw error;
-        const sideEffects = await emitFlightSideEffects({
-          supabase,
-          eventType: "cancel",
-          flight: existing || { id: flightId, ac: payload.ac || "", orig: payload.orig || "", dest: payload.dest || "", date: payload.date || "", time: payload.time || "STBY", rb: payload.rb || "", nt: payload.nt || "" },
-          actorName,
-          sendWhatsapp: false,
-        });
-        sideEffectWarnings.push(...(sideEffects.warnings || []));
-        return res.status(200).json({ ok: true, message: "Vuelo cancelado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
-      }
-
-      const { data, error } = await supabase.from("flights").select("*").eq("id", flightId).single();
-      if (error) throw error;
-      const duplicated = withFlightCreateMeta({
-        ...data,
-        id: undefined,
-        date: payload.date || data.date,
-        time: payload.time || data.time,
-        st: "prog",
-        created_at: undefined,
-      }, audit);
-      const { data: duplicatedSaved, error: insError } = await supabase.from("flights").insert([duplicated]).select("*").single();
-      if (insError) throw insError;
+    if (["create_flight", "edit_flight", "cancel_flight", "duplicate_flight"].includes(action)) {
+      const eventTypeMap = { create_flight: "create", edit_flight: "edit", cancel_flight: "cancel", duplicate_flight: "duplicate" };
       const sideEffects = await emitFlightSideEffects({
         supabase,
-        eventType: "duplicate",
-        flight: duplicatedSaved || duplicated,
+        eventType: eventTypeMap[action],
+        flight: mutation.flight,
         actorName,
-        sendWhatsapp: true,
+        sendWhatsapp: action !== "cancel_flight",
       });
       sideEffectWarnings.push(...(sideEffects.warnings || []));
-      return res.status(200).json({ ok: true, message: "Vuelo duplicado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
+      const messageMap = {
+        create_flight: "Vuelo creado correctamente.",
+        edit_flight: "Vuelo editado correctamente.",
+        cancel_flight: "Vuelo cancelado correctamente.",
+        duplicate_flight: "Vuelo duplicado correctamente.",
+      };
+      return res.status(200).json({ ok: true, message: messageMap[action], ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
     }
 
-    const statusMutation = buildAircraftStatusMutation(payload, audit);
-    const { error } = await supabase.from("aircraft_status").upsert([
-      statusMutation,
-    ]);
-    if (error) throw error;
     const statusEffects = await emitAircraftStatusSideEffects({
       supabase,
-      ac: statusMutation.ac,
-      status: statusMutation.status,
-      maintenanceEndDate: statusMutation.maintenance_end_date,
+      ac: mutation.aircraftStatus.ac,
+      status: mutation.aircraftStatus.status,
+      maintenanceEndDate: mutation.aircraftStatus.maintenance_end_date,
       actorName,
     });
     return res.status(200).json({
