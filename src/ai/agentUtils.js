@@ -244,5 +244,18 @@ export function normalizeAgentWithAliases(input, instruction = "") {
     }
   }
 
+  const notamRegex = /\b(notam|restricci[oó]n|restricciones|operativas en|airport restrictions?)\b/i;
+  const statusRegex = /\b(disponible|disponibles|mantenimiento|aog|fuera de servicio|conflicto|conflictos)\b/i;
+  const scheduleRegex = /\b(vuelos|agenda|programad[oa]s?|salidas|llegadas|pr[oó]ximos)\b/i;
+  if (notamRegex.test(instructionText)) {
+    result.action = "query_notam";
+    const codeMatch = instructionText.match(/\b([a-z]{4})\b/i);
+    if (codeMatch) payload.airport_code = codeMatch[1].toUpperCase();
+  } else if (statusRegex.test(instructionText) && result.action === "query_schedule") {
+    payload.query_scope = "aircraft_status";
+  } else if (scheduleRegex.test(instructionText) && result.action === "query_schedule") {
+    payload.query_scope = "flights";
+  }
+
   return result;
 }
