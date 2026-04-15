@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { signAiConfirmation } from "./_aiConfirmation.js";
 import { requireRouteAccess } from "./_routeProtection.js";
+import { getOperationalDateOffsetISO, isPastOperationalDate, parseOperationalDateFromText } from "../src/ai/operationalDate.js";
 
 const MODEL = "gpt-4.1-mini";
 const AIRCRAFT_ALIASES = {
@@ -30,17 +31,6 @@ const AIRPORT_ALIASES = {
   merida: "Merida",
   mid: "Merida",
   mmmd: "Merida",
-};
-const REF_DATE = new Date("2026-04-09T12:00:00-06:00");
-const REF_YEAR = 2026;
-const MONTHS = {
-  enero: 1, feb: 2, febrero: 2, mar: 3, marzo: 3, abril: 4, abr: 4, mayo: 5, jun: 6, junio: 6,
-  jul: 7, julio: 7, ago: 8, agosto: 8, sept: 9, septiembre: 9, setiembre: 9, oct: 10, octubre: 10,
-  nov: 11, noviembre: 11, dic: 12, diciembre: 12,
-};
-const WEEKDAYS = {
-  sunday: 0, domingo: 0, monday: 1, lunes: 1, tuesday: 2, martes: 2, wednesday: 3, miercoles: 3, miércoles: 3,
-  thursday: 4, jueves: 4, friday: 5, viernes: 5, saturday: 6, sabado: 6, sábado: 6,
 };
 const OPS_AGENT_JSON_SCHEMA = {
   type: "object",
@@ -232,41 +222,8 @@ function aliasExact(aliases, value) {
   return found ? aliases[found] : null;
 }
 
-function toISODate(year, month, day) {
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function nextWeekday(baseDate, target, forceNext) {
-  const d = new Date(baseDate);
-  const current = d.getDay();
-  let delta = (target - current + 7) % 7;
-  if (forceNext || delta === 0) delta += 7;
-  d.setDate(d.getDate() + delta);
-  return d;
-}
-
 function parseOperationalDate(text) {
-  if (text.includes("pasado mañana") || text.includes("day after tomorrow")) return { date: "2026-04-11", impliedYear: false };
-  if (text.includes("mañana") || text.includes("tomorrow")) return { date: "2026-04-10", impliedYear: false };
-  if (text.includes("hoy") || text.includes("today")) return { date: "2026-04-09", impliedYear: false };
-
-  const nextMatch = text.match(/next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
-  if (nextMatch) {
-    const d = nextWeekday(REF_DATE, WEEKDAYS[nextMatch[1]], true);
-    return { date: toISODate(d.getFullYear(), d.getMonth() + 1, d.getDate()), impliedYear: false };
-  }
-  const dayName = Object.keys(WEEKDAYS).find((k) => new RegExp(`\\b${k}\\b`).test(text));
-  if (dayName) {
-    const d = nextWeekday(REF_DATE, WEEKDAYS[dayName], false);
-    return { date: toISODate(d.getFullYear(), d.getMonth() + 1, d.getDate()), impliedYear: false };
-  }
-  const dmy = text.match(/(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?/);
-  if (dmy) return { date: toISODate(dmy[3] ? Number(dmy[3]) : REF_YEAR, Number(dmy[2]), Number(dmy[1])), impliedYear: !dmy[3], explicitYear: dmy[3] ? Number(dmy[3]) : null };
-  const deMes = text.match(/(\d{1,2})\s+de\s+([a-záéíóú]+)(?:\s+de\s+(\d{4}))?/);
-  if (deMes && MONTHS[deMes[2]]) return { date: toISODate(deMes[3] ? Number(deMes[3]) : REF_YEAR, MONTHS[deMes[2]], Number(deMes[1])), impliedYear: !deMes[3], explicitYear: deMes[3] ? Number(deMes[3]) : null };
-  const mesDia = text.match(/([a-záéíóú]+)\s+(\d{1,2})(?:\s+de\s+(\d{4}))?/);
-  if (mesDia && MONTHS[mesDia[1]]) return { date: toISODate(mesDia[3] ? Number(mesDia[3]) : REF_YEAR, MONTHS[mesDia[1]], Number(mesDia[2])), impliedYear: !mesDia[3], explicitYear: mesDia[3] ? Number(mesDia[3]) : null };
-  return null;
+  return parseOperationalDateFromText(text);
 }
 
 function normalizeOpsResult(raw, instruction) {
@@ -311,12 +268,12 @@ function normalizeOpsResult(raw, instruction) {
   const parsedDate = parseOperationalDate(text);
   if (parsedDate) {
     payload.date = parsedDate.date;
-    const d = new Date(`${parsedDate.date}T12:00:00-06:00`);
-    if (parsedDate.explicitYear && parsedDate.explicitYear < REF_YEAR) {
+    const refYear = Number(getOperationalDateOffsetISO(0).slice(0, 4));
+    if (parsedDate.explicitYear && parsedDate.explicitYear < refYear) {
       result.errors.push("La fecha indicada está en un año pasado.");
-    } else if (d < REF_DATE) {
+    } else if (isPastOperationalDate(parsedDate.date)) {
       if (parsedDate.impliedYear) {
-        const nextYearDate = toISODate(REF_YEAR + 1, d.getMonth() + 1, d.getDate());
+        const nextYearDate = `${refYear + 1}${parsedDate.date.slice(4)}`;
         result.requires_confirmation = true;
         result.warnings.push(`La fecha ${parsedDate.date} ya pasó. ¿Deseas programarla para ${nextYearDate}?`);
       } else {

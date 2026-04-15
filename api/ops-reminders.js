@@ -1,10 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildOpsPush } from "../src/lib/opsNotifications.js";
 import { sendOperationalEmail } from "./_emailSender.js";
-
-function ymd(d) {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
+import { detectFlightConflicts } from "../src/ai/conflictUtils.js";
+import { getOperationalTodayISO, getOperationalTomorrowISO } from "../src/ai/operationalDate.js";
 
 async function sendPushToAll(supabase, payload) {
   const vapidPublic = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.VITE_PUBLIC_VAPID_KEY;
@@ -46,10 +44,8 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const now = new Date();
-  const today = ymd(now);
-  const tomorrowDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  const tomorrow = ymd(tomorrowDate);
+  const today = getOperationalTodayISO();
+  const tomorrow = getOperationalTomorrowISO();
 
   const events = [];
 
@@ -77,16 +73,14 @@ export default async function handler(req, res) {
     .neq("st", "canc")
     .neq("st", "comp");
   if (opErr) throw opErr;
-  const idx = {};
-  (operationalFlights || []).forEach((f) => {
-    const k = `${f.ac}|${f.date}|${f.time || "STBY"}`;
-    idx[k] = (idx[k] || 0) + 1;
+  const conflicts = detectFlightConflicts(operationalFlights || [], {
+    activeStatuses: ["prog", "enc"],
+    dateRange: { start: today, end: "9999-12-31" },
   });
-  const conflictKey = Object.keys(idx).find((k) => idx[k] > 1);
-  if (conflictKey) {
-    const ac = conflictKey.split("|")[0];
-    events.push({ key: `conflict_${today}`, ac, payload: buildOpsPush("operational_conflict", { ac }) });
-  }
+  const conflictAircraft = Array.from(new Set(conflicts.map((c) => c.ac))).filter(Boolean);
+  conflictAircraft.forEach((ac) => {
+    events.push({ key: `conflict_${today}_${ac}`, ac, payload: buildOpsPush("operational_conflict", { ac }) });
+  });
 
   const sent = [];
   for (const event of events) {
