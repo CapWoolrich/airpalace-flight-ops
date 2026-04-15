@@ -150,6 +150,10 @@ export function normalizeAgentWithAliases(input, instruction = "") {
       if (fromInstruction) payload.status_change = fromInstruction;
     }
     payload.st = null;
+    if (payload.status_change === "disponible") {
+      payload.maintenance_start_date = null;
+      payload.maintenance_end_date = null;
+    }
   }
 
   if (
@@ -167,6 +171,10 @@ export function normalizeAgentWithAliases(input, instruction = "") {
   const parsedDate = parseOperationalDateFromText(instructionText);
   if (parsedDate) {
     payload.date = parsedDate.date;
+    if (result.action === "change_aircraft_status") {
+      if (/\bhasta\b|\buntil\b/.test(instructionText)) payload.maintenance_end_date = parsedDate.date;
+      else payload.maintenance_start_date = payload.maintenance_start_date || parsedDate.date;
+    }
     const refYear = Number(getOperationalDateOffsetISO(0).slice(0, 4));
     if (parsedDate.explicitYear && parsedDate.explicitYear < refYear) {
       result.errors.push("La fecha indicada está en un año pasado.");

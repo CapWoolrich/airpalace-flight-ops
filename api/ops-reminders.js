@@ -3,35 +3,19 @@ import { buildOpsPush } from "../src/lib/opsNotifications.js";
 import { sendOperationalEmail } from "./_emailSender.js";
 import { detectFlightConflicts } from "../src/ai/conflictUtils.js";
 import { getOperationalTodayISO, getOperationalTomorrowISO } from "../src/ai/operationalDate.js";
+import { getWebPushClient, sendPushBatch } from "./_push.js";
 
-async function sendPushToAll(supabase, payload) {
-  const vapidPublic = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || process.env.VITE_PUBLIC_VAPID_KEY;
-  const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
-  const vapidSubject = process.env.VAPID_SUBJECT;
-  if (!vapidPublic || !vapidPrivate || !vapidSubject) return { ok: false, warning: "VAPID env missing" };
-
-  let webpush;
-  try {
-    webpush = (await import("web-push")).default;
-    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
-  } catch {
-    return { ok: false, warning: "web-push package unavailable" };
-  }
-
+async function sendPushToAll(supabase, payload, pushClient) {
   const { data: subs, error: subsError } = await supabase
     .from("push_subscriptions")
     .select("endpoint, p256dh, auth");
   if (subsError) throw subsError;
 
-  await Promise.all((subs || []).map(async (sub) => {
-    try {
-      await webpush.sendNotification(
-        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        JSON.stringify(payload)
-      );
-    } catch {}
-  }));
-  return { ok: true, sent: (subs || []).length };
+  const pushResult = await sendPushBatch(pushClient.webpush, subs || [], payload);
+  if (pushResult.invalidEndpoints.length) {
+    await supabase.from("push_subscriptions").delete().in("endpoint", pushResult.invalidEndpoints);
+  }
+  return { ok: true, sent: pushResult.sent, failed: pushResult.failed };
 }
 
 export default async function handler(req, res) {
@@ -44,6 +28,7 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const pushClient = await getWebPushClient();
   const today = getOperationalTodayISO();
   const tomorrow = getOperationalTomorrowISO();
 
@@ -55,16 +40,17 @@ export default async function handler(req, res) {
     .eq("date", tomorrow)
     .neq("st", "canc")
     .neq("st", "comp")
-    .limit(1);
+    .order("time", { ascending: true })
+    .limit(25);
   if (tomorrowErr) throw tomorrowErr;
-  if ((tomorrowFlights || []).length) {
+  (tomorrowFlights || []).forEach((f) => {
     events.push({
-      key: `tomorrow_${tomorrow}`,
-      ac: tomorrowFlights[0].ac,
-      flight: tomorrowFlights[0],
-      payload: buildOpsPush("tomorrow_flight", { ac: tomorrowFlights[0].ac }),
+      key: `tomorrow_${tomorrow}_${f.id}`,
+      ac: f.ac,
+      flight: f,
+      payload: buildOpsPush("tomorrow_flight", f),
     });
-  }
+  });
 
   const { data: operationalFlights, error: opErr } = await supabase
     .from("flights")
@@ -91,7 +77,9 @@ export default async function handler(req, res) {
       .maybeSingle();
     if (existing?.event_key) continue;
 
-    await sendPushToAll(supabase, event.payload);
+    if (pushClient.ok) {
+      await sendPushToAll(supabase, event.payload, pushClient);
+    }
     if (event.key.startsWith("tomorrow_")) {
       await sendOperationalEmail({
         eventType: "tomorrow_flight_reminder",
