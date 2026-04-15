@@ -1,4 +1,5 @@
 import { computeEmailRecipients } from "./_emailRecipients.js";
+import { requireRouteAccess } from "./_routeProtection.js";
 
 const ALLOWED_EVENTS = [
   "flight_created",
@@ -14,6 +15,8 @@ export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ ok: false, error: "Método no permitido." });
   }
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  if (!access.ok) return res.status(access.status).json({ ok: false, error: access.error });
 
   const requestor = String(req.body?.requestor || req.query?.requestor || "").trim();
   const eventType = String(req.body?.eventType || req.query?.eventType || "flight_created").trim();

@@ -1,11 +1,14 @@
 import { normalizeAgentResult, normalizeAgentWithAliases } from "./agentUtils";
 import { normalizeAviationInstruction } from "./aviationLanguage";
+import { supabase } from "../supabase";
 
 export async function analyzeOpsInstruction(instruction, conversationContext = []) {
   const normalizedInstruction = normalizeAviationInstruction(instruction);
+  const { data: authData } = await supabase.auth.getSession();
+  const token = authData?.session?.access_token;
   const response = await fetch("/api/ops-agent", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ instruction: normalizedInstruction, context: conversationContext }),
   });
 

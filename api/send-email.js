@@ -1,12 +1,16 @@
 import { sendOperationalEmail } from "./_emailSender.js";
+import { ensureBodyFields, requireRouteAccess } from "./_routeProtection.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido." });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 30, windowMs: 60_000 } });
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
 
   const eventType = req.body?.eventType;
   const payload = req.body?.payload || {};
   const recipients = Array.isArray(req.body?.recipients) ? req.body.recipients : null;
-  if (!eventType) return res.status(400).json({ error: "eventType es requerido." });
+  const required = ensureBodyFields(req.body || {}, ["eventType"]);
+  if (!required.ok) return res.status(400).json({ error: required.error });
 
   const result = await sendOperationalEmail({
     eventType,

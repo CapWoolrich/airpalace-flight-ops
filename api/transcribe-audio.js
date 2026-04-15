@@ -1,8 +1,11 @@
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
+import { requireRouteAccess } from "./_routeProtection.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
   if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY missing" });
 
   const base64 = req.body?.audio_base64;
