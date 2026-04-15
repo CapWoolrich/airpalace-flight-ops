@@ -1,14 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import { requireRouteAccess } from "./_routeProtection.js";
 import { verifyAiConfirmation } from "./_aiConfirmation.js";
+import {
+  buildAircraftStatusMutation,
+  buildAuditMeta,
+  withFlightCreateMeta,
+  withFlightUpdateMeta,
+} from "../src/lib/opsMutationBuilders.js";
+import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
+import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "./_opsSideEffects.js";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status"];
 const VALID_AIRCRAFT = new Set(["N35EA", "N540JL"]);
 const VALID_AIRCRAFT_STATUSES = new Set(["disponible", "mantenimiento", "aog"]);
 const VALID_FLIGHT_STATUSES = new Set(["prog", "enc", "comp", "canc"]);
 
-function bad(res, status, error) {
-  return res.status(status).json({ ok: false, error });
+function bad(res, status, error, extras = {}) {
+  return res.status(status).json({ ok: false, error, ...extras });
 }
 
 function ensureSupabase() {
@@ -28,9 +36,6 @@ function validatePayload(action, payload = {}) {
       if (!payload[f]) return `${f} es requerido`;
     }
   }
-  if (action === "edit_flight" && !payload.flight_id) return "flight_id es requerido";
-  if (action === "cancel_flight" && !payload.flight_id) return "flight_id es requerido";
-  if (action === "duplicate_flight" && !payload.flight_id) return "flight_id es requerido";
   if (action === "change_aircraft_status") {
     if (!payload.ac) return "ac es requerido";
     if (!payload.status_change || !VALID_AIRCRAFT_STATUSES.has(String(payload.status_change))) {
@@ -49,18 +54,29 @@ export default async function handler(req, res) {
   const payload = req.body?.payload || {};
   const confirmed = req.body?.confirmed === true;
   const token = req.body?.confirmation_token;
+
   if (!WRITE_ACTIONS.includes(action)) return bad(res, 400, "Acción no permitida");
   if (!confirmed) return bad(res, 400, "Debes confirmar antes de ejecutar");
+  if (!verifyAiConfirmation(token, action, payload)) return bad(res, 403, "Confirmación inválida");
+
   const validationError = validatePayload(action, payload);
   if (validationError) return bad(res, 400, validationError);
-  if (!verifyAiConfirmation(token, action, payload)) return bad(res, 403, "Confirmación inválida");
 
   const supabase = ensureSupabase();
   if (!supabase) return bad(res, 500, "Supabase server env missing");
 
+  const audit = buildAuditMeta({
+    source: "ai",
+    actorEmail: access.user?.email || "",
+    actorName: access.user?.user_metadata?.name || access.user?.email || "AI Agent",
+    actorUserId: access.user?.id || "",
+  });
+
   try {
+    const sideEffectWarnings = [];
+    const actorName = access.user?.user_metadata?.name || access.user?.email || "AI Agent";
     if (action === "create_flight") {
-      const row = {
+      const row = withFlightCreateMeta({
         date: payload.date,
         ac: payload.ac,
         orig: payload.orig,
@@ -73,60 +89,105 @@ export default async function handler(req, res) {
         pc: Number(payload.pc || 0),
         bg: Number(payload.bg || 0),
         st: payload.st || "prog",
-        creation_source: "ai",
-      };
-      const { error } = await supabase.from("flights").insert([row]);
+      }, audit);
+      const { data, error } = await supabase.from("flights").insert([row]).select("*").single();
       if (error) throw error;
-      return res.status(200).json({ ok: true, message: "Vuelo creado correctamente." });
+      const sideEffects = await emitFlightSideEffects({ supabase, eventType: "create", flight: data || row, actorName, sendWhatsapp: true });
+      sideEffectWarnings.push(...(sideEffects.warnings || []));
+      return res.status(200).json({ ok: true, message: "Vuelo creado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
     }
 
-    if (action === "edit_flight") {
-      const updates = {};
-      ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
-        if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
-      });
-      updates.updated_at = new Date().toISOString();
-      const { error } = await supabase.from("flights").update(updates).eq("id", payload.flight_id);
-      if (error) throw error;
-      return res.status(200).json({ ok: true, message: "Vuelo editado correctamente." });
-    }
+    if (action === "edit_flight" || action === "cancel_flight" || action === "duplicate_flight") {
+      const resolved = await resolveFlightTarget({ db: supabase, payload, action, limit: 25 });
+      const flightId = payload.flight_id || resolved.flightId;
 
-    if (action === "cancel_flight") {
-      const { error } = await supabase
-        .from("flights")
-        .update({ st: "canc", updated_at: new Date().toISOString() })
-        .eq("id", payload.flight_id);
-      if (error) throw error;
-      return res.status(200).json({ ok: true, message: "Vuelo cancelado correctamente." });
-    }
+      if (!flightId) {
+        if (!resolved.candidates.length) return bad(res, 400, "No encontré un vuelo que coincida para editar/cancelar.");
+        if (resolved.candidates.length > 1) {
+          return bad(res, 409, "Referencia ambigua: encontré múltiples vuelos. Agrega fecha/hora/aeronave para continuar.", {
+            candidates: resolved.candidates.slice(0, 5),
+          });
+        }
+        return bad(res, 400, "No pude resolver el vuelo objetivo.");
+      }
 
-    if (action === "duplicate_flight") {
-      const { data, error } = await supabase.from("flights").select("*").eq("id", payload.flight_id).single();
+      if (action === "edit_flight") {
+        const updates = {};
+        ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
+          if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
+        });
+        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
+        const { data: updated, error } = await supabase.from("flights").update(withFlightUpdateMeta(updates, audit)).eq("id", flightId).select("*").single();
+        if (error) throw error;
+        const sideEffects = await emitFlightSideEffects({
+          supabase,
+          eventType: "edit",
+          flight: updated || { ...(existing || {}), ...updates },
+          actorName,
+          sendWhatsapp: true,
+        });
+        sideEffectWarnings.push(...(sideEffects.warnings || []));
+        return res.status(200).json({ ok: true, message: "Vuelo editado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
+      }
+
+      if (action === "cancel_flight") {
+        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
+        const { error } = await supabase
+          .from("flights")
+          .update(withFlightUpdateMeta({ st: "canc" }, audit))
+          .eq("id", flightId);
+        if (error) throw error;
+        const sideEffects = await emitFlightSideEffects({
+          supabase,
+          eventType: "cancel",
+          flight: existing || { id: flightId, ac: payload.ac || "", orig: payload.orig || "", dest: payload.dest || "", date: payload.date || "", time: payload.time || "STBY", rb: payload.rb || "", nt: payload.nt || "" },
+          actorName,
+          sendWhatsapp: false,
+        });
+        sideEffectWarnings.push(...(sideEffects.warnings || []));
+        return res.status(200).json({ ok: true, message: "Vuelo cancelado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
+      }
+
+      const { data, error } = await supabase.from("flights").select("*").eq("id", flightId).single();
       if (error) throw error;
-      const duplicated = {
+      const duplicated = withFlightCreateMeta({
         ...data,
         id: undefined,
         date: payload.date || data.date,
         time: payload.time || data.time,
         st: "prog",
         created_at: undefined,
-        updated_at: new Date().toISOString(),
-        creation_source: "ai",
-      };
-      const { error: insError } = await supabase.from("flights").insert([duplicated]);
+      }, audit);
+      const { data: duplicatedSaved, error: insError } = await supabase.from("flights").insert([duplicated]).select("*").single();
       if (insError) throw insError;
-      return res.status(200).json({ ok: true, message: "Vuelo duplicado correctamente." });
+      const sideEffects = await emitFlightSideEffects({
+        supabase,
+        eventType: "duplicate",
+        flight: duplicatedSaved || duplicated,
+        actorName,
+        sendWhatsapp: true,
+      });
+      sideEffectWarnings.push(...(sideEffects.warnings || []));
+      return res.status(200).json({ ok: true, message: "Vuelo duplicado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
     }
 
+    const statusMutation = buildAircraftStatusMutation(payload, audit);
     const { error } = await supabase.from("aircraft_status").upsert([
-      {
-        ac: payload.ac,
-        status: payload.status_change,
-        updated_at: new Date().toISOString(),
-      },
+      statusMutation,
     ]);
     if (error) throw error;
-    return res.status(200).json({ ok: true, message: "Estado de aeronave actualizado." });
+    const statusEffects = await emitAircraftStatusSideEffects({
+      supabase,
+      ac: statusMutation.ac,
+      status: statusMutation.status,
+      maintenanceEndDate: statusMutation.maintenance_end_date,
+      actorName,
+    });
+    return res.status(200).json({
+      ok: true,
+      message: "Estado de aeronave actualizado.",
+      ...((statusEffects.warnings || []).length ? { side_effect_warnings: statusEffects.warnings } : {}),
+    });
   } catch (e) {
     return bad(res, 500, e?.message || "Error ejecutando acción AI");
   }

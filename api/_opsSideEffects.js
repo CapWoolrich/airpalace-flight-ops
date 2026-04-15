@@ -1,0 +1,157 @@
+import { buildOpsPush } from "../src/lib/opsNotifications.js";
+import { buildWhatsAppFlightMessage } from "./_whatsappMessage.js";
+import { sendOperationalEmail } from "./_emailSender.js";
+import { getWebPushClient, sendPushBatch } from "./_push.js";
+
+function cleanNote(note) {
+  return String(note || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim();
+}
+
+function toActorName(actor) {
+  const raw = String(actor || "").trim();
+  return raw || "Sistema";
+}
+
+function buildFlightEmailPayload(flight = {}, eventLabel = "", actorName = "") {
+  return {
+    event_label: eventLabel,
+    id: flight?.id || null,
+    flight_id: flight?.id || null,
+    date: flight?.date || "",
+    ac: flight?.ac || "",
+    orig: flight?.orig || "",
+    dest: flight?.dest || "",
+    time: flight?.time || "STBY",
+    rb: flight?.rb || "",
+    pm: Number(flight?.pm || 0),
+    pw: Number(flight?.pw || 0),
+    pc: Number(flight?.pc || 0),
+    notes: cleanNote(flight?.nt),
+    actor: toActorName(actorName),
+    edited_by: toActorName(actorName),
+    created_by: toActorName(actorName),
+  };
+}
+
+async function sendPushToSubscribers(supabase, payload) {
+  const pushClient = await getWebPushClient();
+  if (!pushClient.ok) return { ok: false, warning: pushClient.error };
+
+  const { data, error } = await supabase.from("push_subscriptions").select("endpoint, p256dh, auth");
+  if (error) return { ok: false, warning: error.message || "push_subscriptions read failed" };
+
+  const pushResult = await sendPushBatch(pushClient.webpush, data || [], payload);
+  if (pushResult.invalidEndpoints.length) {
+    await supabase.from("push_subscriptions").delete().in("endpoint", pushResult.invalidEndpoints);
+  }
+  return { ok: true, sent: pushResult.sent, failed: pushResult.failed };
+}
+
+async function sendWhatsApp(flight, label) {
+  const phone = String(process.env.CALLMEBOT_PHONE || "").trim();
+  const apikey = String(process.env.CALLMEBOT_APIKEY || "").trim();
+  if (!phone || !apikey) return { ok: false, warning: "whatsapp_env_missing" };
+  if (!flight?.ac || !flight?.orig || !flight?.dest || !flight?.date) return { ok: false, warning: "flight_payload_incomplete" };
+
+  const text = buildWhatsAppFlightMessage(flight, label);
+  const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apikey)}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return { ok: false, warning: "whatsapp_provider_rejected" };
+    return { ok: true };
+  } catch {
+    return { ok: false, warning: "whatsapp_network_failure" };
+  }
+}
+
+export async function emitFlightSideEffects({
+  supabase,
+  eventType,
+  flight,
+  actorName,
+  sendWhatsapp = false,
+} = {}) {
+  const warnings = [];
+  if (!supabase || !flight) return { warnings: ["side_effects_missing_context"] };
+
+  try {
+    const pushTypeMap = {
+      create: "flight_programmed",
+      edit: "flight_modified",
+      cancel: "flight_cancelled",
+      duplicate: "flight_programmed",
+    };
+    const pushPayload = buildOpsPush(pushTypeMap[eventType], flight);
+    const pushRes = await sendPushToSubscribers(supabase, pushPayload);
+    if (pushRes.warning) warnings.push(`push:${pushRes.warning}`);
+  } catch {
+    warnings.push("push:unexpected_error");
+  }
+
+  try {
+    const emailTypeMap = {
+      create: "flight_created",
+      edit: "flight_updated",
+      cancel: "flight_cancelled",
+      duplicate: "flight_created",
+    };
+    const emailLabelMap = {
+      create: "Vuelo programado",
+      edit: "Vuelo modificado",
+      cancel: "Vuelo cancelado",
+      duplicate: "Vuelo programado",
+    };
+    const emailResult = await sendOperationalEmail({
+      eventType: emailTypeMap[eventType],
+      payload: buildFlightEmailPayload(flight, emailLabelMap[eventType], actorName),
+    });
+    if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
+    if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);
+  } catch {
+    warnings.push("email:unexpected_error");
+  }
+
+  if (sendWhatsapp) {
+    const wa = await sendWhatsApp(flight, eventType === "edit" ? "MODIFICADO" : "PROGRAMADO");
+    if (!wa.ok && wa.warning && wa.warning !== "whatsapp_env_missing") warnings.push(`whatsapp:${wa.warning}`);
+  }
+
+  return { warnings };
+}
+
+export async function emitAircraftStatusSideEffects({
+  supabase,
+  ac,
+  status,
+  maintenanceEndDate,
+  actorName,
+} = {}) {
+  const warnings = [];
+  if (!supabase || !ac || !status) return { warnings };
+  if (!["aog", "mantenimiento"].includes(String(status))) return { warnings };
+
+  try {
+    const pushPayload = status === "aog"
+      ? buildOpsPush("aog", { ac })
+      : buildOpsPush("maintenance", { ac, maintenanceEndDate });
+    const pushRes = await sendPushToSubscribers(supabase, pushPayload);
+    if (pushRes.warning) warnings.push(`push:${pushRes.warning}`);
+  } catch {
+    warnings.push("push:unexpected_error");
+  }
+
+  try {
+    const emailResult = await sendOperationalEmail({
+      eventType: status === "aog" ? "aircraft_aog" : "aircraft_maintenance",
+      payload: status === "aog"
+        ? { event_label: "AOG", ac, actor: toActorName(actorName) }
+        : { event_label: "Mantenimiento", ac, maintenance_end_date: maintenanceEndDate || "", actor: toActorName(actorName) },
+    });
+    if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
+    if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);
+  } catch {
+    warnings.push("email:unexpected_error");
+  }
+
+  return { warnings };
+}

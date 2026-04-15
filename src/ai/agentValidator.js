@@ -14,6 +14,7 @@ import {
   normalizeAgentResult,
 } from "./agentUtils";
 import { getOperationalTodayISO, isPastOperationalDate } from "./operationalDate";
+import { resolveFlightTarget } from "./flightTargetResolver";
 
 
 function parseTimeToMinutes(value) {
@@ -143,11 +144,29 @@ export async function validateAgentResult(agentResult, instruction = "") {
   }
 
   if (result.action === "edit_flight" && !result.payload.flight_id) {
-    result.errors.push("edit_flight requiere flight_id.");
+    const resolved = await resolveFlightTarget({ db: supabase, payload: result.payload, action: "edit_flight", limit: 20 });
+    if (resolved.flightId) {
+      result.payload.flight_id = resolved.flightId;
+      result.warnings.push("Resolví el vuelo a editar por fecha/ruta/aeronave. Verifica antes de confirmar.");
+    } else if (resolved.candidates.length > 1) {
+      result.errors.push(`Encontré ${resolved.candidates.length} vuelos posibles para editar; necesito más precisión.`);
+      result.missing_fields = Array.from(new Set([...(result.missing_fields || []), "flight_selector"]));
+    } else {
+      result.errors.push("edit_flight requiere flight_id.");
+    }
   }
 
   if (result.action === "cancel_flight" && !result.payload.flight_id) {
-    result.errors.push("cancel_flight requiere flight_id.");
+    const resolved = await resolveFlightTarget({ db: supabase, payload: result.payload, action: "cancel_flight", limit: 20 });
+    if (resolved.flightId) {
+      result.payload.flight_id = resolved.flightId;
+      result.warnings.push("Resolví el vuelo a cancelar por fecha/ruta/aeronave. Verifica antes de confirmar.");
+    } else if (resolved.candidates.length > 1) {
+      result.errors.push(`Encontré ${resolved.candidates.length} vuelos posibles para cancelar; necesito más precisión.`);
+      result.missing_fields = Array.from(new Set([...(result.missing_fields || []), "flight_selector"]));
+    } else {
+      result.errors.push("cancel_flight requiere flight_id.");
+    }
   }
 
   const friendlyMap = {
@@ -157,6 +176,7 @@ export async function validateAgentResult(agentResult, instruction = "") {
     dest: "Falta el aeropuerto de destino.",
     time: "Falta indicar la hora de salida.",
     rb: "Falta indicar quién solicita el vuelo.",
+    flight_selector: "Necesito más detalle para identificar el vuelo (fecha, hora, ruta o aeronave).",
     airport_code: "Necesito el código ICAO del aeropuerto para consultar NOTAM/restricciones.",
   };
   const clarification_prompts = (result.missing_fields || []).map((f) => friendlyMap[f] || `Falta información: ${f}.`);
