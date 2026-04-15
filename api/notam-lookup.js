@@ -1,9 +1,13 @@
+import { requireRouteAccess } from "./_routeProtection.js";
+
 function send(res, status, payload) {
   return res.status(status).json(payload);
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  if (!access.ok) return send(res, access.status, { error: access.error });
   const airportCode = String(req.body?.airport_code || "").trim().toUpperCase();
   if (!airportCode || !/^[A-Z]{4}$/.test(airportCode)) {
     return send(res, 400, { error: "airport_code (ICAO de 4 letras) es requerido." });
