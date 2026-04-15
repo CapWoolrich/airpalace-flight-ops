@@ -188,6 +188,13 @@ async function readInstruction(req) {
   return "";
 }
 
+function readContext(req) {
+  if (req?.body && typeof req.body === "object" && Array.isArray(req.body.context)) {
+    return req.body.context.slice(-8).map((x) => String(x || "")).filter(Boolean);
+  }
+  return [];
+}
+
 function getOutputText(response) {
   if (typeof response?.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
@@ -364,6 +371,7 @@ export default async function handler(req, res) {
   }
 
   const instruction = await readInstruction(req);
+  const context = readContext(req);
   if (!instruction) {
     return sendJsonError(res, 400, "instruction is required");
   }
@@ -391,7 +399,7 @@ export default async function handler(req, res) {
         },
         {
           role: "user",
-          content: `Instruction: ${instruction}`,
+          content: `${context.length ? `Recent conversation context:\\n- ${context.join("\\n- ")}\\n\\n` : ""}Instruction: ${instruction}`,
         },
       ],
       text: {

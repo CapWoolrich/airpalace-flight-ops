@@ -709,7 +709,8 @@ export default function App(){
     setErrMsg("");
     try {
       setAgentMessages(function(prev){return prev.concat([{role:"user",text:agentInstruction.trim(),ts:new Date().toISOString()}]);});
-      const analyzed = await analyzeOpsInstruction(agentInstruction);
+      const ctx = agentMessages.slice(-6).map(function(m){return `${m.role}: ${m.text}`;});
+      const analyzed = await analyzeOpsInstruction(agentInstruction, ctx);
       const validated = await validateAgentResult(analyzed, agentInstruction);
       setAgentResult(analyzed);
       setAgentValidation(validated);
@@ -1316,6 +1317,9 @@ export default function App(){
         />
         <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
           {recording?"⏹️ Detener escucha en vivo":"🎙️ Hablar en vivo"}
+        </button>
+        <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{width:"100%",padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",color:"#334155",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+          🔇 Detener voz del asistente
         </button>
         <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
           {agentBusy?"⏳ Analizando...":"🔍 Analizar instrucción"}

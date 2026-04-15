@@ -229,10 +229,38 @@ export async function executeAgentAction(agentResult, options = {}) {
     case "query_schedule": {
       const instruction = String(options.instruction || "").toLowerCase();
       if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto/.test(instruction)) {
+        if (/conflicto/.test(instruction)) {
+          const flights = await fetchFlightsForQuery();
+          const active = flights.filter((f) => f.st !== "canc" && f.st !== "comp");
+          const grouped = {};
+          active.forEach((f) => {
+            const key = `${f.ac}|${f.date}|${f.time}`;
+            grouped[key] = (grouped[key] || []).concat([f]);
+          });
+          const conflicts = Object.values(grouped).filter((arr) => arr.length > 1).flat();
+          return {
+            ok: true,
+            message: conflicts.length
+              ? `Detecté ${conflicts.length} vuelo(s) en conflicto operativo.`
+              : "No detecté conflictos operativos activos.",
+            data: { count: conflicts.length, flights: conflicts.slice(0, 12) },
+          };
+        }
         const statuses = await fetchAircraftStatus();
         const maint = statuses.filter((s) => s.status === "mantenimiento");
         const aog = statuses.filter((s) => s.status === "aog");
         const available = statuses.filter((s) => s.status === "disponible");
+        if (/hasta cuando|hasta cuándo/.test(instruction) && payload.ac) {
+          const acStatus = statuses.find((s) => s.ac === payload.ac);
+          const endDate = acStatus?.maintenance_end_date || null;
+          return {
+            ok: true,
+            message: endDate
+              ? `${payload.ac} está en ${acStatus?.status || "estado desconocido"} hasta ${endDate}.`
+              : `No tengo fecha fin registrada para ${payload.ac}.`,
+            data: { status: acStatus || null },
+          };
+        }
         return {
           ok: true,
           message: `Estado de flota: ${available.length} disponibles, ${maint.length} en mantenimiento y ${aog.length} en AOG.`,
