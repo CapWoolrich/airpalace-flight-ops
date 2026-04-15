@@ -66,6 +66,8 @@ const OPS_AGENT_JSON_SCHEMA = {
         bg: { type: "number" },
         st: { type: "string" },
         status_change: { type: ["string", "null"] },
+        airport_code: { type: ["string", "null"] },
+        query_scope: { type: ["string", "null"] },
       },
       required: [
         "flight_id",
@@ -82,6 +84,8 @@ const OPS_AGENT_JSON_SCHEMA = {
         "bg",
         "st",
         "status_change",
+        "airport_code",
+        "query_scope",
       ],
     },
     missing_fields: { type: "array", items: { type: "string" } },
@@ -120,6 +124,8 @@ const RESPONSE_TEMPLATE = {
     bg: 0,
     st: "prog",
     status_change: null,
+    airport_code: null,
+    query_scope: null,
   },
   missing_fields: [],
   warnings: [],
@@ -180,6 +186,13 @@ async function readInstruction(req) {
   }
 
   return "";
+}
+
+function readContext(req) {
+  if (req?.body && typeof req.body === "object" && Array.isArray(req.body.context)) {
+    return req.body.context.slice(-8).map((x) => String(x || "")).filter(Boolean);
+  }
+  return [];
 }
 
 function getOutputText(response) {
@@ -258,6 +271,7 @@ function normalizeOpsResult(raw, instruction) {
   const result = mergeWithTemplate(raw);
   const payload = result.payload;
   const text = normalizeText(instruction);
+  const writeActions = new Set(["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"]);
 
   payload.ac = aliasExact(AIRCRAFT_ALIASES, payload.ac) || payload.ac || aliasMatch(AIRCRAFT_ALIASES, text);
   payload.rb = aliasExact(REQUESTER_ALIASES, payload.rb) || payload.rb || aliasMatch(REQUESTER_ALIASES, text);
@@ -309,6 +323,16 @@ function normalizeOpsResult(raw, instruction) {
     }
   }
 
+  if (/\b(notam|restricci[oó]n|restricciones)\b/i.test(text)) {
+    result.action = "query_notam";
+    const codeMatch = text.match(/\b([a-z]{4})\b/i);
+    if (codeMatch) payload.airport_code = codeMatch[1].toUpperCase();
+  }
+
+  if (writeActions.has(String(result.action || ""))) {
+    result.requires_confirmation = true;
+  }
+
   return result;
 }
 
@@ -352,6 +376,7 @@ export default async function handler(req, res) {
   }
 
   const instruction = await readInstruction(req);
+  const context = readContext(req);
   if (!instruction) {
     return sendJsonError(res, 400, "instruction is required");
   }
@@ -371,14 +396,16 @@ export default async function handler(req, res) {
           role: "system",
           content:
             "You are an ops parser for an aviation dispatch app. Return JSON only. Never fabricate critical values. " +
-            "Allowed actions: create_flight, edit_flight, cancel_flight, change_aircraft_status, duplicate_flight, query_schedule. " +
+            "Allowed actions: create_flight, edit_flight, cancel_flight, change_aircraft_status, duplicate_flight, query_schedule, query_notam. " +
             "Allowed aircraft: N35EA, N540JL. Allowed aircraft statuses: disponible, mantenimiento, aog. Allowed flight statuses: prog, enc, comp, canc. " +
             "Critical create_flight fields: date, ac, orig, dest, time, rb. " +
+            "For queries, prioritize read-only actions and provide concise human_summary in Spanish. " +
+            "Before any write action, prepare confirmation-only output first; do not claim completion before explicit confirmation. " +
             "If critical fields are missing or ambiguous, set requires_confirmation=true and list them in missing_fields.",
         },
         {
           role: "user",
-          content: `Instruction: ${instruction}`,
+          content: `${context.length ? `Recent conversation context:\\n- ${context.join("\\n- ")}\\n\\n` : ""}Instruction: ${instruction}`,
         },
       ],
       text: {

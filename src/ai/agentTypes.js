@@ -5,6 +5,7 @@ export const AGENT_ACTIONS = [
   "change_aircraft_status",
   "duplicate_flight",
   "query_schedule",
+  "query_notam",
 ];
 
 export const VALID_AIRCRAFT = ["N35EA", "N540JL"];
@@ -33,6 +34,8 @@ export const EMPTY_AGENT_RESULT = {
     bg: 0,
     st: "prog",
     status_change: null,
+    airport_code: null,
+    query_scope: null,
   },
   missing_fields: [],
   warnings: [],

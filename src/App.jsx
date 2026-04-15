@@ -2,8 +2,9 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
-import { executeAgentAction } from "./ai/agentExecutor";
+import { executeAgentAction, buildConfirmationToken } from "./ai/agentExecutor";
 import { subscribeToPush } from "./lib/push";
+import { buildOpsPush } from "./lib/opsNotifications";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -77,8 +78,10 @@ function calcR(orig,dest,id,px,bg){
 function getPos(fs){var t=tds(new Date()),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
 function makeWaUrl(f,lbl){var a=AC[f.ac];return"https://api.callmebot.com/whatsapp.php?phone="+PH+"&text="+encodeURIComponent("*AirPalace*\n"+lbl+"\n"+fdt(f.date)+"\n"+f.ac+" "+a.type+"\n"+f.orig+" -> "+f.dest+"\n"+ftm(f.time)+"\n"+(f.rb||"-"))+"&apikey="+CMB;}
 function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
-function apTz(ap){if(!ap)return null;var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
-function etaText(f){if(!f||!f.date||!f.time||f.time==="STBY")return null;var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;var dt=new Date(f.date+"T"+f.time+":00");if(isNaN(dt.getTime()))return null;var arr=new Date(dt.getTime()+bm*60000),ap=findAP(f.dest),tz=apTz(ap);if(!tz)return null;return new Intl.DateTimeFormat("es-MX",{hour:"2-digit",minute:"2-digit",day:"2-digit",month:"2-digit",timeZone:tz}).format(arr);}
+function apTz(ap){if(!ap)return null;var i4=String(ap.i4||"").toUpperCase(),i3=String(ap.i3||"").toUpperCase(),city=String(ap.c||"").toLowerCase();if(i4==="MMMD"||i3==="MID"||city.indexOf("merida")>=0||city.indexOf("mérida")>=0)return"America/Merida";if(i4==="MMUN"||i3==="CUN"||city.indexOf("cancun")>=0||city.indexOf("cancún")>=0)return"America/Cancun";if(i4==="MMCZ"||i3==="CZM"||city.indexOf("cozumel")>=0)return"America/Cancun";if(i4==="MMTO"||i3==="TLC"||city.indexOf("toluca")>=0)return"America/Mexico_City";if(i4==="MMMX"||i3==="MEX"||city.indexOf("cdmx")>=0||city.indexOf("mexico city")>=0)return"America/Mexico_City";if(i4==="KOPF"||i3==="OPF")return"America/New_York";if(i4==="KFLL"||i3==="FLL")return"America/New_York";if(i4==="KMIA"||i3==="MIA")return"America/New_York";if(i4==="KMCO"||i3==="MCO")return"America/New_York";var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
+function tzOffsetMin(ts,tz){try{var parts=new Intl.DateTimeFormat("en-US",{timeZone:tz,timeZoneName:"shortOffset",hour:"2-digit"}).formatToParts(new Date(ts));var label=(parts.find(function(p){return p.type==="timeZoneName";})||{}).value||"GMT+0";var m=label.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);if(!m)return 0;var sign=m[1]==="-"?-1:1;return sign*((+m[2]||0)*60+(+m[3]||0));}catch{return 0;}}
+function originLocalToUtc(dateStr,timeStr,originTz){var d=String(dateStr||"").split("-"),t=String(timeStr||"00:00").split(":"),y=+d[0],m=(+d[1]||1)-1,da=+d[2]||1,h=+t[0]||0,mi=+t[1]||0;var guess=Date.UTC(y,m,da,h,mi,0);var off1=tzOffsetMin(guess,originTz),utc=guess-off1*60000,off2=tzOffsetMin(utc,originTz);return guess-off2*60000;}
+function etaText(f){if(!f||!f.date||!f.time||f.time==="STBY")return null;var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;var origAp=findAP(f.orig),destAp=findAP(f.dest),origTz=apTz(origAp),destTz=apTz(destAp);if(!origTz||!destTz)return null;var depUtc=originLocalToUtc(f.date,f.time,origTz);if(!isFinite(depUtc))return null;var arr=new Date(depUtc+bm*60000);try{return new Intl.DateTimeFormat("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hour12:true,timeZone:destTz}).format(arr);}catch{return null;}}
 
 // ═══ SEED DATA ═══
 var SEED=[
@@ -183,13 +186,26 @@ export default function App(){
   var[agentInstruction,setAgentInstruction]=useState("");
   var[agentResult,setAgentResult]=useState(null);
   var[agentValidation,setAgentValidation]=useState(null);
+  var[pendingWrite,setPendingWrite]=useState(null);
   var[agentBusy,setAgentBusy]=useState(false);
   var[agentOpen,setAgentOpen]=useState(false);
   var[currentUser,setCurrentUser]=useState(null);
   var[actorName,setActorName]=useState("");
   var[recording,setRecording]=useState(false);
   var[transcribing,setTranscribing]=useState(false);
+  var[agentLiveTranscript,setAgentLiveTranscript]=useState("");
+  var[agentVoiceState,setAgentVoiceState]=useState("idle"); // idle | listening | thinking | speaking | clarification
+  var[agentMessages,setAgentMessages]=useState([{role:"assistant",text:"¿En qué te puedo ayudar hoy? Puedo ayudarte a programar vuelos, consultar agenda, revisar aeronaves y responder dudas operativas.",ts:new Date().toISOString()}]);
   var[recorder,setRecorder]=useState(null);
+  var[speechRec,setSpeechRec]=useState(null);
+  var liveAnalyzeTimerRef=useRef(null);
+  var realtimePcRef=useRef(null);
+  var realtimeDcRef=useRef(null);
+  var realtimeAudioRef=useRef(null);
+  var realtimeStreamRef=useRef(null);
+  var[realtimeConnected,setRealtimeConnected]=useState(false);
+  var[realtimeConnecting,setRealtimeConnecting]=useState(false);
+  var[realtimeText,setRealtimeText]=useState("");
   var[maintPlan,setMaintPlan]=useState(function(){
     try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
   });
@@ -214,6 +230,10 @@ export default function App(){
     return {
       creation_source: source,
     };
+  }
+
+  function isAgentWriteAction(action) {
+    return ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"].includes(String(action || ""));
   }
 
   function getCreatorLabel(f) {
@@ -262,8 +282,9 @@ export default function App(){
   }, []);
 
   async function safeInsertFlights(rows) {
-    const { error } = await supabase.from("flights").insert(rows);
+    const { data, error } = await supabase.from("flights").insert(rows).select("*");
     if (error) throw error;
+    return data || [];
   }
 
   async function safeUpdateFlight(id, updates) {
@@ -280,23 +301,70 @@ export default function App(){
       });
       const data = await r.json().catch(function(){return{};});
       if (!r.ok) {
-        throw new Error(data.error || `HTTP ${r.status}`);
+        throw new Error(data.error || "No se pudo contactar el servicio de WhatsApp.");
+      }
+      if (data.ok===false || data.warning) {
+        setErrMsg(`Vuelo guardado correctamente, pero ${data.warning || "no se pudo enviar WhatsApp."}`);
+        setPhase("warn");
+        setTimeout(function(){setPhase("ready");}, 2200);
+      }
+    } catch (e) {
+      setErrMsg(`Vuelo guardado correctamente, pero no se pudo enviar WhatsApp.`);
+      setPhase("warn");
+      setTimeout(function(){setPhase("ready");}, 2200);
+    }
+  }
+
+  function buildFlightEmailPayload(flight, eventLabel) {
+    var routeEst=(flight?.orig&&flight?.dest&&flight?.ac)?calcR(flight.orig,flight.dest,flight.ac,{m:flight.pm,w:flight.pw,c:flight.pc},flight.bg):null;
+    return {
+      event_label: eventLabel,
+      id: flight?.id || null,
+      flight_id: flight?.id || null,
+      date: flight?.date || "",
+      ac: flight?.ac || "",
+      orig: flight?.orig || "",
+      dest: flight?.dest || "",
+      time: flight?.time || "STBY",
+      block_minutes: routeEst?.bm || 60,
+      eta_local: etaText(flight) || "",
+      rb: flight?.rb || "",
+      pm: Number(flight?.pm || 0),
+      pw: Number(flight?.pw || 0),
+      pc: Number(flight?.pc || 0),
+      notes: String(flight?.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim(),
+      actor: actorName || "",
+      edited_by: actorName || "",
+      created_by: actorName || "",
+    };
+  }
+
+  async function autoSendEmail(eventType, payload, okPrefix) {
+    try {
+      const r = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventType, payload }),
+      });
+      const data = await r.json().catch(function(){return{};});
+      if (!r.ok) {
+        throw new Error(data.error || "No se pudo enviar el correo.");
       }
       if (data.warning) {
-        setErrMsg(`Vuelo guardado correctamente. WhatsApp parcial: ${data.warning}`);
+        setErrMsg(`${okPrefix}, pero correo parcial: ${data.warning}`);
         setPhase("error");
         setTimeout(function(){setPhase("ready");}, 2200);
       }
     } catch (e) {
-      setErrMsg(`Vuelo guardado correctamente, pero WhatsApp falló: ${e.message || String(e)}`);
+      setErrMsg(`${okPrefix}, pero no se pudo enviar el correo: ${e.message || String(e)}`);
       setPhase("error");
       setTimeout(function(){setPhase("ready");}, 2200);
     }
   }
 
-  async function sendPushEvent(title, body){
+  async function sendPushEvent(title, body, url){
     try{
-      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:"/"})});
+      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:url||"/"})});
     }catch{}
   }
 
@@ -371,7 +439,7 @@ export default function App(){
           try {
             const freshMaint = await loadMaintFromDb();
             setMtRaw(freshMaint.statusByAc);
-            if (Object.keys(freshMaint.planByAc || {}).length) saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
+            saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
           } catch {}
         }
       )
@@ -383,14 +451,20 @@ export default function App(){
     };
   }, []);
 
+  useEffect(function(){
+    return function(){
+      if (liveAnalyzeTimerRef.current) clearTimeout(liveAnalyzeTimerRef.current);
+      stopRealtimeVoice();
+    };
+  },[]);
+
   async function addFlight(flight) {
     const aircraftStatus = getAcStatus(flight.ac, flight.date);
-
-    if (aircraftStatus === "aog" || aircraftStatus === "mantenimiento") {
-      setErrMsg(`La aeronave ${flight.ac} está en ${aircraftStatus.toUpperCase()}`);
-      setPhase("error");
-      return;
-    }
+    const outOfServiceWarning = aircraftStatus === "aog"
+      ? `Advertencia: la aeronave ${flight.ac} actualmente se encuentra fuera de servicio (AOG). El vuelo puede programarse, pero deberá verificarse su disponibilidad antes de la operación.`
+      : aircraftStatus === "mantenimiento"
+        ? `Advertencia: la aeronave ${flight.ac} actualmente está en mantenimiento. El vuelo puede programarse, pero su disponibilidad deberá confirmarse antes de la fecha de salida.`
+        : "";
 
     setPhase("saving");
     const creatorMeta = getCreatorMeta("manual");
@@ -423,22 +497,34 @@ export default function App(){
           },
         ];
 
-        await safeInsertFlights(legs);
-        await autoSendWhatsApp(legs[0], "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${legs[0].ac} · ${legs[0].orig} → ${legs[0].dest} · ${legs[0].date} ${legs[0].time||"STBY"}`);
+        const insertedLegs = await safeInsertFlights(legs);
+        var firstLeg = insertedLegs[0] || legs[0];
+        await autoSendWhatsApp(firstLeg, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(firstLeg, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedPush = buildOpsPush("flight_programmed", firstLeg);
+        await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
       } else {
         const created = { ...flight, nt: noteWithActor(flight.nt, actorName), ...creatorMeta };
-        await safeInsertFlights([created]);
-        await autoSendWhatsApp(created, "PROGRAMADO");
-        await sendPushEvent("Vuelo programado", `${created.ac} · ${created.orig} → ${created.dest} · ${created.date} ${created.time||"STBY"}`);
+        const insertedSingle = await safeInsertFlights([created]);
+        var createdSaved = insertedSingle[0] || created;
+        await autoSendWhatsApp(createdSaved, "PROGRAMADO");
+        await autoSendEmail("flight_created", buildFlightEmailPayload(createdSaved, "Vuelo programado"), "Vuelo guardado correctamente");
+        var programmedSinglePush = buildOpsPush("flight_programmed", createdSaved);
+        await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
-      setPhase("saved");
-      setTimeout(() => setPhase("ready"), 1500);
+      if (outOfServiceWarning) {
+        setErrMsg(outOfServiceWarning);
+        setPhase("warn");
+        setTimeout(() => setPhase("ready"), 2200);
+      } else {
+        setPhase("saved");
+        setTimeout(() => setPhase("ready"), 1500);
+      }
     } catch (e) {
       setErrMsg(toErrorMessage(e));
       setPhase("error");
@@ -468,7 +554,9 @@ export default function App(){
           updated_at: new Date().toISOString(),
         });
       await autoSendWhatsApp(flight, "MODIFICADO");
-      await sendPushEvent("Vuelo modificado", `${flight.ac} · ${flight.orig} → ${flight.dest} · ${flight.time||"STBY"}`);
+      await autoSendEmail("flight_updated", buildFlightEmailPayload(flight, "Vuelo modificado"), "Vuelo guardado correctamente");
+      var modifiedPush = buildOpsPush("flight_modified", flight);
+      await sendPushEvent(modifiedPush.title, modifiedPush.body, modifiedPush.url);
 
       setNtf({ fl: flight, lbl: "MODIFICADO" });
       setSf(false);
@@ -486,13 +574,16 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: flightToCancel } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
-      await sendPushEvent("Vuelo cancelado", `ID ${id} marcado como cancelado.`);
+      const cancelledPush = buildOpsPush("flight_cancelled", flightToCancel || { ac: "Aeronave" });
+      await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+      await autoSendEmail("flight_cancelled", buildFlightEmailPayload(flightToCancel || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -506,6 +597,7 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const { data: existing } = await supabase.from("flights").select("*").eq("id", id).single();
       const { error } = await supabase
         .from("flights")
         .update({
@@ -515,6 +607,11 @@ export default function App(){
         .eq("id", id);
 
       if (error) throw error;
+      if(newSt==="canc"){
+        const cancelledPush = buildOpsPush("flight_cancelled", existing || { ac: "Aeronave" });
+        await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
+        await autoSendEmail("flight_cancelled", buildFlightEmailPayload(existing || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
+      }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -528,34 +625,54 @@ export default function App(){
     setPhase("saving");
 
     try {
+      const payload = {
+        ac: acId,
+        status: newSt,
+        maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
+        maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
+        updated_at: new Date().toISOString(),
+      };
       const { error } = await supabase
         .from("aircraft_status")
-        .upsert([
-          {
-            ac: acId,
-            status: newSt,
-            maintenance_start_date: newSt==="mantenimiento"?(maintPlan[acId]?.from||null):null,
-            maintenance_end_date: newSt==="mantenimiento"?(maintPlan[acId]?.to||null):null,
-            updated_at: new Date().toISOString(),
-          },
-        ]);
+        .upsert([payload]);
 
       if (error) {
-        const { error: fallbackError } = await supabase
-          .from("aircraft_status")
-          .upsert([{ ac: acId, status: newSt, updated_at: new Date().toISOString() }]);
-        if (fallbackError) throw fallbackError;
+        if (String(error.message || "").toLowerCase().includes("maintenance_start_date") || String(error.message || "").toLowerCase().includes("maintenance_end_date")) {
+          throw new Error("Faltan columnas de persistencia en aircraft_status. Ejecuta la migración que agrega maintenance_start_date y maintenance_end_date.");
+        }
+        throw error;
       }
+      setMtRaw(function(prev){return Object.assign({},prev,{[acId]:newSt});});
       if(newSt==="aog"){
-        await sendPushEvent("AOG", `Alerta AOG: ${acId} quedó fuera de servicio.`);
+        var aogPush=buildOpsPush("aog",{ac:acId});
+        await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
+        await autoSendEmail("aircraft_aog", { event_label:"AOG", ac: acId, actor: actorName }, "Estado guardado correctamente");
       }
       if(newSt==="mantenimiento"){
-        var to=maintPlan[acId]?.to;
-        await sendPushEvent("Mantenimiento", `Mantenimiento: ${acId}${to?` en mantenimiento hasta ${new Date(to+"T12:00:00").toLocaleDateString("es-MX")}`:" en mantenimiento"}.`);
+        var maintPush=buildOpsPush("maintenance",{ac:acId,maintenanceEndDate:maintPlan[acId]?.to});
+        await sendPushEvent(maintPush.title, maintPush.body, maintPush.url);
+        await autoSendEmail("aircraft_maintenance", { event_label:"Mantenimiento", ac: acId, maintenance_end_date: maintPlan[acId]?.to || "", actor: actorName }, "Estado guardado correctamente");
       }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+    }
+  }
+
+  async function persistMaintenanceDates(acId, nextPlanForAc, statusOverride) {
+    try {
+      await supabase.from("aircraft_status").upsert([
+        {
+          ac: acId,
+          status: statusOverride || mt[acId] || "disponible",
+          maintenance_start_date: nextPlanForAc?.from || null,
+          maintenance_end_date: nextPlanForAc?.to || null,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
     } catch (e) {
       setErrMsg(e.message || String(e));
       setPhase("error");
@@ -607,20 +724,188 @@ export default function App(){
   async function analyzeAgentInstruction() {
     if (!agentInstruction.trim()) return;
     setAgentBusy(true);
+    setAgentVoiceState("thinking");
     setPhase("saving");
     setErrMsg("");
     try {
-      const analyzed = await analyzeOpsInstruction(agentInstruction);
+      setAgentMessages(function(prev){return prev.concat([{role:"user",text:agentInstruction.trim(),ts:new Date().toISOString()}]);});
+      const ctx = agentMessages.slice(-6).map(function(m){return `${m.role}: ${m.text}`;});
+      const analyzed = await analyzeOpsInstruction(agentInstruction, ctx);
       const validated = await validateAgentResult(analyzed, agentInstruction);
       setAgentResult(analyzed);
       setAgentValidation(validated);
+      if (isAgentWriteAction(validated.action) && !validated.errors?.length) {
+        const token = buildConfirmationToken(validated);
+        setPendingWrite({
+          validation: validated,
+          token,
+          card: {
+            action: validated.action,
+            aircraft: validated.payload?.ac || "-",
+            route: validated.payload?.orig && validated.payload?.dest ? `${validated.payload.orig} → ${validated.payload.dest}` : "-",
+            departure: validated.payload?.date && validated.payload?.time ? `${validated.payload.date} ${validated.payload.time}` : validated.payload?.date || validated.payload?.time || "-",
+            requester: validated.payload?.rb || "-",
+            notes: validated.payload?.nt || "-",
+            statusChange: validated.payload?.status_change || "-",
+          },
+        });
+      } else {
+        setPendingWrite(null);
+      }
+      const clarificationText = validated.clarification_prompts && validated.clarification_prompts.length
+        ? validated.clarification_prompts.join(" ")
+        : (validated.errors && validated.errors.length ? validated.errors.join(" ") : (validated.human_summary || "Instrucción analizada."));
+      setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:clarificationText,ts:new Date().toISOString()}]);});
+      speakAssistant(clarificationText);
+      if (validated.requires_confirmation || (validated.errors && validated.errors.length) || isAgentWriteAction(validated.action)) {
+        setAgentVoiceState("clarification");
+      } else if (validated.can_execute && String(validated.action || "").startsWith("query_")) {
+        await executeAgentInstruction(validated);
+      } else {
+        setAgentVoiceState("idle");
+      }
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1200);
     } catch (e) {
       setErrMsg(e.message || String(e));
       setPhase("error");
+      setAgentVoiceState("idle");
     } finally {
       setAgentBusy(false);
+    }
+  }
+
+  function queueLiveAnalyze(nextInstruction) {
+    try {
+      if (liveAnalyzeTimerRef.current) clearTimeout(liveAnalyzeTimerRef.current);
+      liveAnalyzeTimerRef.current = setTimeout(function () {
+        if (!agentBusy && String(nextInstruction || "").trim()) analyzeAgentInstruction();
+      }, 900);
+    } catch {}
+  }
+
+  function speakAssistant(text){
+    try{
+      if(!text||typeof window==="undefined"||!("speechSynthesis" in window))return;
+      window.speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(text);
+      u.lang="es-MX";
+      u.rate=1;
+      u.onstart=function(){setAgentVoiceState("speaking");};
+      u.onend=function(){setAgentVoiceState("idle");};
+      u.onerror=function(){setAgentVoiceState("idle");};
+      window.speechSynthesis.speak(u);
+    }catch{}
+  }
+
+  function stopRealtimeVoice() {
+    try {
+      if (realtimeDcRef.current) realtimeDcRef.current.close();
+      if (realtimePcRef.current) realtimePcRef.current.close();
+      if (realtimeStreamRef.current) realtimeStreamRef.current.getTracks().forEach(function(t){t.stop();});
+      realtimeDcRef.current = null;
+      realtimePcRef.current = null;
+      realtimeStreamRef.current = null;
+      setRealtimeConnected(false);
+      setRealtimeConnecting(false);
+      setAgentVoiceState("idle");
+      setRealtimeText("");
+    } catch {}
+  }
+
+  async function startRealtimeVoice() {
+    if (realtimeConnecting || realtimeConnected) return;
+    setRealtimeConnecting(true);
+    setAgentVoiceState("thinking");
+    try {
+      const sessionResp = await fetch("/api/realtime-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructions:
+            "Actúa como front-end de transcripción en tiempo real para AI Pilot. Tu tarea principal es transcribir en español/inglés aeronáutico con alta precisión. No ejecutes acciones operativas por tu cuenta.",
+        }),
+      });
+      const session = await sessionResp.json().catch(function(){return{};});
+      if (!sessionResp.ok || !session.client_secret) throw new Error(session.error || "No se pudo iniciar sesión realtime.");
+
+      const pc = new RTCPeerConnection();
+      realtimePcRef.current = pc;
+
+      const remoteAudio = new Audio();
+      remoteAudio.autoplay = true;
+      realtimeAudioRef.current = remoteAudio;
+      pc.ontrack = function(event) {
+        if (event.streams && event.streams[0]) remoteAudio.srcObject = event.streams[0];
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      realtimeStreamRef.current = stream;
+      stream.getTracks().forEach(function(track){pc.addTrack(track, stream);});
+
+      const dc = pc.createDataChannel("oai-events");
+      realtimeDcRef.current = dc;
+      dc.onopen = function(){
+        setRealtimeConnected(true);
+        setRealtimeConnecting(false);
+        setAgentVoiceState("listening");
+      };
+      dc.onclose = function(){
+        setRealtimeConnected(false);
+        if (!realtimeConnecting) setAgentVoiceState("idle");
+      };
+      dc.onmessage = function(evt){
+        try {
+          const msg = JSON.parse(evt.data || "{}");
+          if (msg.type === "input_audio_buffer.speech_started") {
+            if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+            setAgentVoiceState("listening");
+          } else if (msg.type === "response.created") {
+            setAgentVoiceState("thinking");
+          } else if (msg.type === "response.audio_transcript.delta") {
+            setRealtimeText(function(prev){return `${prev}${msg.delta || ""}`.slice(-3000);});
+          } else if (msg.type === "response.audio_transcript.done" && msg.transcript) {
+            const transcript = String(msg.transcript || "").trim();
+            if (transcript) {
+              if (transcript.length >= 12 && window.speechSynthesis && window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+              }
+              setAgentInstruction(transcript);
+              queueLiveAnalyze(transcript);
+            }
+            setAgentVoiceState("thinking");
+          } else if (msg.type === "conversation.item.input_audio_transcription.completed" && msg.transcript) {
+            const transcript2 = String(msg.transcript || "").trim();
+            if (transcript2) {
+              setAgentInstruction(transcript2);
+              queueLiveAnalyze(transcript2);
+            }
+          } else if (msg.type === "response.done") {
+            setAgentVoiceState("idle");
+          }
+        } catch {}
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const model = encodeURIComponent(String(import.meta.env.VITE_OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview"));
+      const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${session.client_secret}`,
+          "Content-Type": "application/sdp",
+        },
+      });
+      const answerSdp = await sdpResp.text();
+      if (!sdpResp.ok) throw new Error(answerSdp || `HTTP ${sdpResp.status}`);
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+      stopRealtimeVoice();
+    } finally {
+      setRealtimeConnecting(false);
     }
   }
 
@@ -672,51 +957,121 @@ export default function App(){
   }
 
   async function toggleVoiceInput() {
-    if (recording && recorder) {
-      recorder.stop();
+    if (recording && (speechRec || recorder)) {
+      if (speechRec) speechRec.stop();
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      setRecording(false);
+      setAgentVoiceState("idle");
+      setAgentLiveTranscript("");
       return;
     }
     try {
-      if (typeof MediaRecorder === "undefined") throw new Error("Tu navegador no soporta grabación de audio.");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks = [];
-      var mimeCandidates=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
-      var selected=mimeCandidates.find(function(m){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m);})||"";
-      const mediaRecorder = selected?new MediaRecorder(stream,{mimeType:selected}):new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
-      mediaRecorder.onstop = function(){
-        stream.getTracks().forEach(function(t){t.stop();});
-        setRecording(false);
-        const blob = new Blob(chunks, { type: selected || chunks[0]?.type || "audio/mp4" });
-        transcribeAudio(blob);
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        if (typeof MediaRecorder === "undefined") throw new Error("Tu navegador no soporta voz en tiempo real ni grabación.");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const chunks = [];
+        var mimeCandidates=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
+        var selected=mimeCandidates.find(function(m){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m);})||"";
+        const mediaRecorder = selected?new MediaRecorder(stream,{mimeType:selected}):new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
+        mediaRecorder.onstart = function(){setAgentVoiceState("listening");};
+        mediaRecorder.onstop = function(){
+          stream.getTracks().forEach(function(t){t.stop();});
+          setRecording(false);
+          setAgentVoiceState("thinking");
+          const blob = new Blob(chunks, { type: selected || chunks[0]?.type || "audio/mp4" });
+          transcribeAudio(blob).finally(function(){setAgentVoiceState("idle");});
+        };
+        setRecorder(mediaRecorder);
+        mediaRecorder.start();
+        setRecording(true);
+        return;
+      }
+      const recognition = new SR();
+      recognition.lang = "es-MX";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onstart = function(){setAgentVoiceState("listening");};
+      recognition.onresult = function(event){
+        let interim = "";
+        let finalText = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) finalText += text + " ";
+          else interim += text;
+        }
+        if (interim) setAgentLiveTranscript(interim.trim());
+        if (finalText.trim()) {
+          if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+          setAgentInstruction(function(prev){
+            const next = `${String(prev||"").trim()} ${finalText.trim()}`.trim();
+            queueLiveAnalyze(next);
+            return next;
+          });
+          setAgentLiveTranscript("");
+        }
       };
-      setRecorder(mediaRecorder);
-      mediaRecorder.start();
+      recognition.onerror = function(e){
+        setErrMsg(e?.error ? `Reconocimiento de voz: ${e.error}` : "Error de reconocimiento de voz.");
+        setPhase("error");
+        setAgentVoiceState("idle");
+      };
+      recognition.onend = function(){
+        setRecording(false);
+        if (agentVoiceState === "listening") setAgentVoiceState("idle");
+      };
+      setSpeechRec(recognition);
+      recognition.start();
       setRecording(true);
     } catch (e) {
       setErrMsg(e?.message || "No se pudo iniciar el micrófono.");
       setPhase("error");
+      setAgentVoiceState("idle");
     }
   }
 
-  async function executeAgentInstruction() {
-    if (!agentValidation || !agentValidation.can_execute) return;
+  async function executeAgentInstruction(validationOverride) {
+    const validation = validationOverride || pendingWrite?.validation || agentValidation;
+    if (!validation) return;
+    const isPendingWriteConfirm = !validationOverride && !!pendingWrite && isAgentWriteAction(validation.action) && !(validation.errors && validation.errors.length);
+    if (!validation.can_execute && !isPendingWriteConfirm) return;
     setAgentBusy(true);
     setPhase("saving");
     setErrMsg("");
     try {
-      const execRes = await executeAgentAction(agentValidation, {
+      const execRes = await executeAgentAction(validation, {
         calcRoute: calcR,
         creatorMeta: getCreatorMeta("ai"),
+        instruction: agentInstruction,
+        confirmed: !!pendingWrite && !validationOverride,
+        confirmationToken: pendingWrite?.token || null,
       });
-      setAgentInstruction("");
-      setAgentResult(null);
-      setAgentValidation(null);
+      if (execRes?.requires_confirmation) {
+        setPendingWrite(function(prev){return prev||{validation,token:execRes.confirmation_token,card:execRes.confirmation_card};});
+        setAgentVoiceState("clarification");
+        setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:execRes.message || "Confirma por escrito para ejecutar.",ts:new Date().toISOString()}]);});
+        speakAssistant(execRes.message || "Confirma por escrito para ejecutar.");
+        return;
+      }
+      if (!validationOverride) {
+        setAgentInstruction("");
+        setAgentResult(null);
+        setAgentValidation(null);
+        setPendingWrite(null);
+      }
       if (execRes && execRes.warning) {
         setErrMsg(`Vuelo creado, pero WhatsApp falló: ${execRes.warning}`);
         setPhase("error");
         setTimeout(function(){setPhase("ready");}, 2200);
         return;
+      }
+      if (execRes && execRes.message) {
+        const rendered = execRes.data?.flights && execRes.data.flights.length
+          ? `${execRes.message}\n${execRes.data.flights.map(function(f){return `• ${f.date} ${f.time||"STBY"} · ${f.ac} · ${f.orig} → ${f.dest} (${f.rb||"-"})`;}).join("\n")}`
+          : execRes.message;
+        setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:rendered,ts:new Date().toISOString()}]);});
+        speakAssistant(execRes.message);
       }
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1200);
@@ -731,7 +1086,8 @@ export default function App(){
   var pos=useMemo(function(){return getPos(fs);},[fs]);
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
-  var conflictList=useMemo(function(){var m={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[fs,today]);
+  var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
+  var conflictList=useMemo(function(){var m={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[operationalFlights]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -779,10 +1135,10 @@ export default function App(){
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
     var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
     var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
-    var conflicts=0,idx={};fs.filter(function(f){return f.st!=="canc"&&f.date>=today;}).forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var conflicts=0,idx={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
     var pending=fs.filter(function(f){return f.st==="prog";}).length;
     return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
-  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan]);
+  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan,operationalFlights]);
   var filteredAnalytics=useMemo(function(){
     return fs.filter(function(f){
       if(anYear!=="all"&&String(f.date||"").slice(0,4)!==anYear)return false;
@@ -806,13 +1162,15 @@ export default function App(){
   useEffect(function(){
     if(conflictList.length>0){
       var ac=conflictList[0]?.ac||"Aeronave";
-      sendPushOnce("push_conflict_"+today,"Conflicto operativo",`Conflicto operativo detectado en ${ac}.`);
+      var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
+      sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
     }
     var d=new Date(today+"T12:00:00");d.setDate(d.getDate()+1);var t2=tds(d);
     var tomFlights=fs.filter(function(f){return f.date===t2&&f.st!=="canc";});
     if(tomFlights.length>0){
       var f0=tomFlights[0];
-      sendPushOnce("push_tomorrow_"+t2, "Vuelo de mañana", `Recordatorio: tienes un vuelo mañana en ${f0.ac}.`);
+      var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
+      sendPushOnce("push_tomorrow_"+t2, tomorrowPush.title, tomorrowPush.body);
     }
   },[conflictList,fs,today]);
 
@@ -825,8 +1183,7 @@ export default function App(){
 
       <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src="/logo-192.png" alt="AirPalace" style={{width:30,height:30,borderRadius:8,objectFit:"cover",border:"1px solid #334155"}}/>
+          <div style={{display:"flex",alignItems:"center"}}>
             <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
           </div>
         </div>
@@ -999,8 +1356,8 @@ export default function App(){
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
-                <input type="date" value={plan.from||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{from:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
-                <input type="date" value={plan.to||""} onChange={function(e){saveMaintPlan(Object.assign({},maintPlan,{[a.id]:Object.assign({},plan,{to:e.target.value})}));}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
+                <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
               <div style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
@@ -1076,24 +1433,29 @@ export default function App(){
       </div>}
 
       {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
-        <div style={{background:"#fff",borderRadius:20,width:"100%",maxWidth:400,padding:24}} onClick={function(e){e.stopPropagation();}}>
-          <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>✅ Vuelo {ntf.lbl}</div>
-          <div style={{fontSize:13,color:"#64748b",marginBottom:16}}>✈️ {ntf.fl.orig} → {ntf.fl.dest} · {fdt(ntf.fl.date)}</div>
-          <div style={{background:"#f0fdf4",borderRadius:12,padding:12,marginBottom:12,border:"1px solid #86efac"}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:8}}>💬 WhatsApp</div>
-            <button onClick={function(){autoSendWhatsApp(ntf.fl, ntf.lbl);}} style={{display:"block",width:"100%",background:"#16a34a",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none",border:"none",cursor:"pointer"}}>📤 Enviar WhatsApp</button>
+        <div style={{background:"#fff",borderRadius:22,width:"100%",maxWidth:400,padding:"24px 22px",boxShadow:"0 20px 45px rgba(15,23,42,.25)"}} onClick={function(e){e.stopPropagation();}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#0f172a",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
           </div>
-          <div style={{background:"#dbeafe",borderRadius:12,padding:12,border:"1px solid #93c5fd"}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#1d4ed8",marginBottom:8}}>📅 Calendario</div>
-            <a href={makeCalUrl(ntf.fl)} target="_blank" rel="noreferrer" style={{display:"block",background:"#1d4ed8",color:"#fff",textAlign:"center",padding:12,borderRadius:10,fontWeight:700,fontSize:14,textDecoration:"none"}}>📅 Abrir Google Calendar</a>
+          <div style={{fontSize:21,fontWeight:900,color:"#0f172a",lineHeight:1.2,marginBottom:4}}>{ntf.fl.orig} <span style={{color:"#94a3b8"}}>→</span> {ntf.fl.dest}</div>
+          <div style={{fontSize:12,color:"#64748b",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
+          <div style={{background:"#f8fafc",borderRadius:14,padding:"12px 13px",border:"1px solid #e2e8f0",fontSize:13,color:"#334155",lineHeight:1.7}}>
+            <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
+            <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
+            <div><strong>Hora salida:</strong> {ftm(ntf.fl.time)}</div>
+            <div><strong>Solicitó:</strong> {ntf.fl.rb||"-"}</div>
+            <div><strong>PAX:</strong> {(ntf.fl.pm||0)+(ntf.fl.pw||0)+(ntf.fl.pc||0)}</div>
+            {ntf.fl.nt&&<div><strong>Notas:</strong> {ntf.fl.nt}</div>}
           </div>
-          <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:12}}>Cerrar</button>
+          <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:"pointer",marginTop:14}}>Cerrar</button>
         </div>
       </div>}
 
       <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:900}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
+        {phase==="warn"&&<div style={{background:"#f59e0b",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(245,158,11,.45)",textAlign:"center",maxWidth:340}}>⚠️ {errMsg}</div>}
         {phase==="error"&&<div style={{background:"#dc2626",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(220,38,38,.5)",textAlign:"center",maxWidth:340}}>❌ Error: {errMsg}</div>}
       </div>
 
@@ -1111,28 +1473,63 @@ export default function App(){
           <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
         </div>
         <div style={{fontSize:11,color:"#475569",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
+        <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:6}}>
+          Estado: {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Esperando aclaración":"✅ En espera"}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:8,border:"1px solid #0f172a",borderRadius:10,background:realtimeConnected?"#dcfce7":"#fff",fontSize:11,fontWeight:700,cursor:realtimeConnected?"default":"pointer"}}>
+            {realtimeConnecting?"⏳ Conectando...":realtimeConnected?"🟢 Realtime activo":"🎧 Conectar Realtime"}
+          </button>
+          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+            ⏹️ Cerrar Realtime
+          </button>
+        </div>
+        {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10,padding:8,background:"#f8fafc",marginBottom:8}}>
+          {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#0f172a":"#334155",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
+        </div>}
+        {realtimeText&&<div style={{fontSize:11,color:"#334155",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Realtime: {realtimeText.slice(-240)}</div>}
+        {agentLiveTranscript&&<div style={{fontSize:11,color:"#0369a1",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Transcripción en vivo: {agentLiveTranscript}</div>}
         <textarea
           value={agentInstruction}
           onChange={function(e){setAgentInstruction(e.target.value);}}
-          placeholder="Escribe una instrucción..."
+          placeholder="Escribe o dicta una instrucción..."
           style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
         />
         <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
-          {transcribing?"⏳ Transcribiendo...":recording?"⏹️ Detener grabación":"🎤 Grabar voz"}
+          {recording?"⏹️ Detener escucha en vivo":"🎙️ Hablar en vivo"}
+        </button>
+        <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{width:"100%",padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",color:"#334155",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+          🔇 Detener voz del asistente
         </button>
         <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-          {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+          {agentBusy?"⏳ Analizando...":"🔍 Analizar instrucción"}
         </button>
         {agentValidation&&<div style={{marginTop:8,border:"1px solid #e2e8f0",borderRadius:10,padding:9,background:"#f8fafc"}}>
           <div style={{fontSize:11,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
           <div style={{fontSize:11,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
           <div style={{fontSize:11,color:"#334155"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
-          {agentValidation.missing_fields.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+          {agentValidation.clarification_prompts&&agentValidation.clarification_prompts.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>{agentValidation.clarification_prompts.map(function(c,i){return <div key={i}>• {c}</div>;})}</div>}
           {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
           {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
-          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy||isAgentWriteAction(agentValidation.action)} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy&&!isAgentWriteAction(agentValidation.action)?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
           </button>
+        </div>}
+        {pendingWrite&&<div style={{marginTop:8,border:"1px solid #cbd5e1",borderRadius:10,padding:10,background:"#fff"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:6}}>🧾 Confirmación escrita requerida (pendiente)</div>
+          <div style={{fontSize:11,color:"#334155",lineHeight:1.6}}>
+            <div><strong>Acción:</strong> {pendingWrite.card.action}</div>
+            <div><strong>Aeronave:</strong> {pendingWrite.card.aircraft}</div>
+            <div><strong>Ruta:</strong> {pendingWrite.card.route}</div>
+            <div><strong>Salida:</strong> {pendingWrite.card.departure}</div>
+            <div><strong>Solicitó:</strong> {pendingWrite.card.requester}</div>
+            <div><strong>Notas:</strong> {pendingWrite.card.notes}</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:8}}>
+            <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:8,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:8,background:"#fff",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer"}}>Editar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:8,border:"1px solid #fecaca",borderRadius:8,background:"#fff",color:"#b91c1c",fontSize:11,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+          </div>
         </div>}
       </div>}
 

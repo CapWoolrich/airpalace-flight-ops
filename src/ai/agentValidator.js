@@ -83,7 +83,11 @@ export async function validateAgentResult(agentResult, instruction = "") {
 
       const currentStatus = statusRows?.[0]?.status || "disponible";
       if (["aog", "mantenimiento"].includes(currentStatus)) {
-        result.errors.push(`La aeronave ${result.payload.ac} está en ${currentStatus}.`);
+        result.warnings.push(
+          currentStatus === "aog"
+            ? `Advertencia: la aeronave ${result.payload.ac} actualmente se encuentra fuera de servicio (AOG). El vuelo puede programarse, pero deberá verificarse su disponibilidad antes de la operación.`
+            : `Advertencia: la aeronave ${result.payload.ac} actualmente está en mantenimiento. El vuelo puede programarse, pero su disponibilidad deberá confirmarse antes de la fecha de salida.`
+        );
       }
 
       const { data: collisionRows } = await supabase
@@ -109,6 +113,18 @@ export async function validateAgentResult(agentResult, instruction = "") {
     }
   }
 
+  if (result.action === "query_notam") {
+    if (!result.payload.airport_code) {
+      const codeInInstruction = String(instruction || "").match(/\b([A-Za-z]{4})\b/);
+      if (codeInInstruction) result.payload.airport_code = codeInInstruction[1].toUpperCase();
+    }
+    if (!result.payload.airport_code) {
+      result.requires_confirmation = true;
+      result.missing_fields = Array.from(new Set([...(result.missing_fields || []), "airport_code"]));
+      result.errors.push("Necesito el código ICAO del aeropuerto (por ejemplo: MMMD o KOPF).");
+    }
+  }
+
   if (result.action === "edit_flight" && !result.payload.flight_id) {
     result.errors.push("edit_flight requiere flight_id.");
   }
@@ -117,8 +133,29 @@ export async function validateAgentResult(agentResult, instruction = "") {
     result.errors.push("cancel_flight requiere flight_id.");
   }
 
+  const friendlyMap = {
+    date: "Falta indicar la fecha del vuelo.",
+    ac: "Necesito saber qué aeronave deseas usar.",
+    orig: "Falta el aeropuerto de salida.",
+    dest: "Falta el aeropuerto de destino.",
+    time: "Falta indicar la hora de salida.",
+    rb: "Falta indicar quién solicita el vuelo.",
+    airport_code: "Necesito el código ICAO del aeropuerto para consultar NOTAM/restricciones.",
+  };
+  const clarification_prompts = (result.missing_fields || []).map((f) => friendlyMap[f] || `Falta información: ${f}.`);
+  const cleanedErrors = (result.errors || []).map((msg) =>
+    msg
+      .replace("change_aircraft_status requiere ac.", "Necesito saber qué aeronave deseas actualizar.")
+      .replace("change_aircraft_status requiere status_change.", "Indica el nuevo estado de la aeronave (disponible, mantenimiento o AOG).")
+      .replace("edit_flight requiere flight_id.", "Necesito identificar el vuelo que deseas editar.")
+      .replace("cancel_flight requiere flight_id.", "Necesito identificar el vuelo que deseas cancelar.")
+      .replace(/^Faltan campos críticos:.*$/i, "Faltan datos clave para programar el vuelo.")
+  );
+
   return {
     ...result,
-    can_execute: result.errors.length === 0 && !result.requires_confirmation,
+    errors: cleanedErrors,
+    clarification_prompts,
+    can_execute: cleanedErrors.length === 0 && !result.requires_confirmation,
   };
 }
