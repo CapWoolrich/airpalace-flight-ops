@@ -1,10 +1,12 @@
 import { normalizeAgentResult, normalizeAgentWithAliases } from "./agentUtils";
+import { normalizeAviationInstruction } from "./aviationLanguage";
 
-export async function analyzeOpsInstruction(instruction) {
+export async function analyzeOpsInstruction(instruction, conversationContext = []) {
+  const normalizedInstruction = normalizeAviationInstruction(instruction);
   const response = await fetch("/api/ops-agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instruction }),
+    body: JSON.stringify({ instruction: normalizedInstruction, context: conversationContext }),
   });
 
   let data = null;
@@ -22,5 +24,5 @@ export async function analyzeOpsInstruction(instruction) {
     throw new Error(backendMessage);
   }
 
-  return normalizeAgentWithAliases(normalizeAgentResult(data), instruction);
+  return normalizeAgentWithAliases(normalizeAgentResult(data), normalizedInstruction);
 }
