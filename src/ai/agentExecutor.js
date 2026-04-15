@@ -6,72 +6,25 @@ import {
   getOperationalTomorrowISO,
   getOperationalWeekRangeISO,
 } from "./operationalDate";
+import { detectFlightConflicts } from "./conflictUtils";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"];
 const ACTIVE_FLIGHT_STATUSES = new Set(["prog", "enc"]);
-const DEFAULT_OCCUPANCY_MINUTES = 90;
 
 function normalizeText(value) {
   return String(value || "").toLowerCase();
 }
 
-function parseTimeToMinutes(value) {
-  const m = String(value || "").match(/^(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (hh > 23 || mm > 59) return null;
-  return hh * 60 + mm;
-}
-
-function flightStartMinutes(flight) {
-  const startMinutes = parseTimeToMinutes(flight?.time);
-  if (!flight?.date || startMinutes === null) return null;
-  const base = Date.parse(`${flight.date}T00:00:00Z`);
-  if (!Number.isFinite(base)) return null;
-  return Math.floor(base / 60000) + startMinutes;
-}
-
-function flightEndMinutes(flight, start) {
-  const knownArrival = parseTimeToMinutes(
-    flight?.arrival_time || flight?.arr_time || flight?.eta_time || flight?.eta
-  );
-  if (knownArrival !== null && flight?.date) {
-    const base = Math.floor(Date.parse(`${flight.date}T00:00:00Z`) / 60000);
-    const candidate = base + knownArrival;
-    if (candidate > start) return candidate;
-    return candidate + 24 * 60;
-  }
-  return start + DEFAULT_OCCUPANCY_MINUTES;
-}
-
-function overlap(a, b) {
-  if (!a?.ac || a.ac !== b?.ac) return false;
-  const aStart = flightStartMinutes(a);
-  const bStart = flightStartMinutes(b);
-  if (aStart === null || bStart === null) return false;
-  const aEnd = flightEndMinutes(a, aStart);
-  const bEnd = flightEndMinutes(b, bStart);
-  return aStart < bEnd && bStart < aEnd;
-}
-
-function detectConflicts(flights) {
-  const conflicts = [];
-  const active = (flights || []).filter((f) => ACTIVE_FLIGHT_STATUSES.has(String(f.st || "").toLowerCase()));
-  for (let i = 0; i < active.length; i += 1) {
-    for (let j = i + 1; j < active.length; j += 1) {
-      const a = active[i];
-      const b = active[j];
-      if (!overlap(a, b)) continue;
-      conflicts.push({ ac: a.ac, flights: [a, b] });
-    }
-  }
-  return conflicts;
-}
-
 function summarizeFlights(flights) {
   if (!flights.length) return "No encontré vuelos para ese criterio.";
   return `Encontré ${flights.length} vuelo(s).`;
+}
+
+function resolveOperationalRange(instruction, refs) {
+  if (/mañana|tomorrow/.test(instruction)) return { start: refs.tomorrow, end: refs.tomorrow, label: "tomorrow" };
+  if (/hoy|today/.test(instruction)) return { start: refs.today, end: refs.today, label: "today" };
+  if (/esta semana|this week|semana/.test(instruction)) return { start: refs.weekRange.start, end: refs.weekRange.end, label: "week" };
+  return null;
 }
 
 function detectUnsupportedPilotQuery(instruction, payload) {
@@ -115,6 +68,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       const today = getOperationalTodayISO();
       const tomorrow = getOperationalTomorrowISO();
       const weekRange = getOperationalWeekRangeISO();
+      const requestedRange = resolveOperationalRange(instruction, { today, tomorrow, weekRange });
 
       if (detectUnsupportedPilotQuery(instruction, payload)) {
         return {
@@ -124,16 +78,13 @@ export async function executeAgentAction(agentResult, options = {}) {
         };
       }
 
-      if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto/.test(instruction)) {
+      if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto|fuera de servicio/.test(instruction)) {
         if (/conflicto/.test(instruction)) {
           const flights = await fetchFlightsForQuery();
-          const rangeStart = /mañana|tomorrow/.test(instruction) ? tomorrow : /hoy|today/.test(instruction) ? today : null;
-          const rangeEnd = rangeStart;
-          const inRange = (f) => {
-            if (!rangeStart) return true;
-            return f.date >= rangeStart && f.date <= rangeEnd;
-          };
-          const conflicts = detectConflicts(flights.filter(inRange));
+          const conflicts = detectFlightConflicts(flights, {
+            activeStatuses: Array.from(ACTIVE_FLIGHT_STATUSES),
+            dateRange: requestedRange ? { start: requestedRange.start, end: requestedRange.end } : null,
+          });
           const aircraft = Array.from(new Set(conflicts.map((c) => c.ac)));
           return {
             ok: true,
@@ -153,6 +104,17 @@ export async function executeAgentAction(agentResult, options = {}) {
         const maint = statuses.filter((s) => s.status === "mantenimiento");
         const aog = statuses.filter((s) => s.status === "aog");
         const available = statuses.filter((s) => s.status === "disponible");
+
+        if (/fuera de servicio/.test(instruction)) {
+          const unavailable = statuses.filter((s) => ["aog", "mantenimiento"].includes(String(s.status || "").toLowerCase()));
+          return {
+            ok: true,
+            message: unavailable.length
+              ? `Fuera de servicio: ${unavailable.map((x) => x.ac).join(", ")}.`
+              : "No hay aeronaves fuera de servicio.",
+            data: { unavailable, maint, aog },
+          };
+        }
 
         if (/aog/.test(instruction)) {
           return {
@@ -191,12 +153,8 @@ export async function executeAgentAction(agentResult, options = {}) {
 
       const flights = await fetchFlightsForQuery();
       let filtered = flights;
-      if (/mañana|tomorrow/.test(instruction)) {
-        filtered = flights.filter((f) => f.date === tomorrow);
-      } else if (/hoy|today/.test(instruction)) {
-        filtered = flights.filter((f) => f.date === today);
-      } else if (/esta semana|this week|semana/.test(instruction)) {
-        filtered = flights.filter((f) => f.date >= weekRange.start && f.date <= weekRange.end);
+      if (requestedRange) {
+        filtered = flights.filter((f) => f.date >= requestedRange.start && f.date <= requestedRange.end);
       }
 
       filtered = filtered.filter((f) => ACTIVE_FLIGHT_STATUSES.has(String(f.st || "").toLowerCase()));
@@ -211,7 +169,7 @@ export async function executeAgentAction(agentResult, options = {}) {
         data: {
           count: filtered.length,
           flights: top,
-          range: /esta semana|this week|semana/.test(instruction) ? weekRange : null,
+          range: requestedRange,
         },
       };
     }

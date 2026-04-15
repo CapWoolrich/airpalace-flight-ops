@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
+import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflictUtils";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 
@@ -1125,7 +1126,8 @@ export default function App(){
   var dayF=useMemo(function(){return fs.filter(function(f){return f.date===sel&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.time==="STBY"?1:b.time==="STBY"?-1:String(a.time).localeCompare(String(b.time));});},[fs,sel,fa]);
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
-  var conflictList=useMemo(function(){var m={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");m[k]=(m[k]||[]).concat([f]);});return Object.values(m).filter(function(v){return v.length>1;}).flat();},[operationalFlights]);
+  var conflictPairs=useMemo(function(){return detectFlightConflicts(operationalFlights,{activeStatuses:["prog","enc"]});},[operationalFlights]);
+  var conflictList=useMemo(function(){return uniqueFlightsFromConflicts(conflictPairs);},[conflictPairs]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -1173,10 +1175,10 @@ export default function App(){
     var maint=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="mantenimiento";});
     var aog=Object.keys(AC).filter(function(id){return getAcStatus(id,today)==="aog";});
     var outBase=Object.keys(AC).filter(function(id){return pos[id]!==AC[id].base;});
-    var conflicts=0,idx={};operationalFlights.forEach(function(f){var k=[f.ac,f.date,f.time].join("|");idx[k]=(idx[k]||0)+1;});Object.values(idx).forEach(function(n){if(n>1)conflicts+=n;});
+    var conflicts=conflictList.length;
     var pending=fs.filter(function(f){return f.st==="prog";}).length;
     return{today:todayFs.length,tomorrow:fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";}).length,unavailable:unavailable.length,maint:maint.length,aog:aog.length,conflicts:conflicts,pending:pending,outBase:outBase.length,recentChanges:fs.filter(function(f){return (f.updated_at||f.created_at||"").slice(0,10)>=today;}).length};
-  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan,operationalFlights]);
+  },[fs,today,tomorrow,todayFs,pos,mt,maintPlan,conflictList]);
   var filteredAnalytics=useMemo(function(){
     return fs.filter(function(f){
       if(anYear!=="all"&&String(f.date||"").slice(0,4)!==anYear)return false;
