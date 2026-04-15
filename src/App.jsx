@@ -4,7 +4,7 @@ import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
 import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflictUtils";
-import { getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
+import { getOperationalDateOffsetISO, getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 import { buildAircraftStatusMutation, buildAuditMeta, withFlightCreateMeta, withFlightUpdateMeta } from "./lib/opsMutationBuilders";
@@ -181,7 +181,7 @@ export default function App(){
   var initialOpsDateParts=initialOpsDate.split("-").map(function(v){return Number(v||0);});
   var[sel,setSel]=useState(initialOpsDate);
   var[cM,setCM]=useState(Math.max(0,(initialOpsDateParts[1]||1)-1));
-  var[cY,setCY]=useState(initialOpsDateParts[0]||new Date().getFullYear());
+  var[cY,setCY]=useState(initialOpsDateParts[0]||Number(getOperationalTodayISO().slice(0,4)));
   var[sf,setSf]=useState(false);
   var[editId,setEditId]=useState(null);
   var[fa,setFa]=useState("all");
@@ -221,7 +221,7 @@ export default function App(){
   var[recentDate,setRecentDate]=useState("30d");
   var[recentSource,setRecentSource]=useState("all");
   var[anMonth,setAnMonth]=useState("all");
-  var[anYear,setAnYear]=useState(String(initialOpsDateParts[0]||new Date().getFullYear()));
+  var[anYear,setAnYear]=useState(String(initialOpsDateParts[0]||Number(getOperationalTodayISO().slice(0,4))));
   var[listAlertFilter,setListAlertFilter]=useState("all");
   var today=getOperationalTodayISO();
 
@@ -246,6 +246,18 @@ export default function App(){
   }
 
   function getCreatorLabel(f) {
+    var ordered=[
+      f?.updated_by_name,
+      f?.created_by_name,
+      f?.updated_by_email,
+      f?.created_by_email,
+      f?.updated_by_user_name,
+      f?.created_by_user_name,
+      f?.updated_by_user_email,
+      f?.created_by_user_email,
+    ];
+    var firstMeta=ordered.find(function(v){return String(v||"").trim();});
+    if(firstMeta)return prettyName(firstMeta);
     var m=String(f.nt||"").match(/\[By:\s*([^\]]+)\]/i);
     return m&&m[1]?prettyName(m[1].trim()):"Por sistema";
   }
@@ -1087,6 +1099,11 @@ export default function App(){
         setTimeout(function(){setPhase("ready");}, 2200);
         return;
       }
+      if (execRes && Array.isArray(execRes.side_effect_warnings) && execRes.side_effect_warnings.length) {
+        setErrMsg(`Acción ejecutada con avisos operativos: ${execRes.side_effect_warnings.join("; ")}`);
+        setPhase("warn");
+        setTimeout(function(){setPhase("ready");}, 2200);
+      }
       if (execRes && execRes.message) {
         const rendered = execRes.data?.flights && execRes.data.flights.length
           ? `${execRes.message}\n${execRes.data.flights.map(function(f){return `• ${f.date} ${f.time||"STBY"} · ${f.ac} · ${f.orig} → ${f.dest} (${f.rb||"-"})`;}).join("\n")}`
@@ -1133,7 +1150,7 @@ export default function App(){
     var s=new Set();fs.forEach(function(f){s.add(getCreatorLabel(f));});return["all"].concat(Array.from(s).sort());
   },[fs]);
   var recentFlights=useMemo(function(){
-    var start7=getOperationalTodayISO(new Date(Date.now()-7*86400000));var start30=getOperationalTodayISO(new Date(Date.now()-30*86400000));
+    var start7=getOperationalDateOffsetISO(-7);var start30=getOperationalDateOffsetISO(-30);
     return fs
       .filter(function(f){
         if(recentAc!=="all"&&f.ac!==recentAc)return false;

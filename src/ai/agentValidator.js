@@ -14,6 +14,7 @@ import {
   normalizeAgentResult,
 } from "./agentUtils";
 import { getOperationalTodayISO, isPastOperationalDate } from "./operationalDate";
+import { resolveFlightTarget } from "./flightTargetResolver";
 
 
 function parseTimeToMinutes(value) {
@@ -170,7 +171,7 @@ export async function validateAgentResult(agentResult, instruction = "") {
   }
 
   if (result.action === "edit_flight" && !result.payload.flight_id) {
-    const resolved = await resolveFlightReference(result.payload, "edit_flight");
+    const resolved = await resolveFlightTarget({ db: supabase, payload: result.payload, action: "edit_flight", limit: 20 });
     if (resolved.flightId) {
       result.payload.flight_id = resolved.flightId;
       result.warnings.push("Resolví el vuelo a editar por fecha/ruta/aeronave. Verifica antes de confirmar.");
@@ -183,7 +184,7 @@ export async function validateAgentResult(agentResult, instruction = "") {
   }
 
   if (result.action === "cancel_flight" && !result.payload.flight_id) {
-    const resolved = await resolveFlightReference(result.payload, "cancel_flight");
+    const resolved = await resolveFlightTarget({ db: supabase, payload: result.payload, action: "cancel_flight", limit: 20 });
     if (resolved.flightId) {
       result.payload.flight_id = resolved.flightId;
       result.warnings.push("Resolví el vuelo a cancelar por fecha/ruta/aeronave. Verifica antes de confirmar.");

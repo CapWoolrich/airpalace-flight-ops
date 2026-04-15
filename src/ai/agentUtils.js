@@ -59,6 +59,8 @@ const REQUESTER_ALIASES = {
   "jabib chapur": "Jabib C",
   "j chapur": "Jabib C",
   jabib: "Jabib C",
+  habib: "Jabib C",
+  "habib chapur": "Jabib C",
   omar: "Omar C",
   "omar chapur": "Omar C",
   gibran: "Gibran C",
@@ -108,6 +110,10 @@ function normalizeExactAlias(aliases, value) {
   const keyCompact = compactText(value);
   const found = Object.keys(aliases).find((alias) => compactText(alias) === keyCompact);
   return found ? aliases[found] : null;
+}
+
+export function normalizeRequesterValue(value) {
+  return normalizeExactAlias(REQUESTER_ALIASES, value) || String(value || "").trim();
 }
 
 export function normalizeAgentWithAliases(input, instruction = "") {

@@ -7,6 +7,8 @@ import {
   withFlightCreateMeta,
   withFlightUpdateMeta,
 } from "../src/lib/opsMutationBuilders.js";
+import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
+import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "./_opsSideEffects.js";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status"];
 const VALID_AIRCRAFT = new Set(["N35EA", "N540JL"]);
@@ -120,6 +122,8 @@ export default async function handler(req, res) {
   });
 
   try {
+    const sideEffectWarnings = [];
+    const actorName = access.user?.user_metadata?.name || access.user?.email || "AI Agent";
     if (action === "create_flight") {
       const row = withFlightCreateMeta({
         date: payload.date,
@@ -135,13 +139,15 @@ export default async function handler(req, res) {
         bg: Number(payload.bg || 0),
         st: payload.st || "prog",
       }, audit);
-      const { error } = await supabase.from("flights").insert([row]);
+      const { data, error } = await supabase.from("flights").insert([row]).select("*").single();
       if (error) throw error;
-      return res.status(200).json({ ok: true, message: "Vuelo creado correctamente." });
+      const sideEffects = await emitFlightSideEffects({ supabase, eventType: "create", flight: data || row, actorName, sendWhatsapp: true });
+      sideEffectWarnings.push(...(sideEffects.warnings || []));
+      return res.status(200).json({ ok: true, message: "Vuelo creado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
     }
 
     if (action === "edit_flight" || action === "cancel_flight" || action === "duplicate_flight") {
-      const resolved = await resolveFlightId(supabase, action, payload);
+      const resolved = await resolveFlightTarget({ db: supabase, payload, action, limit: 25 });
       const flightId = payload.flight_id || resolved.flightId;
 
       if (!flightId) {
@@ -159,18 +165,36 @@ export default async function handler(req, res) {
         ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"].forEach((k) => {
           if (payload[k] !== null && payload[k] !== undefined) updates[k] = payload[k];
         });
-        const { error } = await supabase.from("flights").update(withFlightUpdateMeta(updates, audit)).eq("id", flightId);
+        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
+        const { data: updated, error } = await supabase.from("flights").update(withFlightUpdateMeta(updates, audit)).eq("id", flightId).select("*").single();
         if (error) throw error;
-        return res.status(200).json({ ok: true, message: "Vuelo editado correctamente." });
+        const sideEffects = await emitFlightSideEffects({
+          supabase,
+          eventType: "edit",
+          flight: updated || { ...(existing || {}), ...updates },
+          actorName,
+          sendWhatsapp: true,
+        });
+        sideEffectWarnings.push(...(sideEffects.warnings || []));
+        return res.status(200).json({ ok: true, message: "Vuelo editado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
       }
 
       if (action === "cancel_flight") {
+        const { data: existing } = await supabase.from("flights").select("*").eq("id", flightId).single();
         const { error } = await supabase
           .from("flights")
           .update(withFlightUpdateMeta({ st: "canc" }, audit))
           .eq("id", flightId);
         if (error) throw error;
-        return res.status(200).json({ ok: true, message: "Vuelo cancelado correctamente." });
+        const sideEffects = await emitFlightSideEffects({
+          supabase,
+          eventType: "cancel",
+          flight: existing || { id: flightId, ac: payload.ac || "", orig: payload.orig || "", dest: payload.dest || "", date: payload.date || "", time: payload.time || "STBY", rb: payload.rb || "", nt: payload.nt || "" },
+          actorName,
+          sendWhatsapp: false,
+        });
+        sideEffectWarnings.push(...(sideEffects.warnings || []));
+        return res.status(200).json({ ok: true, message: "Vuelo cancelado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
       }
 
       const { data, error } = await supabase.from("flights").select("*").eq("id", flightId).single();
@@ -183,16 +207,36 @@ export default async function handler(req, res) {
         st: "prog",
         created_at: undefined,
       }, audit);
-      const { error: insError } = await supabase.from("flights").insert([duplicated]);
+      const { data: duplicatedSaved, error: insError } = await supabase.from("flights").insert([duplicated]).select("*").single();
       if (insError) throw insError;
-      return res.status(200).json({ ok: true, message: "Vuelo duplicado correctamente." });
+      const sideEffects = await emitFlightSideEffects({
+        supabase,
+        eventType: "duplicate",
+        flight: duplicatedSaved || duplicated,
+        actorName,
+        sendWhatsapp: true,
+      });
+      sideEffectWarnings.push(...(sideEffects.warnings || []));
+      return res.status(200).json({ ok: true, message: "Vuelo duplicado correctamente.", ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}) });
     }
 
+    const statusMutation = buildAircraftStatusMutation(payload, audit);
     const { error } = await supabase.from("aircraft_status").upsert([
-      buildAircraftStatusMutation(payload, audit),
+      statusMutation,
     ]);
     if (error) throw error;
-    return res.status(200).json({ ok: true, message: "Estado de aeronave actualizado." });
+    const statusEffects = await emitAircraftStatusSideEffects({
+      supabase,
+      ac: statusMutation.ac,
+      status: statusMutation.status,
+      maintenanceEndDate: statusMutation.maintenance_end_date,
+      actorName,
+    });
+    return res.status(200).json({
+      ok: true,
+      message: "Estado de aeronave actualizado.",
+      ...((statusEffects.warnings || []).length ? { side_effect_warnings: statusEffects.warnings } : {}),
+    });
   } catch (e) {
     return bad(res, 500, e?.message || "Error ejecutando acción AI");
   }

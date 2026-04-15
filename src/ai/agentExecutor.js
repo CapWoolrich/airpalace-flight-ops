@@ -1,5 +1,5 @@
 import { supabase } from "../supabase";
-import { normalizeAgentResult } from "./agentUtils";
+import { normalizeAgentResult, normalizeRequesterValue } from "./agentUtils";
 import {
   formatOperationalDate,
   getOperationalTodayISO,
@@ -161,6 +161,10 @@ export async function executeAgentAction(agentResult, options = {}) {
 
       if (payload.ac) filtered = filtered.filter((f) => f.ac === payload.ac);
       if (payload.dest) filtered = filtered.filter((f) => String(f.dest || "").toLowerCase() === String(payload.dest || "").toLowerCase());
+      if (payload.rb) {
+        const normalizedRb = normalizeRequesterValue(payload.rb);
+        filtered = filtered.filter((f) => normalizeRequesterValue(f.rb) === normalizedRb);
+      }
 
       const top = filtered.slice(0, 12);
       return {
