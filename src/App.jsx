@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
-import { executeAgentAction, buildConfirmationToken } from "./ai/agentExecutor";
+import { executeAgentAction } from "./ai/agentExecutor";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 
@@ -167,8 +167,9 @@ function Stp({label,value,onChange,icon,wl}){var ic={M:"👨",F:"👩",N:"🧒"}
 
 // ═══ MAIN APP ═══
 export default function App(){
+  var DEMO_SEED_ENABLED = import.meta.env.DEV || String(import.meta.env.VITE_ENABLE_DEMO_SEED || "").toLowerCase() === "true";
   var[fs,setFsRaw]=useState([]);
-  var[mt,setMtRaw]=useState(SEED_M);
+  var[mt,setMtRaw]=useState({});
   var[phase,setPhase]=useState("loading");
   var[errMsg,setErrMsg]=useState("");
 
@@ -294,9 +295,11 @@ export default function App(){
 
   async function autoSendWhatsApp(flight, label) {
     try {
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData?.session?.access_token;
       const r = await fetch("/api/send-whatsapp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ flight, label }),
       });
       const data = await r.json().catch(function(){return{};});
@@ -341,9 +344,11 @@ export default function App(){
 
   async function autoSendEmail(eventType, payload, okPrefix) {
     try {
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData?.session?.access_token;
       const r = await fetch("/api/send-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ eventType, payload }),
       });
       const data = await r.json().catch(function(){return{};});
@@ -364,7 +369,9 @@ export default function App(){
 
   async function sendPushEvent(title, body, url){
     try{
-      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title,body,url:url||"/"})});
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json", ...(token ? { Authorization: `Bearer ${token}` } : {})},body:JSON.stringify({title,body,url:url||"/"})});
     }catch{}
   }
 
@@ -382,7 +389,7 @@ export default function App(){
         const freshFlights = await loadFlightsFromDb();
         const freshMaint = await loadMaintFromDb();
 
-        if (!freshFlights.length) {
+        if (!freshFlights.length && DEMO_SEED_ENABLED) {
           const { error } = await supabase.from("flights").insert(SEED);
           if (error) throw error;
           const seededFlights = await loadFlightsFromDb();
@@ -391,7 +398,7 @@ export default function App(){
           setFsRaw(freshFlights);
         }
 
-        if (!Object.keys(freshMaint.statusByAc).length) {
+        if (!Object.keys(freshMaint.statusByAc).length && DEMO_SEED_ENABLED) {
           const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
             ac,
             status,
@@ -413,7 +420,7 @@ export default function App(){
         setPhase("error");
       }
     })();
-  }, []);
+  }, [DEMO_SEED_ENABLED]);
 
   useEffect(() => {
     const flightsChannel = supabase
@@ -680,6 +687,11 @@ export default function App(){
   }
 
   async function restore() {
+    if (!DEMO_SEED_ENABLED) {
+      setErrMsg("La restauración demo está deshabilitada en este entorno.");
+      setPhase("error");
+      return;
+    }
     if (!confirm("Restaurar todos los datos originales?")) return;
 
     setPhase("saving");
@@ -735,7 +747,7 @@ export default function App(){
       setAgentResult(analyzed);
       setAgentValidation(validated);
       if (isAgentWriteAction(validated.action) && !validated.errors?.length) {
-        const token = buildConfirmationToken(validated);
+        const token = validated.server_confirmation_token || null;
         setPendingWrite({
           validation: validated,
           token,
@@ -818,9 +830,11 @@ export default function App(){
     setRealtimeConnecting(true);
     setAgentVoiceState("thinking");
     try {
+      const { data: realtimeAuth } = await supabase.auth.getSession();
+      const realtimeToken = realtimeAuth?.session?.access_token;
       const sessionResp = await fetch("/api/realtime-session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(realtimeToken ? { Authorization: `Bearer ${realtimeToken}` } : {}) },
         body: JSON.stringify({
           instructions:
             "Actúa como front-end de transcripción en tiempo real para AI Pilot. Tu tarea principal es transcribir en español/inglés aeronáutico con alta precisión. No ejecutes acciones operativas por tu cuenta.",
@@ -920,7 +934,9 @@ export default function App(){
     setPushState("saving");
     try{
       const sub=await subscribeToPush(publicKey);
-      const r=await fetch("/api/save-push-subscription",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subscription:sub.toJSON()})});
+      const { data: pushAuth } = await supabase.auth.getSession();
+      const pushToken = pushAuth?.session?.access_token;
+      const r=await fetch("/api/save-push-subscription",{method:"POST",headers:{"Content-Type":"application/json", ...(pushToken ? { Authorization: `Bearer ${pushToken}` } : {})},body:JSON.stringify({subscription:sub.toJSON()})});
       if(!r.ok){const d=await r.json().catch(function(){return{};});throw new Error(d.error||`HTTP ${r.status}`);}
       setPushState("ok");
     }catch(e){
@@ -940,9 +956,11 @@ export default function App(){
         fr.readAsDataURL(blob);
       });
 
+      const { data: transcribeAuth } = await supabase.auth.getSession();
+      const transcribeToken = transcribeAuth?.session?.access_token;
       const r = await fetch("/api/transcribe-audio", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(transcribeToken ? { Authorization: `Bearer ${transcribeToken}` } : {}) },
         body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/mp4" }),
       });
       const data = await r.json().catch(function(){return{};});
@@ -1040,13 +1058,33 @@ export default function App(){
     setPhase("saving");
     setErrMsg("");
     try {
-      const execRes = await executeAgentAction(validation, {
-        calcRoute: calcR,
-        creatorMeta: getCreatorMeta("ai"),
-        instruction: agentInstruction,
-        confirmed: !!pendingWrite && !validationOverride,
-        confirmationToken: pendingWrite?.token || null,
-      });
+      let execRes = null;
+      const isWriteAction = isAgentWriteAction(validation.action);
+      if (isWriteAction) {
+        if (!pendingWrite?.token && !validationOverride) throw new Error("Falta token de confirmación del servidor.");
+        const { data } = await supabase.auth.getSession();
+        const token = data?.session?.access_token;
+        const response = await fetch("/api/ai-write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            action: validation.action,
+            payload: validation.payload,
+            confirmed: !!pendingWrite && !validationOverride,
+            confirmation_token: pendingWrite?.token || null,
+          }),
+        });
+        execRes = await response.json().catch(function(){return{};});
+        if (!response.ok) throw new Error(execRes.error || `HTTP ${response.status}`);
+      } else {
+        execRes = await executeAgentAction(validation, {
+          calcRoute: calcR,
+          creatorMeta: getCreatorMeta("ai"),
+          instruction: agentInstruction,
+          confirmed: false,
+          confirmationToken: null,
+        });
+      }
       if (execRes?.requires_confirmation) {
         setPendingWrite(function(prev){return prev||{validation,token:execRes.confirmation_token,card:execRes.confirmation_card};});
         setAgentVoiceState("clarification");

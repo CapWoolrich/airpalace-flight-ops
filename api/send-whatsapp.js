@@ -1,8 +1,11 @@
-import { buildWhatsAppFlightMessage } from "./_whatsappMessage";
+import { buildWhatsAppFlightMessage } from "./_whatsappMessage.js";
+import { requireRouteAccess } from "./_routeProtection.js";
 
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido." });
+    const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 30, windowMs: 60_000 } });
+    if (!access.ok) return res.status(access.status).json({ error: access.error });
     const phone = String(process.env.CALLMEBOT_PHONE || "").trim();
     if (!phone || !process.env.CALLMEBOT_APIKEY) {
       return res.status(200).json({ ok: false, warning: "falta configurar WhatsApp en el servidor." });

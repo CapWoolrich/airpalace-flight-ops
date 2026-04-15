@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { signAiConfirmation } from "./_aiConfirmation.js";
+import { requireRouteAccess } from "./_routeProtection.js";
 
 const MODEL = "gpt-4.1-mini";
 const AIRCRAFT_ALIASES = {
@@ -370,6 +372,8 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return sendJsonError(res, 405, "Method not allowed. Use POST /api/ops-agent.");
   }
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  if (!access.ok) return sendJsonError(res, access.status, access.error);
 
   if (!process.env.OPENAI_API_KEY) {
     return sendJsonError(res, 500, "OPENAI_API_KEY is not configured on the server.");
@@ -434,7 +438,13 @@ export default async function handler(req, res) {
       return sendJsonError(res, 502, "Model returned invalid JSON.");
     }
 
-    return res.status(200).json(normalizeOpsResult(parsed, instruction));
+    const normalized = normalizeOpsResult(parsed, instruction);
+    const isWrite = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"].includes(String(normalized?.action || ""));
+    const serverToken = isWrite ? signAiConfirmation(normalized.action, normalized.payload) : null;
+    return res.status(200).json({
+      ...normalized,
+      server_confirmation_token: serverToken,
+    });
   } catch (error) {
     const status = Number(error?.status) || Number(error?.code) || 500;
     const safeStatus = [400, 401, 403, 404, 408, 409, 422, 429, 500, 502, 503, 504].includes(status)
