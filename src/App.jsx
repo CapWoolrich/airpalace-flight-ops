@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
-import { executeAgentAction } from "./ai/agentExecutor";
+import { executeAgentAction, buildConfirmationToken } from "./ai/agentExecutor";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 
@@ -186,6 +186,7 @@ export default function App(){
   var[agentInstruction,setAgentInstruction]=useState("");
   var[agentResult,setAgentResult]=useState(null);
   var[agentValidation,setAgentValidation]=useState(null);
+  var[pendingWrite,setPendingWrite]=useState(null);
   var[agentBusy,setAgentBusy]=useState(false);
   var[agentOpen,setAgentOpen]=useState(false);
   var[currentUser,setCurrentUser]=useState(null);
@@ -229,6 +230,10 @@ export default function App(){
     return {
       creation_source: source,
     };
+  }
+
+  function isAgentWriteAction(action) {
+    return ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"].includes(String(action || ""));
   }
 
   function getCreatorLabel(f) {
@@ -729,12 +734,30 @@ export default function App(){
       const validated = await validateAgentResult(analyzed, agentInstruction);
       setAgentResult(analyzed);
       setAgentValidation(validated);
+      if (isAgentWriteAction(validated.action) && !validated.errors?.length) {
+        const token = buildConfirmationToken(validated);
+        setPendingWrite({
+          validation: validated,
+          token,
+          card: {
+            action: validated.action,
+            aircraft: validated.payload?.ac || "-",
+            route: validated.payload?.orig && validated.payload?.dest ? `${validated.payload.orig} → ${validated.payload.dest}` : "-",
+            departure: validated.payload?.date && validated.payload?.time ? `${validated.payload.date} ${validated.payload.time}` : validated.payload?.date || validated.payload?.time || "-",
+            requester: validated.payload?.rb || "-",
+            notes: validated.payload?.nt || "-",
+            statusChange: validated.payload?.status_change || "-",
+          },
+        });
+      } else {
+        setPendingWrite(null);
+      }
       const clarificationText = validated.clarification_prompts && validated.clarification_prompts.length
         ? validated.clarification_prompts.join(" ")
         : (validated.errors && validated.errors.length ? validated.errors.join(" ") : (validated.human_summary || "Instrucción analizada."));
       setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:clarificationText,ts:new Date().toISOString()}]);});
       speakAssistant(clarificationText);
-      if (validated.requires_confirmation || (validated.errors && validated.errors.length)) {
+      if (validated.requires_confirmation || (validated.errors && validated.errors.length) || isAgentWriteAction(validated.action)) {
         setAgentVoiceState("clarification");
       } else if (validated.can_execute && String(validated.action || "").startsWith("query_")) {
         await executeAgentInstruction(validated);
@@ -844,6 +867,9 @@ export default function App(){
           } else if (msg.type === "response.audio_transcript.done" && msg.transcript) {
             const transcript = String(msg.transcript || "").trim();
             if (transcript) {
+              if (transcript.length >= 12 && window.speechSynthesis && window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+              }
               setAgentInstruction(transcript);
               queueLiveAnalyze(transcript);
             }
@@ -1006,8 +1032,10 @@ export default function App(){
   }
 
   async function executeAgentInstruction(validationOverride) {
-    const validation = validationOverride || agentValidation;
-    if (!validation || !validation.can_execute) return;
+    const validation = validationOverride || pendingWrite?.validation || agentValidation;
+    if (!validation) return;
+    const isPendingWriteConfirm = !validationOverride && !!pendingWrite && isAgentWriteAction(validation.action) && !(validation.errors && validation.errors.length);
+    if (!validation.can_execute && !isPendingWriteConfirm) return;
     setAgentBusy(true);
     setPhase("saving");
     setErrMsg("");
@@ -1016,11 +1044,21 @@ export default function App(){
         calcRoute: calcR,
         creatorMeta: getCreatorMeta("ai"),
         instruction: agentInstruction,
+        confirmed: !!pendingWrite && !validationOverride,
+        confirmationToken: pendingWrite?.token || null,
       });
+      if (execRes?.requires_confirmation) {
+        setPendingWrite(function(prev){return prev||{validation,token:execRes.confirmation_token,card:execRes.confirmation_card};});
+        setAgentVoiceState("clarification");
+        setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:execRes.message || "Confirma por escrito para ejecutar.",ts:new Date().toISOString()}]);});
+        speakAssistant(execRes.message || "Confirma por escrito para ejecutar.");
+        return;
+      }
       if (!validationOverride) {
         setAgentInstruction("");
         setAgentResult(null);
         setAgentValidation(null);
+        setPendingWrite(null);
       }
       if (execRes && execRes.warning) {
         setErrMsg(`Vuelo creado, pero WhatsApp falló: ${execRes.warning}`);
@@ -1473,9 +1511,25 @@ export default function App(){
           {agentValidation.clarification_prompts&&agentValidation.clarification_prompts.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>{agentValidation.clarification_prompts.map(function(c,i){return <div key={i}>• {c}</div>;})}</div>}
           {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
           {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
-          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy||isAgentWriteAction(agentValidation.action)} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy&&!isAgentWriteAction(agentValidation.action)?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
           </button>
+        </div>}
+        {pendingWrite&&<div style={{marginTop:8,border:"1px solid #cbd5e1",borderRadius:10,padding:10,background:"#fff"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:6}}>🧾 Confirmación escrita requerida (pendiente)</div>
+          <div style={{fontSize:11,color:"#334155",lineHeight:1.6}}>
+            <div><strong>Acción:</strong> {pendingWrite.card.action}</div>
+            <div><strong>Aeronave:</strong> {pendingWrite.card.aircraft}</div>
+            <div><strong>Ruta:</strong> {pendingWrite.card.route}</div>
+            <div><strong>Salida:</strong> {pendingWrite.card.departure}</div>
+            <div><strong>Solicitó:</strong> {pendingWrite.card.requester}</div>
+            <div><strong>Notas:</strong> {pendingWrite.card.notes}</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:8}}>
+            <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:8,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:8,background:"#fff",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer"}}>Editar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:8,border:"1px solid #fecaca",borderRadius:8,background:"#fff",color:"#b91c1c",fontSize:11,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+          </div>
         </div>}
       </div>}
 

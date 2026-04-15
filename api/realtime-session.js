@@ -28,6 +28,13 @@ export default async function handler(req, res) {
         modalities: ["audio", "text"],
         input_audio_format: "pcm16",
         output_audio_format: "pcm16",
+        turn_detection: {
+          type: "server_vad",
+          threshold: 0.75,
+          prefix_padding_ms: 350,
+          silence_duration_ms: 900,
+          interrupt_response: false,
+        },
         instructions,
       }),
     });

@@ -271,6 +271,7 @@ function normalizeOpsResult(raw, instruction) {
   const result = mergeWithTemplate(raw);
   const payload = result.payload;
   const text = normalizeText(instruction);
+  const writeActions = new Set(["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"]);
 
   payload.ac = aliasExact(AIRCRAFT_ALIASES, payload.ac) || payload.ac || aliasMatch(AIRCRAFT_ALIASES, text);
   payload.rb = aliasExact(REQUESTER_ALIASES, payload.rb) || payload.rb || aliasMatch(REQUESTER_ALIASES, text);
@@ -326,6 +327,10 @@ function normalizeOpsResult(raw, instruction) {
     result.action = "query_notam";
     const codeMatch = text.match(/\b([a-z]{4})\b/i);
     if (codeMatch) payload.airport_code = codeMatch[1].toUpperCase();
+  }
+
+  if (writeActions.has(String(result.action || ""))) {
+    result.requires_confirmation = true;
   }
 
   return result;
@@ -395,6 +400,7 @@ export default async function handler(req, res) {
             "Allowed aircraft: N35EA, N540JL. Allowed aircraft statuses: disponible, mantenimiento, aog. Allowed flight statuses: prog, enc, comp, canc. " +
             "Critical create_flight fields: date, ac, orig, dest, time, rb. " +
             "For queries, prioritize read-only actions and provide concise human_summary in Spanish. " +
+            "Before any write action, prepare confirmation-only output first; do not claim completion before explicit confirmation. " +
             "If critical fields are missing or ambiguous, set requires_confirmation=true and list them in missing_fields.",
         },
         {

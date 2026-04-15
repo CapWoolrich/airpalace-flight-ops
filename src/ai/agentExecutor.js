@@ -2,6 +2,32 @@ import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
 import { buildOpsPush } from "../lib/opsNotifications";
 
+const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"];
+
+function meridaDateOffset(days = 0) {
+  const base = new Date();
+  base.setUTCMinutes(base.getUTCMinutes() - 360); // America/Merida baseline
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+export function buildConfirmationToken(result) {
+  const payload = result?.payload || {};
+  const snapshot = {
+    action: result?.action || null,
+    flight_id: payload.flight_id || null,
+    date: payload.date || null,
+    ac: payload.ac || null,
+    orig: payload.orig || null,
+    dest: payload.dest || null,
+    time: payload.time || null,
+    rb: payload.rb || null,
+    status_change: payload.status_change || null,
+  };
+  const raw = JSON.stringify(snapshot);
+  return typeof btoa === "function" ? btoa(unescape(encodeURIComponent(raw))) : Buffer.from(raw).toString("base64");
+}
+
 function createFlightLegs(payload, routeResult) {
   const creatorMeta = payload.creator_meta || {};
   const baseFlight = {
@@ -44,6 +70,29 @@ export async function executeAgentAction(agentResult, options = {}) {
   const result = normalizeAgentResult(agentResult);
   const payload = result.payload;
   const calcRoute = options.calcRoute;
+  const action = String(result.action || "");
+  const isWriteAction = WRITE_ACTIONS.includes(action);
+
+  if (isWriteAction) {
+    const expectedToken = buildConfirmationToken(result);
+    if (!options.confirmed || !options.confirmationToken || options.confirmationToken !== expectedToken) {
+      return {
+        ok: false,
+        requires_confirmation: true,
+        confirmation_token: expectedToken,
+        message: "Antes de ejecutar, confirma por escrito esta acción.",
+        confirmation_card: {
+          action,
+          aircraft: payload.ac || "-",
+          route: payload.orig && payload.dest ? `${payload.orig} → ${payload.dest}` : "-",
+          departure: payload.date && payload.time ? `${payload.date} ${payload.time}` : payload.date || payload.time || "-",
+          requester: payload.rb || "-",
+          notes: payload.nt || "-",
+          status_change: payload.status_change || null,
+        },
+      };
+    }
+  }
 
   async function safeInsert(rows) {
     const first = await supabase.from("flights").insert(rows).select("*");
@@ -228,10 +277,14 @@ export async function executeAgentAction(agentResult, options = {}) {
 
     case "query_schedule": {
       const instruction = String(options.instruction || "").toLowerCase();
+      const pilotAlias = /diego/.test(instruction) ? "diego" : /jabib/.test(instruction) ? "jabib" : /omar/.test(instruction) ? "omar" : null;
       if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto/.test(instruction)) {
         if (/conflicto/.test(instruction)) {
           const flights = await fetchFlightsForQuery();
-          const active = flights.filter((f) => f.st !== "canc" && f.st !== "comp");
+          const todayRef = meridaDateOffset(0);
+          const tomorrowRef = meridaDateOffset(1);
+          const active = flights.filter((f) => f.st !== "canc" && f.st !== "comp")
+            .filter((f) => /mañana|tomorrow/.test(instruction) ? f.date === tomorrowRef : /hoy|today/.test(instruction) ? f.date === todayRef : true);
           const grouped = {};
           active.forEach((f) => {
             const key = `${f.ac}|${f.date}|${f.time}`;
@@ -269,8 +322,8 @@ export async function executeAgentAction(agentResult, options = {}) {
       }
 
       const flights = await fetchFlightsForQuery();
-      const today = new Date().toISOString().slice(0, 10);
-      const tomorrow = new Date(new Date(`${today}T12:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+      const today = meridaDateOffset(0);
+      const tomorrow = meridaDateOffset(1);
       let filtered = flights;
       if (/mañana|tomorrow/.test(instruction)) {
         filtered = flights.filter((f) => f.date === tomorrow);
@@ -283,6 +336,7 @@ export async function executeAgentAction(agentResult, options = {}) {
       if (payload.ac) filtered = filtered.filter((f) => f.ac === payload.ac);
       if (payload.dest) filtered = filtered.filter((f) => String(f.dest || "").toLowerCase() === String(payload.dest || "").toLowerCase());
       if (payload.rb) filtered = filtered.filter((f) => String(f.rb || "").toLowerCase().includes(String(payload.rb || "").toLowerCase()));
+      if (pilotAlias) filtered = filtered.filter((f) => String(f.rb || "").toLowerCase().includes(pilotAlias));
       const top = filtered.slice(0, 12);
       return {
         ok: true,
