@@ -13,9 +13,27 @@ import {
   normalizeAgentWithAliases,
   normalizeAgentResult,
 } from "./agentUtils";
+import { getOperationalTodayISO, isPastOperationalDate } from "./operationalDate";
+
+
+function parseTimeToMinutes(value) {
+  const m = String(value || "").match(/^(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh > 23 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function overlapsByOperationalWindow(baseTime, otherTime, windowMinutes = 90) {
+  const a = parseTimeToMinutes(baseTime);
+  const b = parseTimeToMinutes(otherTime);
+  if (a === null || b === null) return false;
+  return Math.abs(a - b) < windowMinutes;
+}
 
 async function getLastKnownPosition(ac) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getOperationalTodayISO();
   const { data } = await supabase
     .from("flights")
     .select("dest")
@@ -69,9 +87,7 @@ export async function validateAgentResult(agentResult, instruction = "") {
     }
 
     if (result.payload.ac && result.payload.date && result.payload.time) {
-      const nowRef = new Date("2026-04-09T12:00:00-06:00");
-      const flightDate = new Date(`${result.payload.date}T12:00:00-06:00`);
-      if (flightDate < nowRef) {
+      if (isPastOperationalDate(result.payload.date)) {
         result.errors.push("No se puede programar un vuelo en una fecha pasada.");
       }
 
@@ -95,11 +111,12 @@ export async function validateAgentResult(agentResult, instruction = "") {
         .select("id, ac, date, time, st")
         .eq("ac", result.payload.ac)
         .eq("date", result.payload.date)
-        .eq("time", result.payload.time)
-        .neq("st", "canc");
+        .neq("st", "canc")
+        .neq("st", "comp");
 
       (collisionRows || [])
         .filter((f) => isActiveFlight(f.st))
+        .filter((f) => f.time === result.payload.time || overlapsByOperationalWindow(result.payload.time, f.time))
         .forEach((f) => result.warnings.push(buildConflictWarning(f)));
 
       if (result.payload.orig) {

@@ -1,13 +1,38 @@
 import { supabase } from "../supabase";
 import { normalizeAgentResult } from "./agentUtils";
+import {
+  formatOperationalDate,
+  getOperationalTodayISO,
+  getOperationalTomorrowISO,
+  getOperationalWeekRangeISO,
+} from "./operationalDate";
+import { detectFlightConflicts } from "./conflictUtils";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"];
+const ACTIVE_FLIGHT_STATUSES = new Set(["prog", "enc"]);
 
-function meridaDateOffset(days = 0) {
-  const base = new Date();
-  base.setUTCMinutes(base.getUTCMinutes() - 360); // America/Merida baseline
-  base.setUTCDate(base.getUTCDate() + days);
-  return base.toISOString().slice(0, 10);
+function normalizeText(value) {
+  return String(value || "").toLowerCase();
+}
+
+function summarizeFlights(flights) {
+  if (!flights.length) return "No encontré vuelos para ese criterio.";
+  return `Encontré ${flights.length} vuelo(s).`;
+}
+
+function resolveOperationalRange(instruction, refs) {
+  if (/mañana|tomorrow/.test(instruction)) return { start: refs.tomorrow, end: refs.tomorrow, label: "tomorrow" };
+  if (/hoy|today/.test(instruction)) return { start: refs.today, end: refs.today, label: "today" };
+  if (/esta semana|this week|semana/.test(instruction)) return { start: refs.weekRange.start, end: refs.weekRange.end, label: "week" };
+  return null;
+}
+
+function detectUnsupportedPilotQuery(instruction, payload) {
+  const t = normalizeText(instruction);
+  if (payload?.ac) return false;
+  const hasPilotLikeName = /\b(vuelos\s+tiene|vuelos\s+de|agenda\s+de)\s+[a-záéíóúñ]+/i.test(t);
+  const asksAircraft = /n\d{2,4}[a-z]{2}|\bm2\b|\bphenom\b/i.test(t);
+  return hasPilotLikeName && !asksAircraft;
 }
 
 export async function executeAgentAction(agentResult, options = {}) {
@@ -40,43 +65,85 @@ export async function executeAgentAction(agentResult, options = {}) {
   switch (result.action) {
     case "query_schedule": {
       const instruction = String(options.instruction || "").toLowerCase();
-      const pilotAlias = /diego/.test(instruction) ? "diego" : /jabib/.test(instruction) ? "jabib" : /omar/.test(instruction) ? "omar" : null;
-      if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto/.test(instruction)) {
+      const today = getOperationalTodayISO();
+      const tomorrow = getOperationalTomorrowISO();
+      const weekRange = getOperationalWeekRangeISO();
+      const requestedRange = resolveOperationalRange(instruction, { today, tomorrow, weekRange });
+
+      if (detectUnsupportedPilotQuery(instruction, payload)) {
+        return {
+          ok: true,
+          message: "Hoy el sistema no guarda asignación formal de piloto por vuelo; puedo filtrar por aeronave, fecha y estatus operativo.",
+          data: { limitation: "pilot_assignment_not_modeled" },
+        };
+      }
+
+      if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto|fuera de servicio/.test(instruction)) {
         if (/conflicto/.test(instruction)) {
           const flights = await fetchFlightsForQuery();
-          const todayRef = meridaDateOffset(0);
-          const tomorrowRef = meridaDateOffset(1);
-          const active = flights.filter((f) => f.st !== "canc" && f.st !== "comp")
-            .filter((f) => /mañana|tomorrow/.test(instruction) ? f.date === tomorrowRef : /hoy|today/.test(instruction) ? f.date === todayRef : true);
-          const grouped = {};
-          active.forEach((f) => {
-            const key = `${f.ac}|${f.date}|${f.time}`;
-            grouped[key] = (grouped[key] || []).concat([f]);
+          const conflicts = detectFlightConflicts(flights, {
+            activeStatuses: Array.from(ACTIVE_FLIGHT_STATUSES),
+            dateRange: requestedRange ? { start: requestedRange.start, end: requestedRange.end } : null,
           });
-          const conflicts = Object.values(grouped).filter((arr) => arr.length > 1).flat();
+          const aircraft = Array.from(new Set(conflicts.map((c) => c.ac)));
           return {
             ok: true,
             message: conflicts.length
-              ? `Detecté ${conflicts.length} vuelo(s) en conflicto operativo.`
+              ? `Detecté conflicto operativo en ${aircraft.length} aeronave(s).`
               : "No detecté conflictos operativos activos.",
-            data: { count: conflicts.length, flights: conflicts.slice(0, 12) },
+            data: {
+              count: conflicts.length,
+              aircraft,
+              conflicts: conflicts.slice(0, 12),
+              limitation: "Cuando un vuelo no tiene hora de llegada registrada, uso una ventana operativa conservadora de 90 minutos.",
+            },
           };
         }
+
         const statuses = await fetchAircraftStatus();
         const maint = statuses.filter((s) => s.status === "mantenimiento");
         const aog = statuses.filter((s) => s.status === "aog");
         const available = statuses.filter((s) => s.status === "disponible");
+
+        if (/fuera de servicio/.test(instruction)) {
+          const unavailable = statuses.filter((s) => ["aog", "mantenimiento"].includes(String(s.status || "").toLowerCase()));
+          return {
+            ok: true,
+            message: unavailable.length
+              ? `Fuera de servicio: ${unavailable.map((x) => x.ac).join(", ")}.`
+              : "No hay aeronaves fuera de servicio.",
+            data: { unavailable, maint, aog },
+          };
+        }
+
+        if (/aog/.test(instruction)) {
+          return {
+            ok: true,
+            message: aog.length ? `AOG: ${aog.map((x) => x.ac).join(", ")}.` : "No hay aeronaves en AOG.",
+            data: { aog },
+          };
+        }
+
+        if (/mantenimiento/.test(instruction)) {
+          return {
+            ok: true,
+            message: maint.length ? `En mantenimiento: ${maint.map((x) => x.ac).join(", ")}.` : "No hay aeronaves en mantenimiento.",
+            data: { maint },
+          };
+        }
+
         if (/hasta cuando|hasta cuándo/.test(instruction) && payload.ac) {
           const acStatus = statuses.find((s) => s.ac === payload.ac);
           const endDate = acStatus?.maintenance_end_date || null;
           return {
             ok: true,
             message: endDate
-              ? `${payload.ac} está en ${acStatus?.status || "estado desconocido"} hasta ${endDate}.`
+              ? `${payload.ac} está en ${acStatus?.status || "estado desconocido"} hasta ${formatOperationalDate(endDate)}.`
               : `No tengo fecha fin registrada para ${payload.ac}.`,
             data: { status: acStatus || null },
           };
         }
+
         return {
           ok: true,
           message: `Estado de flota: ${available.length} disponibles, ${maint.length} en mantenimiento y ${aog.length} en AOG.`,
@@ -85,28 +152,24 @@ export async function executeAgentAction(agentResult, options = {}) {
       }
 
       const flights = await fetchFlightsForQuery();
-      const today = meridaDateOffset(0);
-      const tomorrow = meridaDateOffset(1);
       let filtered = flights;
-      if (/mañana|tomorrow/.test(instruction)) {
-        filtered = flights.filter((f) => f.date === tomorrow);
-      } else if (/hoy|today/.test(instruction)) {
-        filtered = flights.filter((f) => f.date === today);
-      } else if (/semana/.test(instruction)) {
-        const end = new Date(new Date(`${today}T12:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10);
-        filtered = flights.filter((f) => f.date >= today && f.date <= end);
+      if (requestedRange) {
+        filtered = flights.filter((f) => f.date >= requestedRange.start && f.date <= requestedRange.end);
       }
+
+      filtered = filtered.filter((f) => ACTIVE_FLIGHT_STATUSES.has(String(f.st || "").toLowerCase()));
+
       if (payload.ac) filtered = filtered.filter((f) => f.ac === payload.ac);
       if (payload.dest) filtered = filtered.filter((f) => String(f.dest || "").toLowerCase() === String(payload.dest || "").toLowerCase());
-      if (payload.rb) filtered = filtered.filter((f) => String(f.rb || "").toLowerCase().includes(String(payload.rb || "").toLowerCase()));
-      if (pilotAlias) filtered = filtered.filter((f) => String(f.rb || "").toLowerCase().includes(pilotAlias));
+
       const top = filtered.slice(0, 12);
       return {
         ok: true,
-        message: `Encontré ${filtered.length} vuelo(s).`,
+        message: summarizeFlights(filtered),
         data: {
           count: filtered.length,
           flights: top,
+          range: requestedRange,
         },
       };
     }
