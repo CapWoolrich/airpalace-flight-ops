@@ -1,8 +1,20 @@
 import { sendOperationalEmail } from "./_emailSender.js";
 import { computeEmailRecipients } from "./_emailRecipients.js";
+import { requireRouteAccess } from "./_routeProtection.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ error: "Método no permitido." });
+  const isProd = process.env.NODE_ENV === "production";
+  if (isProd && req.method === "GET") {
+    return res.status(404).json({ error: "Not found" });
+  }
+  const access = await requireRouteAccess(req, {
+    requireAuth: true,
+    requireInternalSecret: isProd,
+    rateLimit: { max: 8, windowMs: 60_000 },
+  });
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
   const requestor = String(req.body?.requestor || req.query?.requestor || "Jabib C");
   const routingPreview = computeEmailRecipients({
     eventType: "flight_created",

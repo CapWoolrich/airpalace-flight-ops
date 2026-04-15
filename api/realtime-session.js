@@ -1,9 +1,13 @@
+import { requireRouteAccess } from "./_routeProtection.js";
+
 function send(res, status, payload) {
   return res.status(status).json(payload);
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  if (!access.ok) return send(res, access.status, { error: access.error });
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return send(res, 500, { error: "OPENAI_API_KEY is not configured." });

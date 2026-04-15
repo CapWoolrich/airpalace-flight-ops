@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabase";
 
 export default function AuthGate({ children }) {
+  const signupEnabled =
+    import.meta.env.DEV ||
+    String(import.meta.env.VITE_ENABLE_PUBLIC_SIGNUP || "").toLowerCase() === "true";
   const [session, setSession] = useState(null);
   const [mode, setMode] = useState("login"); // login | signup
   const [email, setEmail] = useState("");
@@ -23,6 +26,10 @@ export default function AuthGate({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!signupEnabled && mode === "signup") setMode("login");
+  }, [mode, signupEnabled]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg("");
@@ -30,6 +37,7 @@ export default function AuthGate({ children }) {
 
     try {
       if (mode === "signup") {
+        if (!signupEnabled) throw new Error("Registro público deshabilitado en este entorno.");
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -156,28 +164,30 @@ export default function AuthGate({ children }) {
               : "Crear cuenta"}
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "login" ? "signup" : "login");
-              setMsg("");
-            }}
-            style={{
-              width: "100%",
-              marginTop: 10,
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid #334155",
-              background: "transparent",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {mode === "login"
-              ? "Crear cuenta"
-              : "Ya tengo cuenta, iniciar sesión"}
-          </button>
+          {signupEnabled && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "login" ? "signup" : "login");
+                setMsg("");
+              }}
+              style={{
+                width: "100%",
+                marginTop: 10,
+                padding: 12,
+                borderRadius: 10,
+                border: "1px solid #334155",
+                background: "transparent",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {mode === "login"
+                ? "Crear cuenta"
+                : "Ya tengo cuenta, iniciar sesión"}
+            </button>
+          )}
 
           {msg && (
             <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>
