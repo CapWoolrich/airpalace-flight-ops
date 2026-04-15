@@ -198,6 +198,13 @@ export default function App(){
   var[recorder,setRecorder]=useState(null);
   var[speechRec,setSpeechRec]=useState(null);
   var liveAnalyzeTimerRef=useRef(null);
+  var realtimePcRef=useRef(null);
+  var realtimeDcRef=useRef(null);
+  var realtimeAudioRef=useRef(null);
+  var realtimeStreamRef=useRef(null);
+  var[realtimeConnected,setRealtimeConnected]=useState(false);
+  var[realtimeConnecting,setRealtimeConnecting]=useState(false);
+  var[realtimeText,setRealtimeText]=useState("");
   var[maintPlan,setMaintPlan]=useState(function(){
     try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
   });
@@ -442,6 +449,7 @@ export default function App(){
   useEffect(function(){
     return function(){
       if (liveAnalyzeTimerRef.current) clearTimeout(liveAnalyzeTimerRef.current);
+      stopRealtimeVoice();
     };
   },[]);
 
@@ -765,6 +773,103 @@ export default function App(){
       u.onerror=function(){setAgentVoiceState("idle");};
       window.speechSynthesis.speak(u);
     }catch{}
+  }
+
+  function stopRealtimeVoice() {
+    try {
+      if (realtimeDcRef.current) realtimeDcRef.current.close();
+      if (realtimePcRef.current) realtimePcRef.current.close();
+      if (realtimeStreamRef.current) realtimeStreamRef.current.getTracks().forEach(function(t){t.stop();});
+      realtimeDcRef.current = null;
+      realtimePcRef.current = null;
+      realtimeStreamRef.current = null;
+      setRealtimeConnected(false);
+      setRealtimeConnecting(false);
+      setAgentVoiceState("idle");
+      setRealtimeText("");
+    } catch {}
+  }
+
+  async function startRealtimeVoice() {
+    if (realtimeConnecting || realtimeConnected) return;
+    setRealtimeConnecting(true);
+    setAgentVoiceState("thinking");
+    try {
+      const sessionResp = await fetch("/api/realtime-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instructions:
+            "Eres AI Pilot de AirPalace. Habla en español profesional y breve. Pide aclaraciones cuando falten datos. No inventes NOTAMs.",
+        }),
+      });
+      const session = await sessionResp.json().catch(function(){return{};});
+      if (!sessionResp.ok || !session.client_secret) throw new Error(session.error || "No se pudo iniciar sesión realtime.");
+
+      const pc = new RTCPeerConnection();
+      realtimePcRef.current = pc;
+
+      const remoteAudio = new Audio();
+      remoteAudio.autoplay = true;
+      realtimeAudioRef.current = remoteAudio;
+      pc.ontrack = function(event) {
+        if (event.streams && event.streams[0]) remoteAudio.srcObject = event.streams[0];
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      realtimeStreamRef.current = stream;
+      stream.getTracks().forEach(function(track){pc.addTrack(track, stream);});
+
+      const dc = pc.createDataChannel("oai-events");
+      realtimeDcRef.current = dc;
+      dc.onopen = function(){
+        setRealtimeConnected(true);
+        setRealtimeConnecting(false);
+        setAgentVoiceState("listening");
+      };
+      dc.onclose = function(){
+        setRealtimeConnected(false);
+        if (!realtimeConnecting) setAgentVoiceState("idle");
+      };
+      dc.onmessage = function(evt){
+        try {
+          const msg = JSON.parse(evt.data || "{}");
+          if (msg.type === "input_audio_buffer.speech_started") {
+            if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+            setAgentVoiceState("listening");
+          } else if (msg.type === "response.created") {
+            setAgentVoiceState("thinking");
+          } else if (msg.type === "response.audio.delta") {
+            setAgentVoiceState("speaking");
+          } else if (msg.type === "response.audio_transcript.delta") {
+            setRealtimeText(function(prev){return `${prev}${msg.delta || ""}`.slice(-3000);});
+          } else if (msg.type === "response.done") {
+            setAgentVoiceState("idle");
+          }
+        } catch {}
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      const model = encodeURIComponent(String(import.meta.env.VITE_OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview"));
+      const sdpResp = await fetch(`https://api.openai.com/v1/realtime?model=${model}`, {
+        method: "POST",
+        body: offer.sdp,
+        headers: {
+          Authorization: `Bearer ${session.client_secret}`,
+          "Content-Type": "application/sdp",
+        },
+      });
+      const answerSdp = await sdpResp.text();
+      if (!sdpResp.ok) throw new Error(answerSdp || `HTTP ${sdpResp.status}`);
+      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+    } catch (e) {
+      setErrMsg(e.message || String(e));
+      setPhase("error");
+      stopRealtimeVoice();
+    } finally {
+      setRealtimeConnecting(false);
+    }
   }
 
   async function enablePushNotifications(){
@@ -1322,9 +1427,18 @@ export default function App(){
         <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:6}}>
           Estado: {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Esperando aclaración":"✅ En espera"}
         </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:8,border:"1px solid #0f172a",borderRadius:10,background:realtimeConnected?"#dcfce7":"#fff",fontSize:11,fontWeight:700,cursor:realtimeConnected?"default":"pointer"}}>
+            {realtimeConnecting?"⏳ Conectando...":realtimeConnected?"🟢 Realtime activo":"🎧 Conectar Realtime"}
+          </button>
+          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+            ⏹️ Cerrar Realtime
+          </button>
+        </div>
         {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10,padding:8,background:"#f8fafc",marginBottom:8}}>
           {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#0f172a":"#334155",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
         </div>}
+        {realtimeText&&<div style={{fontSize:11,color:"#334155",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Realtime: {realtimeText.slice(-240)}</div>}
         {agentLiveTranscript&&<div style={{fontSize:11,color:"#0369a1",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Transcripción en vivo: {agentLiveTranscript}</div>}
         <textarea
           value={agentInstruction}
