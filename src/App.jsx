@@ -192,7 +192,11 @@ export default function App(){
   var[actorName,setActorName]=useState("");
   var[recording,setRecording]=useState(false);
   var[transcribing,setTranscribing]=useState(false);
+  var[agentLiveTranscript,setAgentLiveTranscript]=useState("");
+  var[agentVoiceState,setAgentVoiceState]=useState("idle"); // idle | listening | thinking | speaking | clarification
+  var[agentMessages,setAgentMessages]=useState([{role:"assistant",text:"¿En qué te puedo ayudar hoy? Puedo ayudarte a programar vuelos, consultar agenda, revisar aeronaves y responder dudas operativas.",ts:new Date().toISOString()}]);
   var[recorder,setRecorder]=useState(null);
+  var[speechRec,setSpeechRec]=useState(null);
   var[maintPlan,setMaintPlan]=useState(function(){
     try{return JSON.parse(localStorage.getItem("airpalace_maint_plan")||"{}");}catch{return{};}
   });
@@ -700,21 +704,50 @@ export default function App(){
   async function analyzeAgentInstruction() {
     if (!agentInstruction.trim()) return;
     setAgentBusy(true);
+    setAgentVoiceState("thinking");
     setPhase("saving");
     setErrMsg("");
     try {
+      setAgentMessages(function(prev){return prev.concat([{role:"user",text:agentInstruction.trim(),ts:new Date().toISOString()}]);});
       const analyzed = await analyzeOpsInstruction(agentInstruction);
       const validated = await validateAgentResult(analyzed, agentInstruction);
       setAgentResult(analyzed);
       setAgentValidation(validated);
+      const clarificationText = validated.clarification_prompts && validated.clarification_prompts.length
+        ? validated.clarification_prompts.join(" ")
+        : (validated.errors && validated.errors.length ? validated.errors.join(" ") : (validated.human_summary || "Instrucción analizada."));
+      setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:clarificationText,ts:new Date().toISOString()}]);});
+      speakAssistant(clarificationText);
+      if (validated.requires_confirmation || (validated.errors && validated.errors.length)) {
+        setAgentVoiceState("clarification");
+      } else if (validated.can_execute && String(validated.action || "").startsWith("query_")) {
+        await executeAgentInstruction(validated);
+      } else {
+        setAgentVoiceState("idle");
+      }
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1200);
     } catch (e) {
       setErrMsg(e.message || String(e));
       setPhase("error");
+      setAgentVoiceState("idle");
     } finally {
       setAgentBusy(false);
     }
+  }
+
+  function speakAssistant(text){
+    try{
+      if(!text||typeof window==="undefined"||!("speechSynthesis" in window))return;
+      window.speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(text);
+      u.lang="es-MX";
+      u.rate=1;
+      u.onstart=function(){setAgentVoiceState("speaking");};
+      u.onend=function(){setAgentVoiceState("idle");};
+      u.onerror=function(){setAgentVoiceState("idle");};
+      window.speechSynthesis.speak(u);
+    }catch{}
   }
 
   async function enablePushNotifications(){
@@ -765,51 +798,108 @@ export default function App(){
   }
 
   async function toggleVoiceInput() {
-    if (recording && recorder) {
-      recorder.stop();
+    if (recording && (speechRec || recorder)) {
+      if (speechRec) speechRec.stop();
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      setRecording(false);
+      setAgentVoiceState("idle");
+      setAgentLiveTranscript("");
       return;
     }
     try {
-      if (typeof MediaRecorder === "undefined") throw new Error("Tu navegador no soporta grabación de audio.");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks = [];
-      var mimeCandidates=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
-      var selected=mimeCandidates.find(function(m){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m);})||"";
-      const mediaRecorder = selected?new MediaRecorder(stream,{mimeType:selected}):new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
-      mediaRecorder.onstop = function(){
-        stream.getTracks().forEach(function(t){t.stop();});
-        setRecording(false);
-        const blob = new Blob(chunks, { type: selected || chunks[0]?.type || "audio/mp4" });
-        transcribeAudio(blob);
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        if (typeof MediaRecorder === "undefined") throw new Error("Tu navegador no soporta voz en tiempo real ni grabación.");
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const chunks = [];
+        var mimeCandidates=["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg;codecs=opus"];
+        var selected=mimeCandidates.find(function(m){return MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m);})||"";
+        const mediaRecorder = selected?new MediaRecorder(stream,{mimeType:selected}):new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = function(e){ if(e.data&&e.data.size>0)chunks.push(e.data); };
+        mediaRecorder.onstart = function(){setAgentVoiceState("listening");};
+        mediaRecorder.onstop = function(){
+          stream.getTracks().forEach(function(t){t.stop();});
+          setRecording(false);
+          setAgentVoiceState("thinking");
+          const blob = new Blob(chunks, { type: selected || chunks[0]?.type || "audio/mp4" });
+          transcribeAudio(blob).finally(function(){setAgentVoiceState("idle");});
+        };
+        setRecorder(mediaRecorder);
+        mediaRecorder.start();
+        setRecording(true);
+        return;
+      }
+      const recognition = new SR();
+      recognition.lang = "es-MX";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onstart = function(){setAgentVoiceState("listening");};
+      recognition.onresult = function(event){
+        let interim = "";
+        let finalText = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) finalText += text + " ";
+          else interim += text;
+        }
+        if (interim) setAgentLiveTranscript(interim.trim());
+        if (finalText.trim()) {
+          if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+          setAgentInstruction(function(prev){
+            const next = `${String(prev||"").trim()} ${finalText.trim()}`.trim();
+            return next;
+          });
+          setAgentLiveTranscript("");
+        }
       };
-      setRecorder(mediaRecorder);
-      mediaRecorder.start();
+      recognition.onerror = function(e){
+        setErrMsg(e?.error ? `Reconocimiento de voz: ${e.error}` : "Error de reconocimiento de voz.");
+        setPhase("error");
+        setAgentVoiceState("idle");
+      };
+      recognition.onend = function(){
+        setRecording(false);
+        if (agentVoiceState === "listening") setAgentVoiceState("idle");
+      };
+      setSpeechRec(recognition);
+      recognition.start();
       setRecording(true);
     } catch (e) {
       setErrMsg(e?.message || "No se pudo iniciar el micrófono.");
       setPhase("error");
+      setAgentVoiceState("idle");
     }
   }
 
-  async function executeAgentInstruction() {
-    if (!agentValidation || !agentValidation.can_execute) return;
+  async function executeAgentInstruction(validationOverride) {
+    const validation = validationOverride || agentValidation;
+    if (!validation || !validation.can_execute) return;
     setAgentBusy(true);
     setPhase("saving");
     setErrMsg("");
     try {
-      const execRes = await executeAgentAction(agentValidation, {
+      const execRes = await executeAgentAction(validation, {
         calcRoute: calcR,
         creatorMeta: getCreatorMeta("ai"),
+        instruction: agentInstruction,
       });
-      setAgentInstruction("");
-      setAgentResult(null);
-      setAgentValidation(null);
+      if (!validationOverride) {
+        setAgentInstruction("");
+        setAgentResult(null);
+        setAgentValidation(null);
+      }
       if (execRes && execRes.warning) {
         setErrMsg(`Vuelo creado, pero WhatsApp falló: ${execRes.warning}`);
         setPhase("error");
         setTimeout(function(){setPhase("ready");}, 2200);
         return;
+      }
+      if (execRes && execRes.message) {
+        const rendered = execRes.data?.flights && execRes.data.flights.length
+          ? `${execRes.message}\n${execRes.data.flights.map(function(f){return `• ${f.date} ${f.time||"STBY"} · ${f.ac} · ${f.orig} → ${f.dest} (${f.rb||"-"})`;}).join("\n")}`
+          : execRes.message;
+        setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:rendered,ts:new Date().toISOString()}]);});
+        speakAssistant(execRes.message);
       }
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1200);
@@ -1211,23 +1301,30 @@ export default function App(){
           <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
         </div>
         <div style={{fontSize:11,color:"#475569",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
+        <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:6}}>
+          Estado: {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Esperando aclaración":"✅ En espera"}
+        </div>
+        {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10,padding:8,background:"#f8fafc",marginBottom:8}}>
+          {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#0f172a":"#334155",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
+        </div>}
+        {agentLiveTranscript&&<div style={{fontSize:11,color:"#0369a1",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Transcripción en vivo: {agentLiveTranscript}</div>}
         <textarea
           value={agentInstruction}
           onChange={function(e){setAgentInstruction(e.target.value);}}
-          placeholder="Escribe una instrucción..."
+          placeholder="Escribe o dicta una instrucción..."
           style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
         />
         <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
-          {transcribing?"⏳ Transcribiendo...":recording?"⏹️ Detener grabación":"🎤 Grabar voz"}
+          {recording?"⏹️ Detener escucha en vivo":"🎙️ Hablar en vivo"}
         </button>
         <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-          {agentBusy?"⏳ Analizando...":"🔍 Analyze instruction"}
+          {agentBusy?"⏳ Analizando...":"🔍 Analizar instrucción"}
         </button>
         {agentValidation&&<div style={{marginTop:8,border:"1px solid #e2e8f0",borderRadius:10,padding:9,background:"#f8fafc"}}>
           <div style={{fontSize:11,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
           <div style={{fontSize:11,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
           <div style={{fontSize:11,color:"#334155"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
-          {agentValidation.missing_fields.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>Faltantes: {agentValidation.missing_fields.join(", ")}</div>}
+          {agentValidation.clarification_prompts&&agentValidation.clarification_prompts.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>{agentValidation.clarification_prompts.map(function(c,i){return <div key={i}>• {c}</div>;})}</div>}
           {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
           {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
           <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>

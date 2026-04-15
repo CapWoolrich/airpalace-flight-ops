@@ -89,6 +89,23 @@ export async function executeAgentAction(agentResult, options = {}) {
     }
   }
 
+  async function fetchFlightsForQuery() {
+    const { data, error } = await supabase
+      .from("flights")
+      .select("*")
+      .order("date", { ascending: true })
+      .order("time", { ascending: true })
+      .limit(300);
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function fetchAircraftStatus() {
+    const { data, error } = await supabase.from("aircraft_status").select("*");
+    if (error) throw error;
+    return data || [];
+  }
+
   switch (result.action) {
     case "create_flight": {
       payload.creator_meta = options.creatorMeta || payload.creator_meta || {};
@@ -210,7 +227,69 @@ export async function executeAgentAction(agentResult, options = {}) {
     }
 
     case "query_schedule": {
-      return { ok: true, message: "Consulta analizada. No requiere escritura." };
+      const instruction = String(options.instruction || "").toLowerCase();
+      if ((payload.query_scope || "").toLowerCase() === "aircraft_status" || /disponible|mantenimiento|aog|conflicto/.test(instruction)) {
+        const statuses = await fetchAircraftStatus();
+        const maint = statuses.filter((s) => s.status === "mantenimiento");
+        const aog = statuses.filter((s) => s.status === "aog");
+        const available = statuses.filter((s) => s.status === "disponible");
+        return {
+          ok: true,
+          message: `Estado de flota: ${available.length} disponibles, ${maint.length} en mantenimiento y ${aog.length} en AOG.`,
+          data: { available, maint, aog, statuses },
+        };
+      }
+
+      const flights = await fetchFlightsForQuery();
+      const today = new Date().toISOString().slice(0, 10);
+      const tomorrow = new Date(new Date(`${today}T12:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+      let filtered = flights;
+      if (/mañana|tomorrow/.test(instruction)) {
+        filtered = flights.filter((f) => f.date === tomorrow);
+      } else if (/hoy|today/.test(instruction)) {
+        filtered = flights.filter((f) => f.date === today);
+      } else if (/semana/.test(instruction)) {
+        const end = new Date(new Date(`${today}T12:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10);
+        filtered = flights.filter((f) => f.date >= today && f.date <= end);
+      }
+      if (payload.ac) filtered = filtered.filter((f) => f.ac === payload.ac);
+      if (payload.dest) filtered = filtered.filter((f) => String(f.dest || "").toLowerCase() === String(payload.dest || "").toLowerCase());
+      if (payload.rb) filtered = filtered.filter((f) => String(f.rb || "").toLowerCase().includes(String(payload.rb || "").toLowerCase()));
+      const top = filtered.slice(0, 12);
+      return {
+        ok: true,
+        message: `Encontré ${filtered.length} vuelo(s).`,
+        data: {
+          count: filtered.length,
+          flights: top,
+        },
+      };
+    }
+
+    case "query_notam": {
+      const airportCode = String(payload.airport_code || "").toUpperCase();
+      if (!airportCode) {
+        return { ok: false, message: "Necesito el código ICAO del aeropuerto para consultar NOTAM." };
+      }
+      const r = await fetch("/api/notam-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ airport_code: airportCode }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      if (!data.live_available) {
+        return {
+          ok: true,
+          message: `No tengo una fuente live de NOTAM configurada actualmente para ${airportCode}. No puedo confirmar restricciones actuales sin una fuente operativa configurada.`,
+          data,
+        };
+      }
+      return {
+        ok: true,
+        message: `Encontré ${Array.isArray(data.items) ? data.items.length : 0} NOTAM/restricción(es) para ${airportCode}. Fuente: ${data.source || "Proveedor externo"}.`,
+        data,
+      };
     }
 
     default:
