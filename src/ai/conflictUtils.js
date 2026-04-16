@@ -1,3 +1,5 @@
+import { apTz, calcR, findAP } from "../app/helpers.js";
+
 const DEFAULT_ACTIVE_STATUSES = new Set(["prog", "enc"]);
 const DEFAULT_OCCUPANCY_MINUTES = 90;
 const DEFAULT_MIN_TURNAROUND_MINUTES = 30;
@@ -97,6 +99,8 @@ function airportTimezone(code) {
   if (["MDPC", "PUJ", "PUNTA CANA", "PUNTA_CANA"].includes(c)) return "America/Santo_Domingo";
   if (["MMTO", "TLC", "MMMX", "MEX"].includes(c)) return "America/Mexico_City";
   if (["KOPF", "OPF", "KFLL", "FLL", "KMIA", "MIA", "KMCO", "MCO"].includes(c)) return "America/New_York";
+  var ap = findAP(c) || findAP(String(code || ""));
+  if (ap) return apTz(ap);
   return null;
 }
 
@@ -152,6 +156,9 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
   var endUtcMs = endRawUtc ? new Date(endRawUtc).getTime() : null;
   var triggeredIssue = null;
+  var estimatedBlockMinutes = null;
+  var routeEstimate = calcR(flight?.orig, flight?.dest, flight?.ac, { m: Number(flight?.pm || 0), w: Number(flight?.pw || 0), c: Number(flight?.pc || 0) }, Number(flight?.bg || 0));
+  if (routeEstimate && Number.isFinite(routeEstimate?.bm) && routeEstimate.bm > 0) estimatedBlockMinutes = routeEstimate.bm;
 
   if (!Number.isFinite(startUtcMs)) {
     return { startUtcMs: null, endUtcMs: null, issue: "timezone_mismatch", reason: "departure_cannot_be_normalized", originTz, destTz, arrRawDisplay };
@@ -178,7 +185,11 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
     }
   }
 
-  if (!Number.isFinite(endUtcMs)) endUtcMs = startUtcMs + occupancyMinutes * 60 * 1000;
+  if (!Number.isFinite(endUtcMs) && Number.isFinite(estimatedBlockMinutes)) endUtcMs = startUtcMs + estimatedBlockMinutes * 60 * 1000;
+  if (!Number.isFinite(endUtcMs)) {
+    endUtcMs = startUtcMs + occupancyMinutes * 60 * 1000;
+    triggeredIssue = triggeredIssue || "low_confidence_duration_fallback";
+  }
   if (String(arrRawDisplay || "").trim() && arrClockMinutes === null) triggeredIssue = triggeredIssue || "display_time_mismatch";
   if (!DATE_RE.test(String(flight?.date || "")) || depClockMinutes === null) triggeredIssue = triggeredIssue || "timezone_mismatch";
   if (Number.isFinite(startUtcMs) && Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) triggeredIssue = "invalid_chronology";
@@ -381,6 +392,31 @@ export function detectFlightConflicts(flights, options = {}) {
       }));
       debugLog(debugEnabled, { rawStoredTimestamp: normalized.raw, parsedUtcTimestamp: normalized.parsedUtc, displayedLocalTimestamp: normalized.displayedLocal, conflictRuleTriggered: "display_time_mismatch", flight: flightIdentity(flight) });
     }
+    if (normalized.issue === "low_confidence_duration_fallback") {
+      conflicts.push(buildConflict({
+        type: "sequence_uncertain_due_to_low_confidence_duration",
+        severity: "warning",
+        flight,
+        conflictingFlight: null,
+        resourceType: "time_data",
+        resourceLabel: flight?.ac || "schedule",
+        message: `${flightLabel(flight)} required a low-confidence duration fallback because no canonical/ETA/route duration was available.`,
+        details: {
+          startA: toIsoUtcMsString(normalized.startUtcMs),
+          endA: toIsoUtcMsString(normalized.endUtcMs),
+          startB: null,
+          endB: null,
+          overlapMinutes: 0,
+          airportMismatch: false,
+          reason: normalized.reason,
+          rawTimestamps: normalized.raw || null,
+          parsedUtc: normalized.parsedUtc || null,
+          displayedLocal: normalized.displayedLocal || null,
+        },
+        suggestedFix: "Provide canonical arrival UTC, a parseable ETA, or enough route data to derive block time.",
+      }));
+      debugLog(debugEnabled, { rawStoredTimestamp: normalized.raw, parsedUtcTimestamp: normalized.parsedUtc, displayedLocalTimestamp: normalized.displayedLocal, conflictRuleTriggered: "low_confidence_duration_fallback", flight: flightIdentity(flight) });
+    }
 
     if (blockedAircraft.has(String(flight?.ac || "").toUpperCase())) {
       conflicts.push(buildConflict({
@@ -417,12 +453,22 @@ export function detectFlightConflicts(flights, options = {}) {
       const aEnd = Number.isFinite(aNorm.endUtcMs) ? Math.floor(aNorm.endUtcMs / 60000) : null;
       const bEnd = Number.isFinite(bNorm.endUtcMs) ? Math.floor(bNorm.endUtcMs / 60000) : null;
       if (aEnd === null || bEnd === null) continue;
-      if (["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(aNorm.issue) || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(bNorm.issue)) {
+      if (["invalid_chronology", "timezone_mismatch", "display_time_mismatch", "low_confidence_duration_fallback"].includes(aNorm.issue) || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch", "low_confidence_duration_fallback"].includes(bNorm.issue)) {
         continue;
       }
 
       const sameAircraft = a?.ac && a.ac === b?.ac;
-      const samePilot = a?.rb && b?.rb && String(a.rb).trim().toLowerCase() === String(b.rb).trim().toLowerCase();
+      const pilotFieldCandidates = ["pic", "sic", "crew", "pilot_id", "assigned_pilot"];
+      const resolvePilotToken = (flight) => {
+        for (let idx = 0; idx < pilotFieldCandidates.length; idx += 1) {
+          const value = String(flight?.[pilotFieldCandidates[idx]] || "").trim();
+          if (value) return value.toLowerCase();
+        }
+        return "";
+      };
+      const aPilot = resolvePilotToken(a);
+      const bPilot = resolvePilotToken(b);
+      const samePilot = Boolean(aPilot && bPilot && aPilot === bPilot);
       const overlap = overlapWindow(aStart, aEnd, bStart, bEnd);
 
       if (sameAircraft && overlap.hasOverlap) {
@@ -523,7 +569,7 @@ export function detectFlightConflicts(flights, options = {}) {
         && end !== null
         && Number.isFinite(start)
         && Number.isFinite(end)
-        && !["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(normalized.issue)
+        && !["invalid_chronology", "timezone_mismatch", "display_time_mismatch", "low_confidence_duration_fallback"].includes(normalized.issue)
       ))
       .sort((a, b) => {
         if (a.start !== b.start) return a.start - b.start;
@@ -552,7 +598,7 @@ export function detectFlightConflicts(flights, options = {}) {
           || candidateEnd === null
           || !Number.isFinite(candidateStart)
           || !Number.isFinite(candidateEnd)
-          || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(candidateNorm.issue)
+          || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch", "low_confidence_duration_fallback"].includes(candidateNorm.issue)
         );
         return invalidTimeWindow;
       });

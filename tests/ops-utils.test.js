@@ -18,9 +18,9 @@ test("parseOperationalDateFromText resolves relative operational dates", () => {
 
 test("detectFlightConflicts catches overlapping flights on same aircraft", () => {
   const flights = [
-    { id: "1", ac: "N35EA", st: "prog", date: "2026-04-20", time: "10:00" },
-    { id: "2", ac: "N35EA", st: "enc", date: "2026-04-20", time: "10:40" },
-    { id: "3", ac: "N540JL", st: "prog", date: "2026-04-20", time: "10:45" },
+    { id: "1", ac: "N35EA", st: "prog", date: "2026-04-20", time: "10:00", orig: "MMUN", dest: "MMMD" },
+    { id: "2", ac: "N35EA", st: "enc", date: "2026-04-20", time: "10:40", orig: "MMUN", dest: "MMMD" },
+    { id: "3", ac: "N540JL", st: "prog", date: "2026-04-20", time: "10:45", orig: "MMUN", dest: "MMMD" },
   ];
   const conflicts = detectFlightConflicts(flights, { occupancyMinutes: 90 });
   assert.ok(conflicts.length >= 1);
@@ -54,6 +54,23 @@ test("detectFlightConflicts reports insufficient turnaround", () => {
   ];
   const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
   assert.ok(conflicts.some((c) => c.type === "turnaround_insufficient"));
+});
+
+test("detectFlightConflicts does not create pilot_overlap from requester rb", () => {
+  const flights = [
+    { id: "RB-1", ac: "N35EA", rb: "Gibran C", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "11:00", orig: "CUN", dest: "MID" },
+    { id: "RB-2", ac: "N540JL", rb: "Gibran C", st: "prog", date: "2026-04-20", time: "09:30", arrival_time: "11:30", orig: "MID", dest: "CUN" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "pilot_overlap").length, 0);
+});
+
+test("detectFlightConflicts normalizes Merida to Punta Cana without timezone_mismatch when schedule is valid", () => {
+  const flights = [
+    { id: "TZ-OK-1", ac: "N35EA", st: "prog", date: "2026-05-30", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
 });
 
 test("detectFlightConflicts does not flag location mismatch when immediate next leg repositions correctly", () => {
@@ -125,4 +142,13 @@ test("detectFlightConflicts warns about uncertain sequence when intermediate con
   const uncertaintyWarnings = conflicts.filter((c) => c.type === "sequence_uncertain_due_to_unparseable_intermediate_leg");
   assert.equal(uncertaintyWarnings.length, 1);
   assert.equal(uncertaintyWarnings[0].severity, "warning");
+});
+
+test("detectFlightConflicts uses route-duration estimate before 90-minute fallback", () => {
+  const flights = [
+    { id: "RTE-1", ac: "N35EA", st: "prog", date: "2026-06-10", time: "10:00", orig: "MMUN", dest: "MMMD" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { occupancyMinutes: 90 });
+  assert.equal(conflicts.filter((c) => c.type === "sequence_uncertain_due_to_low_confidence_duration").length, 0);
+  assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
 });
