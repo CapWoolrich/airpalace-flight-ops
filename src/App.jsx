@@ -7,8 +7,6 @@ import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflict
 import { getOperationalDateOffsetISO, getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
-import { buildAuditMeta } from "./lib/opsMutationBuilders";
-import { applyOpsMutation } from "./lib/opsWriteEngine";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -101,7 +99,6 @@ var SEED=[
   {date:"2026-04-30",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"09:00",rb:"Jabib C",nt:"",pm:3,pw:2,pc:1,bg:250,st:"prog"},
   {date:"2026-05-05",ac:"N35EA",orig:"Punta Cana",dest:"Merida",time:"09:00",rb:"Jabib C",nt:"Via Cozumel",pm:3,pw:2,pc:1,bg:250,st:"prog"},
 ];
-var SEED_M={N35EA:"disponible",N540JL:"disponible"};
 
 // ═══ DB HELPERS ═══
 async function loadFlightsFromDb() {
@@ -232,12 +229,12 @@ export default function App(){
   }
 
   function getCreatorMeta(source) {
-    return buildAuditMeta({
+    return {
       source,
       actorEmail: currentUser?.email || actorName || "",
       actorName: currentUser?.user_metadata?.name || actorName || "",
       actorUserId: currentUser?.id || "",
-    });
+    };
   }
 
   function isAgentWriteAction(action) {
@@ -301,27 +298,22 @@ export default function App(){
     });
   }, []);
 
-  async function emitManualSideEffects(eventType, payload) {
-    try {
-      const { data: authData } = await supabase.auth.getSession();
-      const token = authData?.session?.access_token;
-      const r = await fetch("/api/ops-side-effects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ eventType, payload }),
-      });
-      const data = await r.json().catch(function(){return{};});
-      if (!r.ok) throw new Error(data.error || "No se pudieron ejecutar notificaciones operativas.");
-      if (Array.isArray(data.warnings) && data.warnings.length) {
-        setErrMsg(`Acción guardada con avisos operativos: ${data.warnings.join("; ")}`);
-        setPhase("warn");
-        setTimeout(function(){setPhase("ready");}, 2200);
-      }
-    } catch (e) {
-      setErrMsg(`Acción guardada, pero no se pudieron ejecutar todas las notificaciones: ${e.message || String(e)}`);
+  async function callOpsWrite(action, payload) {
+    const { data: authData } = await supabase.auth.getSession();
+    const token = authData?.session?.access_token;
+    const response = await fetch("/api/ops-write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ action, payload }),
+    });
+    const body = await response.json().catch(function(){return{};});
+    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    if (Array.isArray(body.side_effect_warnings) && body.side_effect_warnings.length) {
+      setErrMsg(`Acción guardada con avisos operativos: ${body.side_effect_warnings.join("; ")}`);
       setPhase("warn");
       setTimeout(function(){setPhase("ready");}, 2200);
     }
+    return body;
   }
 
 
@@ -357,8 +349,9 @@ export default function App(){
         const freshMaint = await loadMaintFromDb();
 
         if (!freshFlights.length && DEMO_SEED_ENABLED) {
-          const { error } = await supabase.from("flights").insert(SEED);
-          if (error) throw error;
+          try {
+            await callOpsWrite("restore_demo", {});
+          } catch {}
           const seededFlights = await loadFlightsFromDb();
           setFsRaw(seededFlights);
         } else {
@@ -366,13 +359,6 @@ export default function App(){
         }
 
         if (!Object.keys(freshMaint.statusByAc).length && DEMO_SEED_ENABLED) {
-          const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
-            ac,
-            status,
-            updated_at: new Date().toISOString(),
-          }));
-          const { error } = await supabase.from("aircraft_status").upsert(maintRows);
-          if (error) throw error;
           const seededMaint = await loadMaintFromDb();
           setMtRaw(seededMaint.statusByAc);
           saveMaintPlan(Object.assign({},seededMaint.planByAc||{}));
@@ -441,8 +427,6 @@ export default function App(){
         : "";
 
     setPhase("saving");
-    const creatorMeta = getCreatorMeta("manual");
-
     const rt = calcR(
       flight.orig,
       flight.dest,
@@ -454,36 +438,19 @@ export default function App(){
     try {
       if (rt && !rt.dir && rt.stops.length > 0) {
         const stop = rt.stops[0];
-        const firstLeg = await applyOpsMutation({
-          db: supabase,
-          action: "create_flight",
-          payload: {
-            ...flight,
-            dest: stop.c,
-            nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
-          },
-          audit: creatorMeta,
+        await callOpsWrite("create_flight", {
+          ...flight,
+          dest: stop.c,
+          nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
         });
-        await applyOpsMutation({
-          db: supabase,
-          action: "create_flight",
-          payload: {
-            ...flight,
-            orig: stop.c,
-            time: "STBY",
-            nt: noteWithActor("Tras recarga", actorName),
-          },
-          audit: creatorMeta,
+        await callOpsWrite("create_flight", {
+          ...flight,
+          orig: stop.c,
+          time: "STBY",
+          nt: noteWithActor("Tras recarga", actorName),
         });
-        await emitManualSideEffects("flight_create", { flight: firstLeg.flight, actorName, sendWhatsapp: true });
       } else {
-        const created = await applyOpsMutation({
-          db: supabase,
-          action: "create_flight",
-          payload: { ...flight, nt: noteWithActor(flight.nt, actorName) },
-          audit: creatorMeta,
-        });
-        await emitManualSideEffects("flight_create", { flight: created.flight, actorName, sendWhatsapp: true });
+        await callOpsWrite("create_flight", { ...flight, nt: noteWithActor(flight.nt, actorName) });
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
@@ -506,30 +473,22 @@ export default function App(){
 
   async function editFlight(flight) {
     setPhase("saving");
-    const creatorMeta = getCreatorMeta("manual");
-
     try {
-      const mutation = await applyOpsMutation({
-        db: supabase,
-        action: "edit_flight",
-        payload: {
-          flight_id: flight.id,
-          date: flight.date,
-          ac: flight.ac,
-          orig: flight.orig,
-          dest: flight.dest,
-          time: flight.time,
-          rb: flight.rb,
-          nt: noteWithActor(flight.nt, actorName),
-          pm: flight.pm,
-          pw: flight.pw,
-          pc: flight.pc,
-          bg: flight.bg,
-          st: flight.st,
-        },
-        audit: creatorMeta,
+      const mutation = await callOpsWrite("edit_flight", {
+        flight_id: flight.id,
+        date: flight.date,
+        ac: flight.ac,
+        orig: flight.orig,
+        dest: flight.dest,
+        time: flight.time,
+        rb: flight.rb,
+        nt: noteWithActor(flight.nt, actorName),
+        pm: flight.pm,
+        pw: flight.pw,
+        pc: flight.pc,
+        bg: flight.bg,
+        st: flight.st,
       });
-      await emitManualSideEffects("flight_edit", { flight: mutation.flight, actorName, sendWhatsapp: true });
 
       setNtf({ fl: mutation.flight || flight, lbl: "MODIFICADO" });
       setSf(false);
@@ -551,22 +510,10 @@ export default function App(){
     setPhase("saving");
 
     try {
-      const creatorMeta = getCreatorMeta("manual");
       if(newSt==="canc"){
-        const mutation = await applyOpsMutation({
-          db: supabase,
-          action: "cancel_flight",
-          payload: { flight_id: id },
-          audit: creatorMeta,
-        });
-        await emitManualSideEffects("flight_cancel", { flight: mutation.flight, actorName, sendWhatsapp: false });
+        await callOpsWrite("cancel_flight", { flight_id: id });
       } else {
-        await applyOpsMutation({
-          db: supabase,
-          action: "edit_flight",
-          payload: { flight_id: id, st: newSt },
-          audit: creatorMeta,
-        });
+        await callOpsWrite("edit_flight", { flight_id: id, st: newSt });
       }
 
       setPhase("saved");
@@ -581,27 +528,13 @@ export default function App(){
     setPhase("saving");
 
     try {
-      const creatorMeta = getCreatorMeta("manual");
-      const mutation = await applyOpsMutation({
-        db: supabase,
-        action: "change_aircraft_status",
-        payload: {
-          ac: acId,
-          status_change: newSt,
-          maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
-          maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
-        },
-        audit: creatorMeta,
+      await callOpsWrite("change_aircraft_status", {
+        ac: acId,
+        status_change: newSt,
+        maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
+        maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
       });
       setMtRaw(function(prev){return Object.assign({},prev,{[acId]:newSt});});
-      if(["aog","mantenimiento"].includes(newSt)) {
-        await emitManualSideEffects("aircraft_status", {
-          ac: mutation.aircraftStatus.ac,
-          status: mutation.aircraftStatus.status,
-          maintenanceEndDate: mutation.aircraftStatus.maintenance_end_date,
-          actorName,
-        });
-      }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
@@ -617,16 +550,11 @@ export default function App(){
 
   async function persistMaintenanceDates(acId, nextPlanForAc, statusOverride) {
     try {
-      await applyOpsMutation({
-        db: supabase,
-        action: "change_aircraft_status",
-        payload: {
-          ac: acId,
-          status_change: statusOverride || mt[acId] || "disponible",
-          maintenance_start_date: nextPlanForAc?.from || null,
-          maintenance_end_date: nextPlanForAc?.to || null,
-        },
-        audit: getCreatorMeta("manual"),
+      await callOpsWrite("change_aircraft_status", {
+        ac: acId,
+        status_change: statusOverride || mt[acId] || "disponible",
+        maintenance_start_date: nextPlanForAc?.from || null,
+        maintenance_end_date: nextPlanForAc?.to || null,
       });
     } catch (e) {
       setErrMsg(e.message || String(e));
@@ -645,22 +573,7 @@ export default function App(){
     setPhase("saving");
 
     try {
-      await supabase.from("flights").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-
-      const { error: flightsError } = await supabase.from("flights").insert(SEED);
-      if (flightsError) throw flightsError;
-
-      const maintRows = Object.entries(SEED_M).map(([ac, status]) => ({
-        ac,
-        status,
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error: maintError } = await supabase
-        .from("aircraft_status")
-        .upsert(maintRows);
-
-      if (maintError) throw maintError;
+      await callOpsWrite("restore_demo", {});
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);

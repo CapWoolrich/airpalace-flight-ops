@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 const RATE = new Map();
+const ROLE_ORDER = { viewer: 1, ops: 2, admin: 3 };
 
 function getIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "unknown").split(",")[0].trim();
@@ -15,9 +16,47 @@ function checkRateLimit(key, max = 40, windowMs = 60_000) {
   return recent.length <= max;
 }
 
+function normalizeRole(role) {
+  const next = String(role || "").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ROLE_ORDER, next) ? next : "viewer";
+}
+
+function hasRoleAtLeast(role, minimumRole) {
+  if (!minimumRole) return true;
+  return (ROLE_ORDER[normalizeRole(role)] || 0) >= (ROLE_ORDER[normalizeRole(minimumRole)] || 0);
+}
+
+export function hasValidInternalSecret(req) {
+  const expected = String(process.env.API_INTERNAL_SECRET || "").trim();
+  const provided = String(req.headers["x-internal-secret"] || "").trim();
+  return !!expected && provided === expected;
+}
+
+async function resolveUserRole(userId) {
+  if (!userId) return "viewer";
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) return "viewer";
+
+  try {
+    const service = createClient(supabaseUrl, serviceRoleKey);
+    const { data, error } = await service
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return "viewer";
+    return normalizeRole(data?.role || "viewer");
+  } catch {
+    return "viewer";
+  }
+}
+
 export async function requireRouteAccess(req, {
   requireAuth = true,
   requireInternalSecret = false,
+  allowInternalSecretBypassAuth = false,
+  minimumRole = null,
   rateLimit = { max: 40, windowMs: 60_000 },
 } = {}) {
   if (rateLimit) {
@@ -27,12 +66,14 @@ export async function requireRouteAccess(req, {
     }
   }
 
+  const internalSecretIsValid = hasValidInternalSecret(req);
   if (requireInternalSecret) {
-    const expected = String(process.env.API_INTERNAL_SECRET || "").trim();
-    const provided = String(req.headers["x-internal-secret"] || "").trim();
-    if (!expected || provided !== expected) {
+    if (!internalSecretIsValid) {
       return { ok: false, status: 403, error: "Forbidden" };
     }
+  }
+  if (allowInternalSecretBypassAuth && internalSecretIsValid) {
+    return { ok: true, internal: true, role: "admin" };
   }
 
   if (requireAuth) {
@@ -48,9 +89,12 @@ export async function requireRouteAccess(req, {
     const supabase = createClient(supabaseUrl, publishable);
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user?.id) return { ok: false, status: 401, error: "Invalid auth token" };
-    return { ok: true, user: data.user };
+    const role = await resolveUserRole(data.user.id);
+    if (!hasRoleAtLeast(role, minimumRole)) return { ok: false, status: 403, error: "Insufficient role" };
+    return { ok: true, user: data.user, role };
   }
 
+  if (!hasRoleAtLeast("viewer", minimumRole)) return { ok: false, status: 403, error: "Insufficient role" };
   return { ok: true };
 }
 
