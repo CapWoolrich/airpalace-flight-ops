@@ -37,12 +37,21 @@ create table if not exists public.aircraft_status (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.user_roles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  role text not null check (role in ('viewer', 'ops', 'admin')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists flights_date_time_idx on public.flights (date, time);
 create index if not exists flights_ac_date_idx on public.flights (ac, date);
 create index if not exists flights_status_date_idx on public.flights (st, date);
+create index if not exists user_roles_role_idx on public.user_roles (role);
 
 alter table public.flights enable row level security;
 alter table public.aircraft_status enable row level security;
+alter table public.user_roles enable row level security;
 
 do $$
 begin
@@ -54,12 +63,11 @@ begin
       for select to authenticated using (true);
   end if;
 
-  if not exists (
+  if exists (
     select 1 from pg_policies
     where schemaname='public' and tablename='flights' and policyname='authenticated write flights'
   ) then
-    create policy "authenticated write flights" on public.flights
-      for all to authenticated using (true) with check (true);
+    drop policy "authenticated write flights" on public.flights;
   end if;
 
   if not exists (
@@ -70,11 +78,18 @@ begin
       for select to authenticated using (true);
   end if;
 
-  if not exists (
+  if exists (
     select 1 from pg_policies
     where schemaname='public' and tablename='aircraft_status' and policyname='authenticated write aircraft status'
   ) then
-    create policy "authenticated write aircraft status" on public.aircraft_status
-      for all to authenticated using (true) with check (true);
+    drop policy "authenticated write aircraft status" on public.aircraft_status;
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname='public' and tablename='user_roles' and policyname='users can read own role'
+  ) then
+    create policy "users can read own role" on public.user_roles
+      for select to authenticated using (auth.uid() = user_id);
   end if;
 end $$;
