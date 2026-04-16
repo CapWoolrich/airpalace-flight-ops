@@ -4,7 +4,7 @@ import { requireRouteAccess } from "../src/server/_routeProtection.js";
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido." });
-    const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 30, windowMs: 60_000 } });
+    const access = await requireRouteAccess(req, { requireAuth: true, requireInternalSecret: true, rateLimit: { max: 30, windowMs: 60_000 } });
     if (!access.ok) return res.status(access.status).json({ error: access.error });
     const phone = String(process.env.CALLMEBOT_PHONE || "").trim();
     if (!phone || !process.env.CALLMEBOT_APIKEY) {

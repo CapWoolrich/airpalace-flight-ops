@@ -20,7 +20,12 @@ async function sendPushToAll(supabase, payload, pushClient) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (process.env.CRON_SECRET && req.headers["x-cron-secret"] !== process.env.CRON_SECRET) {
+  const cronSecret = String(process.env.CRON_SECRET || "").trim();
+  if (!cronSecret) {
+    return res.status(500).json({ error: "CRON_SECRET missing" });
+  }
+  const providedCronSecret = String(req.headers["x-cron-secret"] || "").trim();
+  if (providedCronSecret !== cronSecret) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
