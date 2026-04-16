@@ -1,5 +1,5 @@
-import { sendOperationalEmail } from "./_emailSender.js";
-import { ensureBodyFields, requireRouteAccess } from "./_routeProtection.js";
+import { sendOperationalEmail } from "../src/server/_emailSender.js";
+import { ensureBodyFields, requireRouteAccess } from "../src/server/_routeProtection.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido." });

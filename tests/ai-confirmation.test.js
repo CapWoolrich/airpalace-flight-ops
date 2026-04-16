@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { signAiConfirmation, verifyAiConfirmation } from "../api/_aiConfirmation.js";
+import { signAiConfirmation, verifyAiConfirmation } from "../src/server/_aiConfirmation.js";
 
 test("AI confirmation token signs and verifies stable payload", () => {
   const prev = process.env.AI_CONFIRMATION_SECRET;
