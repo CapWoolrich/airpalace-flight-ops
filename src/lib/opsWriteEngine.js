@@ -6,6 +6,55 @@ import {
   buildEditFlightMutation,
 } from "./opsMutationBuilders.js";
 
+export const FLIGHT_AUDIT_COLUMNS = new Set([
+  "created_by_user_id",
+  "created_by_user_email",
+  "created_by_user_name",
+  "created_by_email",
+  "created_by_name",
+  "updated_by_email",
+  "updated_by_name",
+  "creation_source",
+]);
+
+const AUDIT_COMPAT_WARNING = "compat:audit_fields_missing_schema_cache";
+
+export function stripFlightAuditFields(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((item) => stripFlightAuditFields(item));
+
+  const out = {};
+  Object.entries(value).forEach(([key, fieldValue]) => {
+    if (FLIGHT_AUDIT_COLUMNS.has(key)) return;
+    out[key] = fieldValue;
+  });
+  return out;
+}
+
+export function isMissingFlightAuditFieldError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (!message) return false;
+
+  if (!(message.includes("schema cache") || message.includes("column"))) return false;
+
+  for (const column of FLIGHT_AUDIT_COLUMNS) {
+    if (message.includes(column.toLowerCase())) return true;
+  }
+  return false;
+}
+
+async function runFlightMutationWithAuditFallback(runWithPayload, payload) {
+  const { data, error } = await runWithPayload(payload);
+  if (!error) return { data, warnings: [] };
+
+  if (!isMissingFlightAuditFieldError(error)) throw error;
+
+  const safePayload = stripFlightAuditFields(payload);
+  const retry = await runWithPayload(safePayload);
+  if (retry.error) throw retry.error;
+  return { data: retry.data, warnings: [AUDIT_COMPAT_WARNING] };
+}
+
 export async function applyOpsMutation({
   db,
   action,
@@ -17,9 +66,11 @@ export async function applyOpsMutation({
 
   if (action === "create_flight") {
     const row = buildCreateFlightMutation(payload, audit);
-    const { data, error } = await db.from("flights").insert([row]).select("*").single();
-    if (error) throw error;
-    return { action, flight: data || row };
+    const { data, warnings } = await runFlightMutationWithAuditFallback(
+      (insertRow) => db.from("flights").insert([insertRow]).select("*").single(),
+      row,
+    );
+    return { action, flight: data || stripFlightAuditFields(row), ...(warnings.length ? { warnings } : {}) };
   }
 
   if (action === "change_aircraft_status") {
@@ -50,22 +101,46 @@ export async function applyOpsMutation({
   if (action === "edit_flight") {
     const { data: existing } = await db.from("flights").select("*").eq("id", flightId).single();
     const updates = buildEditFlightMutation(payload, audit);
-    const { data: updated, error } = await db.from("flights").update(updates).eq("id", flightId).select("*").single();
-    if (error) throw error;
-    return { action, flight: updated || { ...(existing || {}), ...updates }, previousFlight: existing || null, flightId };
+    const { data: updated, warnings } = await runFlightMutationWithAuditFallback(
+      (nextUpdates) => db.from("flights").update(nextUpdates).eq("id", flightId).select("*").single(),
+      updates,
+    );
+    return {
+      action,
+      flight: updated || { ...(existing || {}), ...stripFlightAuditFields(updates) },
+      previousFlight: existing || null,
+      flightId,
+      ...(warnings.length ? { warnings } : {}),
+    };
   }
 
   if (action === "cancel_flight") {
     const { data: existing } = await db.from("flights").select("*").eq("id", flightId).single();
-    const { error } = await db.from("flights").update(buildCancelFlightMutation(audit)).eq("id", flightId);
-    if (error) throw error;
-    return { action, flight: existing || { id: flightId, ...payload }, flightId };
+    const cancelMutation = buildCancelFlightMutation(audit);
+    const { warnings } = await runFlightMutationWithAuditFallback(
+      (nextUpdates) => db.from("flights").update(nextUpdates).eq("id", flightId),
+      cancelMutation,
+    );
+    return {
+      action,
+      flight: existing || { id: flightId, ...payload },
+      flightId,
+      ...(warnings.length ? { warnings } : {}),
+    };
   }
 
   const { data, error } = await db.from("flights").select("*").eq("id", flightId).single();
   if (error) throw error;
   const duplicated = buildDuplicateFlightMutation(data || {}, payload, audit);
-  const { data: duplicatedSaved, error: insError } = await db.from("flights").insert([duplicated]).select("*").single();
-  if (insError) throw insError;
-  return { action, flight: duplicatedSaved || duplicated, sourceFlight: data || null, flightId };
+  const { data: duplicatedSaved, warnings } = await runFlightMutationWithAuditFallback(
+    (insertRow) => db.from("flights").insert([insertRow]).select("*").single(),
+    duplicated,
+  );
+  return {
+    action,
+    flight: duplicatedSaved || stripFlightAuditFields(duplicated),
+    sourceFlight: data || null,
+    flightId,
+    ...(warnings.length ? { warnings } : {}),
+  };
 }

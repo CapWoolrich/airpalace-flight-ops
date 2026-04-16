@@ -84,6 +84,7 @@ export default async function handler(req, res) {
         limit: 25,
       }),
     });
+    sideEffectWarnings.push(...(mutation.warnings || []));
 
     if (mutation.error === "flight_not_resolved") {
       if (!mutation.candidates?.length) return bad(res, 400, mutation.message);
@@ -119,10 +120,11 @@ export default async function handler(req, res) {
       maintenanceEndDate: mutation.aircraftStatus.maintenance_end_date,
       actorName,
     });
+    sideEffectWarnings.push(...(statusEffects.warnings || []));
     return res.status(200).json({
       ok: true,
       message: "Estado de aeronave actualizado.",
-      ...((statusEffects.warnings || []).length ? { side_effect_warnings: statusEffects.warnings } : {}),
+      ...(sideEffectWarnings.length ? { side_effect_warnings: sideEffectWarnings } : {}),
     });
   } catch (e) {
     return bad(res, 500, e?.message || "Error ejecutando acción AI");
