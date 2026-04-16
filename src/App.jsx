@@ -7,7 +7,8 @@ import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflict
 import { getOperationalDateOffsetISO, getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
-import { buildAircraftStatusMutation, buildAuditMeta, withFlightCreateMeta, withFlightUpdateMeta } from "./lib/opsMutationBuilders";
+import { buildAuditMeta } from "./lib/opsMutationBuilders";
+import { applyOpsMutation } from "./lib/opsWriteEngine";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -302,91 +303,39 @@ export default function App(){
     });
   }, []);
 
-  async function safeInsertFlights(rows) {
-    const { data, error } = await supabase.from("flights").insert(rows).select("*");
-    if (error) throw error;
-    return data || [];
-  }
-
-  async function safeUpdateFlight(id, updates) {
-    const first = await supabase.from("flights").update(updates).eq("id", id);
-    if (first.error) throw first.error;
-  }
-
-  async function autoSendWhatsApp(flight, label) {
+  async function emitManualSideEffects(eventType, payload) {
     try {
       const { data: authData } = await supabase.auth.getSession();
       const token = authData?.session?.access_token;
-      const r = await fetch("/api/send-whatsapp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ flight, label }),
-      });
-      const data = await r.json().catch(function(){return{};});
-      if (!r.ok) {
-        throw new Error(data.error || "No se pudo contactar el servicio de WhatsApp.");
-      }
-      if (data.ok===false || data.warning) {
-        setErrMsg(`Vuelo guardado correctamente, pero ${data.warning || "no se pudo enviar WhatsApp."}`);
-        setPhase("warn");
-        setTimeout(function(){setPhase("ready");}, 2200);
-      }
-    } catch (e) {
-      setErrMsg(`Vuelo guardado correctamente, pero no se pudo enviar WhatsApp.`);
-      setPhase("warn");
-      setTimeout(function(){setPhase("ready");}, 2200);
-    }
-  }
-
-  function buildFlightEmailPayload(flight, eventLabel) {
-    var routeEst=(flight?.orig&&flight?.dest&&flight?.ac)?calcR(flight.orig,flight.dest,flight.ac,{m:flight.pm,w:flight.pw,c:flight.pc},flight.bg):null;
-    return {
-      event_label: eventLabel,
-      id: flight?.id || null,
-      flight_id: flight?.id || null,
-      date: flight?.date || "",
-      ac: flight?.ac || "",
-      orig: flight?.orig || "",
-      dest: flight?.dest || "",
-      time: flight?.time || "STBY",
-      block_minutes: routeEst?.bm || 60,
-      eta_local: etaText(flight) || "",
-      rb: flight?.rb || "",
-      pm: Number(flight?.pm || 0),
-      pw: Number(flight?.pw || 0),
-      pc: Number(flight?.pc || 0),
-      notes: String(flight?.nt || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim(),
-      actor: actorName || "",
-      edited_by: actorName || "",
-      created_by: actorName || "",
-    };
-  }
-
-  async function autoSendEmail(eventType, payload, okPrefix) {
-    try {
-      const { data: authData } = await supabase.auth.getSession();
-      const token = authData?.session?.access_token;
-      const r = await fetch("/api/send-email", {
+      const r = await fetch("/api/ops-side-effects", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ eventType, payload }),
       });
       const data = await r.json().catch(function(){return{};});
-      if (!r.ok) {
-        throw new Error(data.error || "No se pudo enviar el correo.");
-      }
-      if (data.warning) {
-        setErrMsg(`${okPrefix}, pero correo parcial: ${data.warning}`);
-        setPhase("error");
+      if (!r.ok) throw new Error(data.error || "No se pudieron ejecutar notificaciones operativas.");
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        setErrMsg(`Acción guardada con avisos operativos: ${data.warnings.join("; ")}`);
+        setPhase("warn");
         setTimeout(function(){setPhase("ready");}, 2200);
       }
     } catch (e) {
-      setErrMsg(`${okPrefix}, pero no se pudo enviar el correo: ${e.message || String(e)}`);
-      setPhase("error");
+      setErrMsg(`Acción guardada, pero no se pudieron ejecutar todas las notificaciones: ${e.message || String(e)}`);
+      setPhase("warn");
       setTimeout(function(){setPhase("ready");}, 2200);
     }
   }
 
+
+  
+
+  
+
+  
+
+  
+
+  
   async function sendPushEvent(title, body, url){
     try{
       const { data } = await supabase.auth.getSession();
@@ -507,35 +456,36 @@ export default function App(){
     try {
       if (rt && !rt.dir && rt.stops.length > 0) {
         const stop = rt.stops[0];
-
-        const legs = [
-          withFlightCreateMeta({
+        const firstLeg = await applyOpsMutation({
+          db: supabase,
+          action: "create_flight",
+          payload: {
             ...flight,
             dest: stop.c,
             nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
-          }, creatorMeta),
-          withFlightCreateMeta({
+          },
+          audit: creatorMeta,
+        });
+        await applyOpsMutation({
+          db: supabase,
+          action: "create_flight",
+          payload: {
             ...flight,
             orig: stop.c,
             time: "STBY",
             nt: noteWithActor("Tras recarga", actorName),
-          }, creatorMeta),
-        ];
-
-        const insertedLegs = await safeInsertFlights(legs);
-        var firstLeg = insertedLegs[0] || legs[0];
-        await autoSendWhatsApp(firstLeg, "PROGRAMADO");
-        await autoSendEmail("flight_created", buildFlightEmailPayload(firstLeg, "Vuelo programado"), "Vuelo guardado correctamente");
-        var programmedPush = buildOpsPush("flight_programmed", firstLeg);
-        await sendPushEvent(programmedPush.title, programmedPush.body, programmedPush.url);
+          },
+          audit: creatorMeta,
+        });
+        await emitManualSideEffects("flight_create", { flight: firstLeg.flight, actorName, sendWhatsapp: true });
       } else {
-        const created = withFlightCreateMeta({ ...flight, nt: noteWithActor(flight.nt, actorName) }, creatorMeta);
-        const insertedSingle = await safeInsertFlights([created]);
-        var createdSaved = insertedSingle[0] || created;
-        await autoSendWhatsApp(createdSaved, "PROGRAMADO");
-        await autoSendEmail("flight_created", buildFlightEmailPayload(createdSaved, "Vuelo programado"), "Vuelo guardado correctamente");
-        var programmedSinglePush = buildOpsPush("flight_programmed", createdSaved);
-        await sendPushEvent(programmedSinglePush.title, programmedSinglePush.body, programmedSinglePush.url);
+        const created = await applyOpsMutation({
+          db: supabase,
+          action: "create_flight",
+          payload: { ...flight, nt: noteWithActor(flight.nt, actorName) },
+          audit: creatorMeta,
+        });
+        await emitManualSideEffects("flight_create", { flight: created.flight, actorName, sendWhatsapp: true });
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
@@ -561,7 +511,11 @@ export default function App(){
     const creatorMeta = getCreatorMeta("manual");
 
     try {
-      await safeUpdateFlight(flight.id, withFlightUpdateMeta({
+      const mutation = await applyOpsMutation({
+        db: supabase,
+        action: "edit_flight",
+        payload: {
+          flight_id: flight.id,
           date: flight.date,
           ac: flight.ac,
           orig: flight.orig,
@@ -574,13 +528,12 @@ export default function App(){
           pc: flight.pc,
           bg: flight.bg,
           st: flight.st,
-        }, creatorMeta));
-      await autoSendWhatsApp(flight, "MODIFICADO");
-      await autoSendEmail("flight_updated", buildFlightEmailPayload(flight, "Vuelo modificado"), "Vuelo guardado correctamente");
-      var modifiedPush = buildOpsPush("flight_modified", flight);
-      await sendPushEvent(modifiedPush.title, modifiedPush.body, modifiedPush.url);
+        },
+        audit: creatorMeta,
+      });
+      await emitManualSideEffects("flight_edit", { flight: mutation.flight, actorName, sendWhatsapp: true });
 
-      setNtf({ fl: flight, lbl: "MODIFICADO" });
+      setNtf({ fl: mutation.flight || flight, lbl: "MODIFICADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
@@ -600,20 +553,22 @@ export default function App(){
     setPhase("saving");
 
     try {
-      const { data: existing } = await supabase.from("flights").select("*").eq("id", id).single();
       const creatorMeta = getCreatorMeta("manual");
-      const { error } = await supabase
-        .from("flights")
-        .update(withFlightUpdateMeta({
-          st: newSt,
-        }, creatorMeta))
-        .eq("id", id);
-
-      if (error) throw error;
       if(newSt==="canc"){
-        const cancelledPush = buildOpsPush("flight_cancelled", existing || { ac: "Aeronave" });
-        await sendPushEvent(cancelledPush.title, cancelledPush.body, cancelledPush.url);
-        await autoSendEmail("flight_cancelled", buildFlightEmailPayload(existing || {}, "Vuelo cancelado"), "Vuelo guardado correctamente");
+        const mutation = await applyOpsMutation({
+          db: supabase,
+          action: "cancel_flight",
+          payload: { flight_id: id },
+          audit: creatorMeta,
+        });
+        await emitManualSideEffects("flight_cancel", { flight: mutation.flight, actorName, sendWhatsapp: false });
+      } else {
+        await applyOpsMutation({
+          db: supabase,
+          action: "edit_flight",
+          payload: { flight_id: id, st: newSt },
+          audit: creatorMeta,
+        });
       }
 
       setPhase("saved");
@@ -629,52 +584,52 @@ export default function App(){
 
     try {
       const creatorMeta = getCreatorMeta("manual");
-      const payload = buildAircraftStatusMutation({
-        ac: acId,
-        status_change: newSt,
-        maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
-        maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
-      }, creatorMeta);
-      const { error } = await supabase
-        .from("aircraft_status")
-        .upsert([payload]);
-
-      if (error) {
-        if (String(error.message || "").toLowerCase().includes("maintenance_start_date") || String(error.message || "").toLowerCase().includes("maintenance_end_date")) {
-          throw new Error("Faltan columnas de persistencia en aircraft_status. Ejecuta la migración que agrega maintenance_start_date y maintenance_end_date.");
-        }
-        throw error;
-      }
+      const mutation = await applyOpsMutation({
+        db: supabase,
+        action: "change_aircraft_status",
+        payload: {
+          ac: acId,
+          status_change: newSt,
+          maintenance_start_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.from||null):null,
+          maintenance_end_date: (newSt==="mantenimiento"||newSt==="aog")?(maintPlan[acId]?.to||null):null,
+        },
+        audit: creatorMeta,
+      });
       setMtRaw(function(prev){return Object.assign({},prev,{[acId]:newSt});});
-      if(newSt==="aog"){
-        var aogPush=buildOpsPush("aog",{ac:acId});
-        await sendPushEvent(aogPush.title, aogPush.body, aogPush.url);
-        await autoSendEmail("aircraft_aog", { event_label:"AOG", ac: acId, actor: actorName }, "Estado guardado correctamente");
-      }
-      if(newSt==="mantenimiento"){
-        var maintPush=buildOpsPush("maintenance",{ac:acId,maintenanceEndDate:maintPlan[acId]?.to});
-        await sendPushEvent(maintPush.title, maintPush.body, maintPush.url);
-        await autoSendEmail("aircraft_maintenance", { event_label:"Mantenimiento", ac: acId, maintenance_end_date: maintPlan[acId]?.to || "", actor: actorName }, "Estado guardado correctamente");
+      if(["aog","mantenimiento"].includes(newSt)) {
+        await emitManualSideEffects("aircraft_status", {
+          ac: mutation.aircraftStatus.ac,
+          status: mutation.aircraftStatus.status,
+          maintenanceEndDate: mutation.aircraftStatus.maintenance_end_date,
+          actorName,
+        });
       }
 
       setPhase("saved");
       setTimeout(() => setPhase("ready"), 1500);
     } catch (e) {
-      setErrMsg(e.message || String(e));
+      if (String(e.message || "").toLowerCase().includes("maintenance_start_date") || String(e.message || "").toLowerCase().includes("maintenance_end_date")) {
+        setErrMsg("Faltan columnas de persistencia en aircraft_status. Ejecuta la migración que agrega maintenance_start_date y maintenance_end_date.");
+      } else {
+        setErrMsg(e.message || String(e));
+      }
       setPhase("error");
     }
   }
 
   async function persistMaintenanceDates(acId, nextPlanForAc, statusOverride) {
     try {
-      await supabase.from("aircraft_status").upsert([
-        buildAircraftStatusMutation({
+      await applyOpsMutation({
+        db: supabase,
+        action: "change_aircraft_status",
+        payload: {
           ac: acId,
           status_change: statusOverride || mt[acId] || "disponible",
           maintenance_start_date: nextPlanForAc?.from || null,
           maintenance_end_date: nextPlanForAc?.to || null,
-        }, getCreatorMeta("manual")),
-      ]);
+        },
+        audit: getCreatorMeta("manual"),
+      });
     } catch (e) {
       setErrMsg(e.message || String(e));
       setPhase("error");

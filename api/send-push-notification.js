@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { requireRouteAccess } from "./_routeProtection.js";
-import { getWebPushClient, sendPushBatch } from "./_push.js";
+import { requireRouteAccess } from "../src/server/routeProtection.js";
+import { getWebPushClient, sendPushBatch } from "../src/server/push.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });

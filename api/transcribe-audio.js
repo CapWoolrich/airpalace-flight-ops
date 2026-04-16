@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
-import { requireRouteAccess } from "./_routeProtection.js";
+import { requireRouteAccess } from "../src/server/routeProtection.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });

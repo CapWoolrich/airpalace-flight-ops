@@ -1,3 +1,12 @@
+function cleanNote(note) {
+  return String(note || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim();
+}
+
+function actorLabel(actorName) {
+  const actor = String(actorName || "").trim();
+  return actor || "Sistema";
+}
+
 function monthShortEs(dateStr) {
   try {
     const formatted = new Date(`${dateStr}T12:00:00`).toLocaleDateString("es-MX", { month: "short" });
@@ -14,6 +23,37 @@ export function formatFlightDateTime(dateStr, timeStr) {
   const day = d.getDate();
   const month = monthShortEs(dateStr);
   return `${day} ${month}${timeStr ? ` ${timeStr}` : ""}`.trim();
+}
+
+export function buildFlightNotificationPayload(flight = {}, actorName = "", extras = {}) {
+  return {
+    event_label: extras.eventLabel || "",
+    id: flight?.id || null,
+    flight_id: flight?.id || null,
+    date: flight?.date || "",
+    ac: flight?.ac || "",
+    orig: flight?.orig || "",
+    dest: flight?.dest || "",
+    time: flight?.time || "STBY",
+    rb: flight?.rb || "",
+    pm: Number(flight?.pm || 0),
+    pw: Number(flight?.pw || 0),
+    pc: Number(flight?.pc || 0),
+    notes: cleanNote(flight?.nt),
+    actor: actorLabel(actorName),
+    edited_by: actorLabel(actorName),
+    created_by: actorLabel(actorName),
+    ...extras,
+  };
+}
+
+export function buildAircraftStatusNotificationPayload({ ac = "", maintenanceEndDate = "", actorName = "", eventLabel = "" } = {}) {
+  return {
+    event_label: eventLabel,
+    ac,
+    maintenance_end_date: maintenanceEndDate || "",
+    actor: actorLabel(actorName),
+  };
 }
 
 export function buildOpsPush(eventType, payload = {}) {

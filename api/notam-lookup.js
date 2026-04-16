@@ -1,4 +1,4 @@
-import { requireRouteAccess } from "./_routeProtection.js";
+import { requireRouteAccess } from "../src/server/routeProtection.js";
 
 function send(res, status, payload) {
   return res.status(status).json(payload);
