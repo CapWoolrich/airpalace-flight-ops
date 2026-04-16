@@ -41,5 +41,5 @@ Optional (notifications):
 
 - `CALLMEBOT_PHONE`
 - `CALLMEBOT_APIKEY`
-- email provider env vars used by `api/_emailSender.js`
-- web-push env vars used by `api/_push.js`
+- email provider env vars used by `src/server/_emailSender.js`
+- web-push env vars used by `src/server/_push.js`

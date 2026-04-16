@@ -1,6 +1,6 @@
 import OpenAI from "openai";
-import { signAiConfirmation } from "./_aiConfirmation.js";
-import { requireRouteAccess } from "./_routeProtection.js";
+import { signAiConfirmation } from "../src/server/_aiConfirmation.js";
+import { requireRouteAccess } from "../src/server/_routeProtection.js";
 import { normalizeAgentWithAliases } from "../src/ai/agentUtils.js";
 
 const MODEL = "gpt-4.1-mini";

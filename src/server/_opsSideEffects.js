@@ -2,7 +2,7 @@ import {
   buildAircraftStatusNotificationPayload,
   buildFlightNotificationPayload,
   buildOpsPush,
-} from "../src/lib/opsNotifications.js";
+} from "../lib/opsNotifications.js";
 import { buildWhatsAppFlightMessage } from "./_whatsappMessage.js";
 import { sendOperationalEmail } from "./_emailSender.js";
 import { getWebPushClient, sendPushBatch } from "./_push.js";
