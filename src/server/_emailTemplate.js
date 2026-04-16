@@ -33,16 +33,25 @@ function templateRows(payload = {}) {
   ];
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderHtml(rows, headline) {
   const rowsHtml = rows
-    .map(([k, v]) => `<tr><td style="padding:6px 10px;color:#64748b;font-size:13px;">${k}</td><td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${v}</td></tr>`)
+    .map(([k, v]) => `<tr><td style="padding:6px 10px;color:#64748b;font-size:13px;">${escapeHtml(k)}</td><td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${escapeHtml(v)}</td></tr>`)
     .join("");
   return `
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;padding:24px;">
       <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
         <div style="background:#0f172a;color:#fff;padding:16px 18px;font-size:18px;font-weight:700;">AirPalace Flight Ops</div>
         <div style="padding:16px 18px;">
-          <div style="font-size:15px;color:#0f172a;font-weight:700;margin-bottom:10px;">${headline}</div>
+          <div style="font-size:15px;color:#0f172a;font-weight:700;margin-bottom:10px;">${escapeHtml(headline)}</div>
           <table style="width:100%;border-collapse:collapse;">${rowsHtml}</table>
           <p style="margin-top:14px;color:#475569;font-size:12px;">Mensaje operacional automático. Favor de validar cualquier ajuste con el área de operaciones.</p>
         </div>

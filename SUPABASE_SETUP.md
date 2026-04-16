@@ -24,6 +24,7 @@ Migrations are in `supabase/migrations/` and include:
 - `20260412_add_flight_creator_metadata.sql`: audit metadata columns on `flights`.
 - `20260413_add_maintenance_range_columns.sql`: maintenance range columns on `aircraft_status`.
 - `20260413_create_push_subscriptions.sql`: push subscription storage and service-role policy.
+- `20260416_push_subscriptions_user_association.sql`: associates push subscriptions with authenticated `user_id`.
 - `20260413_create_push_notification_events.sql`: dedupe table for scheduled push notifications.
 
 ## Required environment variables
@@ -31,7 +32,7 @@ Migrations are in `supabase/migrations/` and include:
 Client/runtime:
 
 - `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
 Server API routes:
 

@@ -13,7 +13,10 @@ export default async function handler(req, res) {
   if (!subscription?.endpoint) return res.status(400).json({ error: "subscription missing" });
 
   const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const userId = access?.user?.id || null;
+  if (!userId) return res.status(401).json({ error: "Missing authenticated user" });
   const row = {
+    user_id: userId,
     endpoint: subscription.endpoint,
     p256dh: subscription.keys?.p256dh || "",
     auth: subscription.keys?.auth || "",

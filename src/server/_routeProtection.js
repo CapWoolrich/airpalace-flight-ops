@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-const RATE = new Map();
+// In-memory fixed-window limiter. Ephemeral by design (resets on process restart).
+const RATE_LIMIT_STORE = new Map();
 const ROLE_ORDER = { viewer: 1, ops: 2, admin: 3 };
 
 function getIp(req) {
@@ -9,10 +10,10 @@ function getIp(req) {
 
 function checkRateLimit(key, max = 40, windowMs = 60_000) {
   const now = Date.now();
-  const bucket = RATE.get(key) || [];
+  const bucket = RATE_LIMIT_STORE.get(key) || [];
   const recent = bucket.filter((t) => now - t < windowMs);
   recent.push(now);
-  RATE.set(key, recent);
+  RATE_LIMIT_STORE.set(key, recent);
   return recent.length <= max;
 }
 
