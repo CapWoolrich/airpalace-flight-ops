@@ -35,6 +35,17 @@ test("detectFlightConflicts catches overlapping flights on same aircraft", () =>
   assert.equal(unique.length, 2);
 });
 
+test("detectFlightConflicts does not flag aircraft overlap across Cancun/Merida local-time conversion when ETA is valid", () => {
+  const flights = [
+    { id: "TZ-A", ac: "N35EA", st: "prog", date: "2026-04-20", time: "7:00 PM", arrival_time: "6:46 PM", orig: "CUN", dest: "MID" },
+    { id: "TZ-B", ac: "N35EA", st: "prog", date: "2026-04-20", time: "8:00 PM", arrival_time: "9:10 PM", orig: "MID", dest: "CUN" },
+  ];
+
+  const conflicts = detectFlightConflicts(flights, { occupancyMinutes: 90 });
+  const aircraftOverlaps = conflicts.filter((c) => c.type === "aircraft_overlap");
+  assert.equal(aircraftOverlaps.length, 0);
+});
+
 test("detectFlightConflicts reports insufficient turnaround", () => {
   const flights = [
     { id: "10", ac: "N35EA", rb: "Bernard Woolrich", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "10:00", orig: "MMMX", dest: "MMMD" },
@@ -70,7 +81,7 @@ test("detectFlightConflicts only evaluates immediate chronological pairings per 
 test("detectFlightConflicts flags location mismatch when immediate next chronological flight departs elsewhere", () => {
   const flights = [
     { id: "A", ac: "N35EA", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "10:00", orig: "CUN", dest: "MID" },
-    { id: "B", ac: "N35EA", st: "prog", date: "2026-04-20", time: "11:00", arrival_time: "12:00", orig: "MIA", dest: "CUN" },
+    { id: "B", ac: "N35EA", st: "prog", date: "2026-04-20", time: "13:00", arrival_time: "15:00", orig: "MIA", dest: "CUN" },
   ];
 
   const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
@@ -83,7 +94,7 @@ test("detectFlightConflicts flags location mismatch when immediate next chronolo
 test("detectFlightConflicts does not duplicate location mismatch alerts for the same sequential pair", () => {
   const flights = [
     { id: "A", ac: "N35EA", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "10:00", orig: "CUN", dest: "MID" },
-    { id: "B", ac: "N35EA", st: "prog", date: "2026-04-20", time: "11:00", arrival_time: "12:00", orig: "MIA", dest: "CUN" },
+    { id: "B", ac: "N35EA", st: "prog", date: "2026-04-20", time: "13:00", arrival_time: "15:00", orig: "MIA", dest: "CUN" },
   ];
 
   const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
