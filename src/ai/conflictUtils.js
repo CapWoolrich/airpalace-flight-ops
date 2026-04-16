@@ -432,30 +432,73 @@ export function detectFlightConflicts(flights, options = {}) {
           debugLog(debugEnabled, { reason: "turnaround_insufficient", a: flightIdentity(first.f), b: flightIdentity(second.f), gap });
         }
 
-        if (gap >= minTurnaroundMinutes && String(first.f?.dest || "") && String(second.f?.orig || "") && String(first.f.dest) !== String(second.f.orig)) {
-          conflicts.push(buildConflict({
-            type: "location_mismatch",
-            severity: "critical",
-            flight: first.f,
-            conflictingFlight: second.f,
-            resourceType: "airport",
-            resourceLabel: String(first.f?.ac || "Unknown aircraft"),
-            message: `The aircraft arrives at ${first.f.dest} but the next flight departs from ${second.f.orig} with no repositioning leg.`,
-            details: {
-              startA: toIsoUtcMinuteString(first.start),
-              endA: toIsoUtcMinuteString(first.end),
-              startB: toIsoUtcMinuteString(second.start),
-              endB: toIsoUtcMinuteString(second.end),
-              overlapMinutes: 0,
-              airportMismatch: true,
-            },
-            suggestedFix: "Add a repositioning leg or reassign aircraft so departure airport matches arrival airport.",
-          }));
-          debugLog(debugEnabled, { reason: "location_mismatch", a: flightIdentity(first.f), b: flightIdentity(second.f), dest: first.f?.dest, orig: second.f?.orig });
-        }
       }
     }
   }
+
+  const locationMismatchPairs = new Set();
+  const flightsByAircraft = new Map();
+  filtered.forEach((flight) => {
+    const ac = String(flight?.ac || "").trim();
+    if (!ac) return;
+    if (!flightsByAircraft.has(ac)) flightsByAircraft.set(ac, []);
+    flightsByAircraft.get(ac).push(flight);
+  });
+
+  flightsByAircraft.forEach((aircraftFlights, ac) => {
+    const sequenced = aircraftFlights
+      .map((flight) => {
+        const normalized = resolveFlightWindowUtc(flight, occupancyMinutes);
+        const start = Number.isFinite(normalized.startUtcMs) ? Math.floor(normalized.startUtcMs / 60000) : null;
+        const end = Number.isFinite(normalized.endUtcMs) ? Math.floor(normalized.endUtcMs / 60000) : null;
+        return { flight, normalized, start, end };
+      })
+      .filter(({ start, end, normalized }) => (
+        start !== null
+        && end !== null
+        && Number.isFinite(start)
+        && Number.isFinite(end)
+        && !["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(normalized.issue)
+      ))
+      .sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        if (a.end !== b.end) return a.end - b.end;
+        return String(a.flight?.id || "").localeCompare(String(b.flight?.id || ""));
+      });
+
+    for (let idx = 0; idx < sequenced.length - 1; idx += 1) {
+      const first = sequenced[idx];
+      const second = sequenced[idx + 1];
+      const gap = second.start - first.end;
+      const firstDest = String(first.flight?.dest || "");
+      const secondOrig = String(second.flight?.orig || "");
+      if (gap < minTurnaroundMinutes || !firstDest || !secondOrig || firstDest === secondOrig) continue;
+
+      const pairKey = `${flightIdentity(first.flight)}->${flightIdentity(second.flight)}`;
+      if (locationMismatchPairs.has(pairKey)) continue;
+      locationMismatchPairs.add(pairKey);
+
+      conflicts.push(buildConflict({
+        type: "location_mismatch",
+        severity: "critical",
+        flight: first.flight,
+        conflictingFlight: second.flight,
+        resourceType: "airport",
+        resourceLabel: String(ac || "Unknown aircraft"),
+        message: `The aircraft arrives at ${firstDest} but the chronologically next flight departs from ${secondOrig} with no repositioning leg in between.`,
+        details: {
+          startA: toIsoUtcMinuteString(first.start),
+          endA: toIsoUtcMinuteString(first.end),
+          startB: toIsoUtcMinuteString(second.start),
+          endB: toIsoUtcMinuteString(second.end),
+          overlapMinutes: 0,
+          airportMismatch: true,
+        },
+        suggestedFix: "Add a repositioning leg or reassign aircraft so departure airport matches arrival airport.",
+      }));
+      debugLog(debugEnabled, { reason: "location_mismatch", a: flightIdentity(first.flight), b: flightIdentity(second.flight), dest: firstDest, orig: secondOrig });
+    }
+  });
 
   return conflicts;
 }
