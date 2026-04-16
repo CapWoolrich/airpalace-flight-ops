@@ -845,6 +845,7 @@ export default function App(){
   var upcoming=useMemo(function(){return fs.filter(function(f){return f.date>=today&&f.st!=="canc"&&f.st!=="comp"&&(fa==="all"||f.ac===fa);}).sort(function(a,b){return a.date.localeCompare(b.date)||String(a.time).localeCompare(String(b.time));}).slice(0,20);},[fs,today,fa]);
   var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
   var conflictPairs=useMemo(function(){return detectFlightConflicts(operationalFlights,{activeStatuses:["prog","enc"]});},[operationalFlights]);
+  var dataIssueTypes=useMemo(function(){return new Set(["invalid_chronology","timezone_mismatch","display_time_mismatch"]);},[]);
   var conflictList=useMemo(function(){return uniqueFlightsFromConflicts(conflictPairs);},[conflictPairs]);
   var conflictsBySeverity=useMemo(function(){
     return conflictPairs.reduce(function(acc,c){
@@ -853,6 +854,24 @@ export default function App(){
       return acc;
     },{critical:0,warning:0});
   },[conflictPairs]);
+  var conflictBuckets=useMemo(function(){
+    return conflictPairs.reduce(function(acc,c){
+      if(dataIssueTypes.has(String(c.type||"")))acc.timeData+=1;
+      else acc.operational+=1;
+      return acc;
+    },{operational:0,timeData:0});
+  },[conflictPairs,dataIssueTypes]);
+  function conflictTypeLabel(type){
+    if(type==="aircraft_overlap")return"Operational · Aircraft overlap";
+    if(type==="pilot_overlap")return"Operational · Pilot overlap";
+    if(type==="turnaround_insufficient")return"Operational · Turnaround insufficient";
+    if(type==="location_mismatch")return"Operational · Location mismatch";
+    if(type==="blocked_resource")return"Operational · Blocked resource";
+    if(type==="invalid_chronology")return"Time/Data · Invalid chronology";
+    if(type==="timezone_mismatch")return"Time/Data · Timezone mismatch";
+    if(type==="display_time_mismatch")return"Time/Data · Display time mismatch";
+    return String(type||"unknown");
+  }
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -1026,6 +1045,8 @@ export default function App(){
           <div style={{display:"flex",gap:8,marginTop:6}}>
             <span style={{fontSize:11,fontWeight:700,color:"#991b1b",background:"#fee2e2",padding:"3px 8px",borderRadius:999}}>Críticos: {conflictsBySeverity.critical||0}</span>
             <span style={{fontSize:11,fontWeight:700,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:999}}>Warning: {conflictsBySeverity.warning||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#1d4ed8",background:"#dbeafe",padding:"3px 8px",borderRadius:999}}>Operacionales: {conflictBuckets.operational||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#7c3aed",background:"#ede9fe",padding:"3px 8px",borderRadius:999}}>Tiempo/Datos: {conflictBuckets.timeData||0}</span>
           </div>
         </div>}
         {listAlertFilter==="conflicts" ? (
@@ -1041,7 +1062,7 @@ export default function App(){
             return <div key={key} style={{background:cardBg,border:"1px solid "+borderColor,borderLeft:"4px solid "+borderColor,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:10,fontWeight:800,color:fg,background:sevCritical?"#fecaca":"#fde68a",padding:"2px 8px",borderRadius:999}}>{sevCritical?"CRITICAL":"WARNING"}</span>
-                <span style={{fontSize:11,fontWeight:700,color:fg}}>{c.type}</span>
+                <span style={{fontSize:11,fontWeight:700,color:fg}}>{conflictTypeLabel(c.type)}</span>
                 <div style={{flex:1}}/>
                 <button onClick={function(){setExpandedConflictKeys(function(prev){var n=Object.assign({},prev);n[key]=!n[key];return n;});}} style={{border:"none",background:"transparent",fontSize:11,fontWeight:700,color:fg,cursor:"pointer"}}>{isOpen?"Ocultar":"Ver detalle"}</button>
               </div>
@@ -1051,11 +1072,21 @@ export default function App(){
                 {flightB&&<span> | Vuelo B: {String(flightB.id||"-")} · {String(flightB.ac||"-")} · {String(flightB.orig||"-")} → {String(flightB.dest||"-")}</span>}
               </div>
               {isOpen&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px dashed "+borderColor}}>
-                <div style={{fontSize:11,color:"#334155"}}>Recurso: {c.resourceType} · {c.resourceLabel||"-"}</div>
+                <div style={{fontSize:11,color:"#334155"}}><strong>Tipo:</strong> {conflictTypeLabel(c.type)}</div>
+                <div style={{fontSize:11,color:"#334155"}}><strong>Recurso:</strong> {c.resourceType} · {c.resourceLabel||"-"}</div>
+                <div style={{fontSize:11,color:"#334155"}}><strong>Razón exacta:</strong> {c.details?.reason||"n/a"}</div>
                 <div style={{fontSize:11,color:"#334155",marginTop:3}}>Ventana A: {c.details?.startA||"-"} → {c.details?.endA||"-"}</div>
                 <div style={{fontSize:11,color:"#334155"}}>Ventana B: {c.details?.startB||"-"} → {c.details?.endB||"-"}</div>
                 <div style={{fontSize:11,color:"#334155"}}>Solape: {Number(c.details?.overlapMinutes||0)} min{c.details?.airportMismatch?" · mismatch de aeropuerto":""}</div>
-                <div style={{marginTop:6,fontSize:12,fontWeight:800,color:"#0f172a"}}>How to solve</div>
+                <div style={{fontSize:11,color:"#334155",marginTop:3}}>
+                  <strong>Registros involucrados:</strong> {c.flightId||"-"}{c.conflictingFlightId?(" , "+c.conflictingFlightId):""}
+                </div>
+                {(c.details?.rawTimestamps||c.details?.parsedUtc||c.details?.displayedLocal)&&<div style={{fontSize:10,color:"#475569",marginTop:4,background:"#fff",borderRadius:8,padding:"6px 8px"}}>
+                  <div><strong>Raw stored:</strong> {JSON.stringify(c.details?.rawTimestamps||{})}</div>
+                  <div><strong>Parsed UTC:</strong> {JSON.stringify(c.details?.parsedUtc||{})}</div>
+                  <div><strong>Displayed local:</strong> {JSON.stringify(c.details?.displayedLocal||{})}</div>
+                </div>}
+                <div style={{marginTop:6,fontSize:12,fontWeight:800,color:"#0f172a"}}>Suggested fix</div>
                 <div style={{fontSize:11,color:fg,marginTop:2}}>{c.suggestedFix}</div>
               </div>}
             </div>;

@@ -1,47 +1,156 @@
 const DEFAULT_ACTIVE_STATUSES = new Set(["prog", "enc"]);
 const DEFAULT_OCCUPANCY_MINUTES = 90;
 const DEFAULT_MIN_TURNAROUND_MINUTES = 30;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseFlexibleTime(value) {
+  var raw = String(value || "").trim();
+  if (!raw) return null;
+  var hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (hhmm) {
+    var hh24 = Number(hhmm[1]);
+    var mm24 = Number(hhmm[2]);
+    if (Number.isInteger(hh24) && Number.isInteger(mm24) && hh24 >= 0 && hh24 <= 23 && mm24 >= 0 && mm24 <= 59) return hh24 * 60 + mm24;
+  }
+  var twelve = raw.match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m?\.?/i);
+  if (twelve) {
+    var hh12 = Number(twelve[1]);
+    var mm12 = Number(twelve[2]);
+    if (!Number.isInteger(hh12) || !Number.isInteger(mm12) || hh12 < 1 || hh12 > 12 || mm12 < 0 || mm12 > 59) return null;
+    var isPm = String(twelve[3] || "").toLowerCase() === "p";
+    var hh = hh12 % 12;
+    if (isPm) hh += 12;
+    return hh * 60 + mm12;
+  }
+  return null;
+}
 
 function parseTimeToMinutes(value) {
-  const m = String(value || "").trim().match(/^(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh > 23 || mm > 59) return null;
-  return hh * 60 + mm;
+  return parseFlexibleTime(value);
 }
 
 function toUtcDayBaseMinutes(dateIso) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateIso || ""))) return null;
+  if (!DATE_RE.test(String(dateIso || ""))) return null;
   const [y, m, d] = String(dateIso).split("-").map(Number);
   if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
   return Math.floor(Date.UTC(y, m - 1, d, 0, 0, 0, 0) / 60000);
 }
 
-function flightStartMinutes(flight) {
-  const startMinutes = parseTimeToMinutes(flight?.time);
-  const dayBase = toUtcDayBaseMinutes(flight?.date);
-  if (startMinutes === null || dayBase === null) return null;
-  return dayBase + startMinutes;
+function airportTimezone(code) {
+  var c = String(code || "").toUpperCase();
+  if (["MMMD", "MID", "MERIDA", "MÉRIDA"].includes(c)) return "America/Merida";
+  if (["MMUN", "CUN", "CANCUN", "CANCÚN", "MMCZ", "CZM"].includes(c)) return "America/Cancun";
+  if (["MMTO", "TLC", "MMMX", "MEX"].includes(c)) return "America/Mexico_City";
+  if (["KOPF", "OPF", "KFLL", "FLL", "KMIA", "MIA", "KMCO", "MCO"].includes(c)) return "America/New_York";
+  return null;
 }
 
-function flightEndMinutes(flight, start, occupancyMinutes) {
-  const knownArrival = parseTimeToMinutes(
-    flight?.arrival_time || flight?.arr_time || flight?.eta_time || flight?.eta,
-  );
-  if (knownArrival !== null && flight?.date) {
-    const base = toUtcDayBaseMinutes(flight.date);
-    if (base === null) return start + occupancyMinutes;
-    const candidate = base + knownArrival;
-    if (candidate > start) return candidate;
-    return candidate + 24 * 60;
+function findRawUtc(value) {
+  if (!value) return null;
+  var d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function parseDisplayedArrivalDate(value) {
+  var m = String(value || "").match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
+  if (!m) return null;
+  var day = Number(m[1]);
+  var month = Number(m[2]);
+  var year = m[3] ? Number(m[3].length === 2 ? "20" + m[3] : m[3]) : null;
+  if (!day || !month) return null;
+  return { day, month, year };
+}
+
+function localIso(utcIso, timeZone) {
+  if (!utcIso || !timeZone) return null;
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(utcIso));
+  } catch {
+    return null;
   }
-  return start + occupancyMinutes;
+}
+
+function resolveFlightWindowUtc(flight, occupancyMinutes) {
+  var startRawUtc = findRawUtc(flight?.departure_utc || flight?.dep_utc || flight?.start_utc || flight?.departure_at);
+  var endRawUtc = findRawUtc(flight?.arrival_utc || flight?.arr_utc || flight?.end_utc || flight?.arrival_at);
+  var depClockMinutes = parseTimeToMinutes(flight?.time);
+  var arrRawDisplay = flight?.arrival_time || flight?.arr_time || flight?.eta_time || flight?.eta || "";
+  var arrClockMinutes = parseTimeToMinutes(arrRawDisplay);
+  var originTz = airportTimezone(flight?.orig);
+  var destTz = airportTimezone(flight?.dest) || originTz;
+  var dayBase = toUtcDayBaseMinutes(flight?.date);
+  var fallbackStartMs = dayBase !== null && Number.isFinite(depClockMinutes) ? (dayBase + depClockMinutes) * 60000 : null;
+  var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
+  var endUtcMs = endRawUtc ? new Date(endRawUtc).getTime() : null;
+  var triggeredIssue = null;
+
+  if (!Number.isFinite(startUtcMs)) {
+    return { startUtcMs: null, endUtcMs: null, issue: "timezone_mismatch", reason: "departure_cannot_be_normalized", originTz, destTz, arrRawDisplay };
+  }
+
+  if (!Number.isFinite(endUtcMs) && Number.isFinite(arrClockMinutes)) {
+    var arrivalDateIso = String(flight?.date || "");
+    var displayedDate = parseDisplayedArrivalDate(arrRawDisplay);
+    if (displayedDate && DATE_RE.test(arrivalDateIso)) {
+      var depParts = arrivalDateIso.split("-").map(Number);
+      var year = displayedDate.year || depParts[0];
+      arrivalDateIso = [year, String(displayedDate.month).padStart(2, "0"), String(displayedDate.day).padStart(2, "0")].join("-");
+    }
+    var arrBase = toUtcDayBaseMinutes(arrivalDateIso);
+    var fallbackEndMs = arrBase !== null ? (arrBase + arrClockMinutes) * 60000 : null;
+    endUtcMs = fallbackEndMs;
+    if (Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) {
+      endUtcMs += 24 * 60 * 60 * 1000;
+      triggeredIssue = triggeredIssue || "invalid_chronology";
+    }
+  }
+
+  if (!Number.isFinite(endUtcMs)) endUtcMs = startUtcMs + occupancyMinutes * 60 * 1000;
+  if (String(arrRawDisplay || "").trim() && arrClockMinutes === null) triggeredIssue = triggeredIssue || "display_time_mismatch";
+  if (!DATE_RE.test(String(flight?.date || "")) || depClockMinutes === null) triggeredIssue = triggeredIssue || "timezone_mismatch";
+  if (Number.isFinite(startUtcMs) && Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) triggeredIssue = "invalid_chronology";
+
+  return {
+    startUtcMs,
+    endUtcMs,
+    issue: triggeredIssue,
+    reason: triggeredIssue || "ok",
+    originTz,
+    destTz,
+    arrRawDisplay,
+    raw: {
+      departureStored: flight?.date && flight?.time ? `${flight.date} ${flight.time}` : null,
+      departureUtcStored: startRawUtc,
+      arrivalStored: String(arrRawDisplay || "") || null,
+      arrivalUtcStored: endRawUtc,
+    },
+    parsedUtc: {
+      departure: new Date(startUtcMs).toISOString(),
+      arrival: new Date(endUtcMs).toISOString(),
+    },
+    displayedLocal: {
+      departure: localIso(new Date(startUtcMs).toISOString(), originTz),
+      arrival: localIso(new Date(endUtcMs).toISOString(), destTz),
+    },
+  };
 }
 
 function toIsoUtcMinuteString(minutes) {
   if (!Number.isFinite(minutes)) return null;
   return new Date(minutes * 60000).toISOString();
+}
+function toIsoUtcMsString(ms) {
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString();
 }
 
 function formatClock(isoString) {
@@ -127,18 +236,19 @@ export function detectFlightConflicts(flights, options = {}) {
   const blockedAircraft = new Set((options.blockedAircraft || []).map((x) => String(x).toUpperCase()));
 
   filtered.forEach((flight) => {
-    const start = flightStartMinutes(flight);
-    const end = start === null ? null : flightEndMinutes(flight, start, occupancyMinutes);
+    const normalized = resolveFlightWindowUtc(flight, occupancyMinutes);
+    const start = Number.isFinite(normalized.startUtcMs) ? Math.floor(normalized.startUtcMs / 60000) : null;
+    const end = Number.isFinite(normalized.endUtcMs) ? Math.floor(normalized.endUtcMs / 60000) : null;
 
     if (start === null || end === null || !Number.isFinite(start) || !Number.isFinite(end)) {
       conflicts.push(buildConflict({
-        type: "timezone_error",
+        type: "timezone_mismatch",
         severity: "warning",
         flight,
         conflictingFlight: null,
-        resourceType: "schedule",
+        resourceType: "time_data",
         resourceLabel: flight?.ac || "schedule",
-        message: `${flightLabel(flight)} has invalid date/time fields and can produce false conflict results.`,
+        message: `${flightLabel(flight)} cannot be normalized to canonical UTC timestamps.`,
         details: {
           startA: start === null ? null : toIsoUtcMinuteString(start),
           endA: end === null ? null : toIsoUtcMinuteString(end),
@@ -146,11 +256,66 @@ export function detectFlightConflicts(flights, options = {}) {
           endB: null,
           overlapMinutes: 0,
           airportMismatch: false,
+          reason: normalized.reason,
+          rawTimestamps: normalized.raw || null,
+          parsedUtc: normalized.parsedUtc || null,
+          displayedLocal: normalized.displayedLocal || null,
         },
-        suggestedFix: "Normalize date/time fields to YYYY-MM-DD and HH:mm in UTC before conflict evaluation.",
+        suggestedFix: "Validate airport timezone mapping and ensure departure/arrival can be parsed to UTC.",
       }));
-      debugLog(debugEnabled, { reason: "timezone_error", flight: flightIdentity(flight) });
+      debugLog(debugEnabled, { rawStoredTimestamp: normalized.raw, parsedUtcTimestamp: normalized.parsedUtc, displayedLocalTimestamp: normalized.displayedLocal, conflictRuleTriggered: "timezone_mismatch", flight: flightIdentity(flight) });
       return;
+    }
+
+    if (normalized.issue === "invalid_chronology") {
+      conflicts.push(buildConflict({
+        type: "invalid_chronology",
+        severity: "warning",
+        flight,
+        conflictingFlight: null,
+        resourceType: "time_data",
+        resourceLabel: flight?.ac || "schedule",
+        message: "Time data issue detected: arrival appears earlier than departure. Check AM/PM or timezone conversion.",
+        details: {
+          startA: toIsoUtcMsString(normalized.startUtcMs),
+          endA: toIsoUtcMsString(normalized.endUtcMs),
+          startB: null,
+          endB: null,
+          overlapMinutes: 0,
+          airportMismatch: false,
+          reason: normalized.reason,
+          rawTimestamps: normalized.raw || null,
+          parsedUtc: normalized.parsedUtc || null,
+          displayedLocal: normalized.displayedLocal || null,
+        },
+        suggestedFix: "Correct displayed AM/PM/date fields or source timezone conversion so chronology is valid.",
+      }));
+      debugLog(debugEnabled, { rawStoredTimestamp: normalized.raw, parsedUtcTimestamp: normalized.parsedUtc, displayedLocalTimestamp: normalized.displayedLocal, conflictRuleTriggered: "invalid_chronology", flight: flightIdentity(flight) });
+    }
+    if (normalized.issue === "display_time_mismatch") {
+      conflicts.push(buildConflict({
+        type: "display_time_mismatch",
+        severity: "warning",
+        flight,
+        conflictingFlight: null,
+        resourceType: "time_data",
+        resourceLabel: flight?.ac || "schedule",
+        message: `${flightLabel(flight)} has display time values that are not parseable into canonical UTC.`,
+        details: {
+          startA: toIsoUtcMsString(normalized.startUtcMs),
+          endA: toIsoUtcMsString(normalized.endUtcMs),
+          startB: null,
+          endB: null,
+          overlapMinutes: 0,
+          airportMismatch: false,
+          reason: normalized.reason,
+          rawTimestamps: normalized.raw || null,
+          parsedUtc: normalized.parsedUtc || null,
+          displayedLocal: normalized.displayedLocal || null,
+        },
+        suggestedFix: "Store HH:mm (24h) or full UTC timestamps for arrivals/departures; avoid localized display strings in data fields.",
+      }));
+      debugLog(debugEnabled, { rawStoredTimestamp: normalized.raw, parsedUtcTimestamp: normalized.parsedUtc, displayedLocalTimestamp: normalized.displayedLocal, conflictRuleTriggered: "display_time_mismatch", flight: flightIdentity(flight) });
     }
 
     if (blockedAircraft.has(String(flight?.ac || "").toUpperCase())) {
@@ -180,11 +345,17 @@ export function detectFlightConflicts(flights, options = {}) {
     for (let j = i + 1; j < filtered.length; j += 1) {
       const a = filtered[i];
       const b = filtered[j];
-      const aStart = flightStartMinutes(a);
-      const bStart = flightStartMinutes(b);
+      const aNorm = resolveFlightWindowUtc(a, occupancyMinutes);
+      const bNorm = resolveFlightWindowUtc(b, occupancyMinutes);
+      const aStart = Number.isFinite(aNorm.startUtcMs) ? Math.floor(aNorm.startUtcMs / 60000) : null;
+      const bStart = Number.isFinite(bNorm.startUtcMs) ? Math.floor(bNorm.startUtcMs / 60000) : null;
       if (aStart === null || bStart === null) continue;
-      const aEnd = flightEndMinutes(a, aStart, occupancyMinutes);
-      const bEnd = flightEndMinutes(b, bStart, occupancyMinutes);
+      const aEnd = Number.isFinite(aNorm.endUtcMs) ? Math.floor(aNorm.endUtcMs / 60000) : null;
+      const bEnd = Number.isFinite(bNorm.endUtcMs) ? Math.floor(bNorm.endUtcMs / 60000) : null;
+      if (aEnd === null || bEnd === null) continue;
+      if (["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(aNorm.issue) || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(bNorm.issue)) {
+        continue;
+      }
 
       const sameAircraft = a?.ac && a.ac === b?.ac;
       const samePilot = a?.rb && b?.rb && String(a.rb).trim().toLowerCase() === String(b.rb).trim().toLowerCase();
