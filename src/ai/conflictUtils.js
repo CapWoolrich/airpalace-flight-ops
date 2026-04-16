@@ -36,6 +36,60 @@ function toUtcDayBaseMinutes(dateIso) {
   return Math.floor(Date.UTC(y, m - 1, d, 0, 0, 0, 0) / 60000);
 }
 
+function parseIsoDateParts(dateIso) {
+  if (!DATE_RE.test(String(dateIso || ""))) return null;
+  const [y, m, d] = String(dateIso).split("-").map(Number);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  return { y, m, d };
+}
+
+function timezoneOffsetMsAtUtc(utcMs, timeZone) {
+  if (!Number.isFinite(utcMs) || !timeZone) return null;
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      hourCycle: "h23",
+    });
+    const parts = formatter.formatToParts(new Date(utcMs));
+    const values = {};
+    parts.forEach((part) => {
+      if (part.type !== "literal") values[part.type] = part.value;
+    });
+    const y = Number(values.year);
+    const m = Number(values.month);
+    const d = Number(values.day);
+    const hh = Number(values.hour);
+    const mm = Number(values.minute);
+    const ss = Number(values.second);
+    if (![y, m, d, hh, mm, ss].every(Number.isFinite)) return null;
+    const asUtcMs = Date.UTC(y, m - 1, d, hh, mm, ss, 0);
+    return asUtcMs - utcMs;
+  } catch {
+    return null;
+  }
+}
+
+function zonedDateTimeToUtcMs(dateIso, minutesOfDay, timeZone) {
+  const parts = parseIsoDateParts(dateIso);
+  if (!parts || !Number.isFinite(minutesOfDay)) return null;
+  const hh = Math.floor(minutesOfDay / 60);
+  const mm = minutesOfDay % 60;
+  let utcGuess = Date.UTC(parts.y, parts.m - 1, parts.d, hh, mm, 0, 0);
+  const offset1 = timezoneOffsetMsAtUtc(utcGuess, timeZone);
+  if (!Number.isFinite(offset1)) return utcGuess;
+  utcGuess -= offset1;
+  const offset2 = timezoneOffsetMsAtUtc(utcGuess, timeZone);
+  if (Number.isFinite(offset2) && offset2 !== offset1) utcGuess += (offset1 - offset2);
+  return utcGuess;
+}
+
 function airportTimezone(code) {
   var c = String(code || "").toUpperCase();
   if (["MMMD", "MID", "MERIDA", "MÉRIDA"].includes(c)) return "America/Merida";
@@ -88,7 +142,12 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   var originTz = airportTimezone(flight?.orig);
   var destTz = airportTimezone(flight?.dest) || originTz;
   var dayBase = toUtcDayBaseMinutes(flight?.date);
-  var fallbackStartMs = dayBase !== null && Number.isFinite(depClockMinutes) ? (dayBase + depClockMinutes) * 60000 : null;
+  var fallbackStartMs = null;
+  if (DATE_RE.test(String(flight?.date || "")) && Number.isFinite(depClockMinutes)) {
+    fallbackStartMs = originTz
+      ? zonedDateTimeToUtcMs(flight?.date, depClockMinutes, originTz)
+      : (dayBase !== null ? (dayBase + depClockMinutes) * 60000 : null);
+  }
   var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
   var endUtcMs = endRawUtc ? new Date(endRawUtc).getTime() : null;
   var triggeredIssue = null;
@@ -106,7 +165,11 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
       arrivalDateIso = [year, String(displayedDate.month).padStart(2, "0"), String(displayedDate.day).padStart(2, "0")].join("-");
     }
     var arrBase = toUtcDayBaseMinutes(arrivalDateIso);
-    var fallbackEndMs = arrBase !== null ? (arrBase + arrClockMinutes) * 60000 : null;
+    var fallbackEndMs = DATE_RE.test(String(arrivalDateIso || ""))
+      ? (destTz
+        ? zonedDateTimeToUtcMs(arrivalDateIso, arrClockMinutes, destTz)
+        : (arrBase !== null ? (arrBase + arrClockMinutes) * 60000 : null))
+      : null;
     endUtcMs = fallbackEndMs;
     if (Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) {
       endUtcMs += 24 * 60 * 60 * 1000;
@@ -432,30 +495,73 @@ export function detectFlightConflicts(flights, options = {}) {
           debugLog(debugEnabled, { reason: "turnaround_insufficient", a: flightIdentity(first.f), b: flightIdentity(second.f), gap });
         }
 
-        if (gap >= minTurnaroundMinutes && String(first.f?.dest || "") && String(second.f?.orig || "") && String(first.f.dest) !== String(second.f.orig)) {
-          conflicts.push(buildConflict({
-            type: "location_mismatch",
-            severity: "critical",
-            flight: first.f,
-            conflictingFlight: second.f,
-            resourceType: "airport",
-            resourceLabel: String(first.f?.ac || "Unknown aircraft"),
-            message: `The aircraft arrives at ${first.f.dest} but the next flight departs from ${second.f.orig} with no repositioning leg.`,
-            details: {
-              startA: toIsoUtcMinuteString(first.start),
-              endA: toIsoUtcMinuteString(first.end),
-              startB: toIsoUtcMinuteString(second.start),
-              endB: toIsoUtcMinuteString(second.end),
-              overlapMinutes: 0,
-              airportMismatch: true,
-            },
-            suggestedFix: "Add a repositioning leg or reassign aircraft so departure airport matches arrival airport.",
-          }));
-          debugLog(debugEnabled, { reason: "location_mismatch", a: flightIdentity(first.f), b: flightIdentity(second.f), dest: first.f?.dest, orig: second.f?.orig });
-        }
       }
     }
   }
+
+  const locationMismatchPairs = new Set();
+  const flightsByAircraft = new Map();
+  filtered.forEach((flight) => {
+    const ac = String(flight?.ac || "").trim();
+    if (!ac) return;
+    if (!flightsByAircraft.has(ac)) flightsByAircraft.set(ac, []);
+    flightsByAircraft.get(ac).push(flight);
+  });
+
+  flightsByAircraft.forEach((aircraftFlights, ac) => {
+    const sequenced = aircraftFlights
+      .map((flight) => {
+        const normalized = resolveFlightWindowUtc(flight, occupancyMinutes);
+        const start = Number.isFinite(normalized.startUtcMs) ? Math.floor(normalized.startUtcMs / 60000) : null;
+        const end = Number.isFinite(normalized.endUtcMs) ? Math.floor(normalized.endUtcMs / 60000) : null;
+        return { flight, normalized, start, end };
+      })
+      .filter(({ start, end, normalized }) => (
+        start !== null
+        && end !== null
+        && Number.isFinite(start)
+        && Number.isFinite(end)
+        && !["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(normalized.issue)
+      ))
+      .sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        if (a.end !== b.end) return a.end - b.end;
+        return String(a.flight?.id || "").localeCompare(String(b.flight?.id || ""));
+      });
+
+    for (let idx = 0; idx < sequenced.length - 1; idx += 1) {
+      const first = sequenced[idx];
+      const second = sequenced[idx + 1];
+      const gap = second.start - first.end;
+      const firstDest = String(first.flight?.dest || "");
+      const secondOrig = String(second.flight?.orig || "");
+      if (gap < minTurnaroundMinutes || !firstDest || !secondOrig || firstDest === secondOrig) continue;
+
+      const pairKey = `${flightIdentity(first.flight)}->${flightIdentity(second.flight)}`;
+      if (locationMismatchPairs.has(pairKey)) continue;
+      locationMismatchPairs.add(pairKey);
+
+      conflicts.push(buildConflict({
+        type: "location_mismatch",
+        severity: "critical",
+        flight: first.flight,
+        conflictingFlight: second.flight,
+        resourceType: "airport",
+        resourceLabel: String(ac || "Unknown aircraft"),
+        message: `The aircraft arrives at ${firstDest} but the chronologically next flight departs from ${secondOrig} with no repositioning leg in between.`,
+        details: {
+          startA: toIsoUtcMinuteString(first.start),
+          endA: toIsoUtcMinuteString(first.end),
+          startB: toIsoUtcMinuteString(second.start),
+          endB: toIsoUtcMinuteString(second.end),
+          overlapMinutes: 0,
+          airportMismatch: true,
+        },
+        suggestedFix: "Add a repositioning leg or reassign aircraft so departure airport matches arrival airport.",
+      }));
+      debugLog(debugEnabled, { reason: "location_mismatch", a: flightIdentity(first.flight), b: flightIdentity(second.flight), dest: firstDest, orig: secondOrig });
+    }
+  });
 
   return conflicts;
 }
