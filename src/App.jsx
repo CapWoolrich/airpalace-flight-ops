@@ -71,6 +71,7 @@ export default function App(){
   var[anMonth,setAnMonth]=useState("all");
   var[anYear,setAnYear]=useState(String(initialOpsDateParts[0]||Number(getOperationalTodayISO().slice(0,4))));
   var[listAlertFilter,setListAlertFilter]=useState("all");
+  var[expandedConflictKeys,setExpandedConflictKeys]=useState({});
   var today=getOperationalTodayISO();
 
   function toErrorMessage(e) {
@@ -845,6 +846,13 @@ export default function App(){
   var operationalFlights=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp"&&f.date>=today;});},[fs,today]);
   var conflictPairs=useMemo(function(){return detectFlightConflicts(operationalFlights,{activeStatuses:["prog","enc"]});},[operationalFlights]);
   var conflictList=useMemo(function(){return uniqueFlightsFromConflicts(conflictPairs);},[conflictPairs]);
+  var conflictsBySeverity=useMemo(function(){
+    return conflictPairs.reduce(function(acc,c){
+      var sev=String(c.severity||"warning");
+      acc[sev]=(acc[sev]||0)+1;
+      return acc;
+    },{critical:0,warning:0});
+  },[conflictPairs]);
   var listFlights=useMemo(function(){
     if(listAlertFilter==="conflicts")return conflictList;
     if(listAlertFilter==="today")return fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -917,8 +925,8 @@ export default function App(){
   },[filteredAnalytics]);
 
   useEffect(function(){
-    if(conflictList.length>0){
-      var ac=conflictList[0]?.ac||"Aeronave";
+    if(conflictPairs.length>0){
+      var ac=conflictPairs[0]?.resourceLabel||conflictPairs[0]?.ac||"Aeronave";
       var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
       sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
     }
@@ -928,7 +936,7 @@ export default function App(){
       var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
       sendPushOnce("push_tomorrow_"+tomorrow, tomorrowPush.title, tomorrowPush.body);
     }
-  },[conflictList,fs,today,tomorrow]);
+  },[conflictPairs,fs,today,tomorrow]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
@@ -1013,16 +1021,58 @@ export default function App(){
 
       {vw==="list"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 {listAlertFilter==="conflicts"?"Vuelos con conflictos":"Próximos vuelos"}</div>
-        {listFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div>
-        :listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
-          <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
-            <div style={{background:"rgba(255,255,255,.95)",borderLeft:"4px solid "+a.clr,borderRadius:10,padding:"8px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
-              <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
-              <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
-              <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
-              {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
-            </div></div>);})}
+        {listAlertFilter==="conflicts"&&<div style={{background:"rgba(255,255,255,.95)",borderRadius:12,padding:10,marginBottom:10,border:"1px solid #e2e8f0"}}>
+          <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>Total conflictos: {conflictPairs.length}</div>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <span style={{fontSize:11,fontWeight:700,color:"#991b1b",background:"#fee2e2",padding:"3px 8px",borderRadius:999}}>Críticos: {conflictsBySeverity.critical||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:999}}>Warning: {conflictsBySeverity.warning||0}</span>
+          </div>
+        </div>}
+        {listAlertFilter==="conflicts" ? (
+          conflictPairs.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin conflictos detectados</div> : conflictPairs.map(function(c,idx){
+            var key=String(c.flightId||"")+"::"+String(c.conflictingFlightId||"")+"::"+String(c.type||idx);
+            var isOpen=!!expandedConflictKeys[key];
+            var sevCritical=c.severity==="critical";
+            var cardBg=sevCritical?"#fef2f2":"#fffbeb";
+            var borderColor=sevCritical?"#ef4444":"#f59e0b";
+            var fg=sevCritical?"#991b1b":"#92400e";
+            var flightA=(c.flights&&c.flights[0])||null;
+            var flightB=(c.flights&&c.flights[1])||null;
+            return <div key={key} style={{background:cardBg,border:"1px solid "+borderColor,borderLeft:"4px solid "+borderColor,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,fontWeight:800,color:fg,background:sevCritical?"#fecaca":"#fde68a",padding:"2px 8px",borderRadius:999}}>{sevCritical?"CRITICAL":"WARNING"}</span>
+                <span style={{fontSize:11,fontWeight:700,color:fg}}>{c.type}</span>
+                <div style={{flex:1}}/>
+                <button onClick={function(){setExpandedConflictKeys(function(prev){var n=Object.assign({},prev);n[key]=!n[key];return n;});}} style={{border:"none",background:"transparent",fontSize:11,fontWeight:700,color:fg,cursor:"pointer"}}>{isOpen?"Ocultar":"Ver detalle"}</button>
+              </div>
+              <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginTop:4}}>{c.message}</div>
+              <div style={{fontSize:11,color:"#334155",marginTop:5}}>
+                Vuelo A: {flightA?(String(flightA.id||"-")+" · "+String(flightA.ac||"-")+" · "+String(flightA.orig||"-")+" → "+String(flightA.dest||"-")):"-"}
+                {flightB&&<span> | Vuelo B: {String(flightB.id||"-")} · {String(flightB.ac||"-")} · {String(flightB.orig||"-")} → {String(flightB.dest||"-")}</span>}
+              </div>
+              {isOpen&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px dashed "+borderColor}}>
+                <div style={{fontSize:11,color:"#334155"}}>Recurso: {c.resourceType} · {c.resourceLabel||"-"}</div>
+                <div style={{fontSize:11,color:"#334155",marginTop:3}}>Ventana A: {c.details?.startA||"-"} → {c.details?.endA||"-"}</div>
+                <div style={{fontSize:11,color:"#334155"}}>Ventana B: {c.details?.startB||"-"} → {c.details?.endB||"-"}</div>
+                <div style={{fontSize:11,color:"#334155"}}>Solape: {Number(c.details?.overlapMinutes||0)} min{c.details?.airportMismatch?" · mismatch de aeropuerto":""}</div>
+                <div style={{marginTop:6,fontSize:12,fontWeight:800,color:"#0f172a"}}>How to solve</div>
+                <div style={{fontSize:11,color:fg,marginTop:2}}>{c.suggestedFix}</div>
+              </div>}
+            </div>;
+          })
+        ) : (
+          listFlights.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div> : listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
+            <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
+              <div style={{background:"rgba(255,255,255,.95)",borderLeft:"4px solid "+a.clr,borderRadius:10,padding:"8px 12px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
+                <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
+                <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
+                <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
+                {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
+              </div>
+            </div>
+          );})
+        )}
       </div>}
 
       {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>

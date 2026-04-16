@@ -23,7 +23,25 @@ test("detectFlightConflicts catches overlapping flights on same aircraft", () =>
     { id: "3", ac: "N540JL", st: "prog", date: "2026-04-20", time: "10:45" },
   ];
   const conflicts = detectFlightConflicts(flights, { occupancyMinutes: 90 });
-  assert.equal(conflicts.length, 1);
+  assert.ok(conflicts.length >= 1);
+  assert.equal(conflicts[0].type, "aircraft_overlap");
+  assert.equal(conflicts[0].severity, "critical");
+  assert.equal(conflicts[0].resourceType, "aircraft");
+  assert.equal(conflicts[0].flightId, "1");
+  assert.equal(conflicts[0].conflictingFlightId, "2");
+  assert.ok(typeof conflicts[0].message === "string" && conflicts[0].message.length > 10);
+  assert.ok(typeof conflicts[0].suggestedFix === "string" && conflicts[0].suggestedFix.length > 10);
   const unique = uniqueFlightsFromConflicts(conflicts);
   assert.equal(unique.length, 2);
+});
+
+test("detectFlightConflicts reports location mismatch and insufficient turnaround", () => {
+  const flights = [
+    { id: "10", ac: "N35EA", rb: "Bernard Woolrich", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "10:00", orig: "MMMX", dest: "MMMD" },
+    { id: "11", ac: "N35EA", rb: "Bernard Woolrich", st: "prog", date: "2026-04-20", time: "10:10", arrival_time: "11:15", orig: "MMCZ", dest: "MMMX" },
+    { id: "12", ac: "N35EA", rb: "Otro Piloto", st: "prog", date: "2026-04-20", time: "11:00", arrival_time: "12:00", orig: "MMCZ", dest: "MMMX" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.ok(conflicts.some((c) => c.type === "turnaround_insufficient"));
+  assert.ok(conflicts.some((c) => c.type === "location_mismatch"));
 });
