@@ -4,7 +4,7 @@ import { getWebPushClient, sendPushBatch } from "../src/server/_push.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  const access = await requireRouteAccess(req, { requireAuth: true, requireInternalSecret: true, rateLimit: { max: 20, windowMs: 60_000 } });
   if (!access.ok) return res.status(access.status).json({ error: access.error });
   if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(500).json({ error: "Supabase server env missing" });

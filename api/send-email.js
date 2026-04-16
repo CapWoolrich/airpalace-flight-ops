@@ -1,6 +1,19 @@
 import { sendOperationalEmail } from "../src/server/_emailSender.js";
 import { ensureBodyFields, requireRouteAccess } from "../src/server/_routeProtection.js";
 
+function getRecipientsOverride(req) {
+  const requestedRecipients = Array.isArray(req.body?.recipients) ? req.body.recipients : null;
+  if (!requestedRecipients?.length) return null;
+
+  const expectedInternalSecret = String(process.env.API_INTERNAL_SECRET || "").trim();
+  const providedInternalSecret = String(req.headers["x-internal-secret"] || "").trim();
+  if (!expectedInternalSecret || providedInternalSecret !== expectedInternalSecret) {
+    return null;
+  }
+
+  return requestedRecipients;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido." });
   const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 30, windowMs: 60_000 } });
@@ -8,14 +21,14 @@ export default async function handler(req, res) {
 
   const eventType = req.body?.eventType;
   const payload = req.body?.payload || {};
-  const recipients = Array.isArray(req.body?.recipients) ? req.body.recipients : null;
+  const recipientsOverride = getRecipientsOverride(req);
   const required = ensureBodyFields(req.body || {}, ["eventType"]);
   if (!required.ok) return res.status(400).json({ error: required.error });
 
   const result = await sendOperationalEmail({
     eventType,
     payload,
-    recipientsOverride: recipients,
+    recipientsOverride,
   });
 
   if (!result.ok && result.error) {
