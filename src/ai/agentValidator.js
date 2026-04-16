@@ -1,20 +1,20 @@
-import { supabase } from "../supabase";
+import { supabase } from "../supabase.js";
 import {
   AGENT_ACTIONS,
   CREATE_CRITICAL_FIELDS,
   VALID_AIRCRAFT,
   VALID_AIRCRAFT_STATUSES,
   VALID_FLIGHT_STATUSES,
-} from "./agentTypes";
+} from "./agentTypes.js";
 import {
   buildConflictWarning,
   buildPositionWarning,
   isActiveFlight,
   normalizeAgentWithAliases,
   normalizeAgentResult,
-} from "./agentUtils";
-import { getOperationalTodayISO, isPastOperationalDate } from "./operationalDate";
-import { resolveFlightTarget } from "./flightTargetResolver";
+} from "./agentUtils.js";
+import { getOperationalTodayISO, isPastOperationalDate } from "./operationalDate.js";
+import { resolveFlightTarget } from "./flightTargetResolver.js";
 
 
 function parseTimeToMinutes(value) {
