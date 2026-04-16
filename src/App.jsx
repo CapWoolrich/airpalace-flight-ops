@@ -1,5 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { supabase } from "./supabase";
+import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
+import { AirportInput as ApIn } from "./app/components/AirportInput";
+import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
+import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaText } from "./app/helpers";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -11,158 +15,6 @@ import { buildOpsPush } from "./lib/opsNotifications";
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
 */
-
-// ═══ DATA ═══
-const AC = {
-  N35EA: { id:"N35EA", type:"Embraer Phenom 300E", tag:"P300E", kts:453, gph:145, maxGal:782, mtow:18387, bow:11880, maxPax:9, crew:400, clr:"#1d4ed8", base:"Merida" },
-  N540JL: { id:"N540JL", type:"Cessna Citation M2", tag:"M2", kts:418, gph:115, maxGal:567, mtow:10700, bow:7280, maxPax:7, crew:400, clr:"#c2410c", base:"Merida" },
-};
-const RF=1.18, BLK=20, JA=6.7, PW={m:190,w:150,c:80};
-const REQBY=["Jabib C","Omar C","Gibran C","Jose C","Anuar C","Direccion","Mantenimiento","Otro"];
-const STS={prog:{l:"Programado",c:"#2563eb",b:"#dbeafe",i:"📋"},enc:{l:"En Curso",c:"#d97706",b:"#fef3c7",i:"✈️"},comp:{l:"Completado",c:"#16a34a",b:"#dcfce7",i:"✅"},canc:{l:"Cancelado",c:"#dc2626",b:"#fee2e2",i:"❌"}};
-const MST={disponible:{l:"Disponible",c:"#16a34a",b:"#dcfce7"},mantenimiento:{l:"Mantenimiento",c:"#d97706",b:"#fef3c7"},aog:{l:"AOG",c:"#dc2626",b:"#fee2e2"}};
-const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-const WK=["Dom","Lun","Mar","Mie","Jue","Vie","Sab"];
-const APR=[
-  "Merida|MMMD|MID|20.937|-89.658|MX","Cozumel|MMCZ|CZM|20.522|-86.926|MX","Cancun|MMUN|CUN|21.037|-86.877|MX",
-  "Puebla|MMPB|PBC|19.158|-98.371|MX","Toluca|MMTO|TLC|19.337|-99.566|MX","CDMX AICM|MMMX|MEX|19.436|-99.072|MX",
-  "Monterrey|MMMY|MTY|25.778|-100.107|MX","Guadalajara|MMGL|GDL|20.522|-103.311|MX","Tijuana|MMTJ|TIJ|32.541|-116.97|MX",
-  "Los Cabos|MMSD|SJD|23.152|-109.721|MX","Tuxtla Gutierrez|MMTG|TGZ|16.563|-93.022|MX","Villahermosa|MMVA|VSA|17.997|-92.817|MX",
-  "Oaxaca|MMOX|OAX|16.999|-96.726|MX","Huatulco|MMBT|HUX|15.775|-96.263|MX","Veracruz|MMVR|VER|19.146|-96.187|MX",
-  "Leon Bajio|MMLO|BJX|20.993|-101.481|MX","Queretaro|MMQT|QRO|20.617|-100.186|MX","Chihuahua|MMCU|CUU|28.703|-105.965|MX",
-  "Hermosillo|MMHO|HMO|29.096|-111.048|MX","Mazatlan|MMMZ|MZT|23.161|-106.266|MX","Puerto Vallarta|MMPR|PVR|20.68|-105.254|MX",
-  "Aguascalientes|MMAS|AGU|21.705|-102.318|MX","San Luis Potosi|MMSP|SLP|22.254|-100.931|MX","Tampico|MMTM|TAM|22.296|-97.866|MX",
-  "Acapulco|MMAA|ACA|16.757|-99.754|MX","Campeche|MMCP|CPE|19.816|-90.5|MX","Ciudad del Carmen|MMCE|CME|18.654|-91.799|MX",
-  "Chetumal|MMCM|CTM|18.505|-88.327|MX","Morelia|MMMM|MLM|19.85|-101.025|MX","Durango|MMDO|DGO|24.124|-104.528|MX",
-  "Ixtapa Zihuatanejo|MMZH|ZIH|17.602|-101.461|MX","La Paz|MMLP|LAP|24.072|-110.362|MX","Culiacan|MMCL|CUL|24.765|-107.475|MX",
-  "Miami MIA|KMIA|MIA|25.796|-80.287|US","Opa-Locka Exec|KOPF|OPF|25.907|-80.278|US","Fort Lauderdale|KFLL|FLL|26.073|-80.153|US",
-  "Ft Lauderdale Exec|KFXE|FXE|26.197|-80.171|US","Orlando MCO|KMCO|MCO|28.431|-81.308|US","Orlando Exec|KORL|ORL|28.545|-81.333|US",
-  "Houston Hobby|KHOU|HOU|29.645|-95.279|US","Houston IAH|KIAH|IAH|29.984|-95.341|US","San Antonio|KSAT|SAT|29.534|-98.47|US",
-  "Dallas Love Field|KDAL|DAL|32.847|-96.852|US","Teterboro NY|KTEB|TEB|40.85|-74.061|US","Van Nuys LA|KVNY|VNY|34.21|-118.49|US",
-  "Palm Beach|KPBI|PBI|26.683|-80.096|US","Atlanta DeKalb|KPDK|PDK|33.876|-84.302|US","Tampa|KTPA|TPA|27.976|-82.533|US",
-  "Key West|KEYW|EYW|24.556|-81.76|US","New Orleans|KNEW|NEW|30.042|-90.028|US","Las Vegas|KLAS|LAS|36.08|-115.152|US",
-  "Punta Cana|MDPC|PUJ|18.567|-68.363|DO","Santo Domingo|MDSD|SDQ|18.43|-69.669|DO","La Romana|MDLR|LRM|18.45|-68.912|DO",
-  "Providenciales|MBPV|PLS|21.774|-72.265|TC","Grand Cayman|MWCR|GCM|19.293|-81.358|KY","Kingston|MKJP|KIN|17.936|-76.788|JM",
-  "Montego Bay|MKJS|MBJ|18.504|-77.913|JM","Nassau|MYNN|NAS|25.039|-77.466|BS","La Habana|MUHA|HAV|22.989|-82.409|CU",
-  "San Juan PR|TJSJ|SJU|18.439|-66.002|PR","Aruba|TNCA|AUA|12.501|-70.015|AW","Curazao|TNCC|CUR|12.189|-68.96|CW",
-  "Guatemala City|MGGT|GUA|14.583|-90.527|GT","Belize City|MZBZ|BZE|17.539|-88.308|BZ","San Salvador|MSLP|SAL|13.441|-89.056|SV",
-  "Tegucigalpa|MHTG|TGU|14.061|-87.217|HN","Managua|MNMG|MGA|12.142|-86.168|NI","San Jose CR|MROC|SJO|9.994|-84.208|CR",
-  "Panama Tocumen|MPTO|PTY|9.071|-79.383|PA","Bogota|SKBO|BOG|4.702|-74.147|CO","Medellin|SKRG|MDE|6.165|-75.428|CO",
-  "Cartagena|SKCG|CTG|10.442|-75.513|CO","Caracas|SVMI|CCS|10.603|-66.991|VE","Lima|SPJC|LIM|-12.022|-77.114|PE",
-  "Sao Paulo GRU|SBGR|GRU|-23.432|-46.47|BR","Buenos Aires|SAEZ|EZE|-34.822|-58.536|AR","Santiago Chile|SCEL|SCL|-33.393|-70.786|CL",
-].map(function(s){var p=s.split("|");return{c:p[0],i4:p[1],i3:p[2],la:+p[3],lo:+p[4],co:p[5]};});
-var FSIDS=["MMMD","MMCZ","MMUN","KMIA","KOPF","KFXE","KHOU","MYNN","MKJP","MBPV","MZBZ","MGGT","KSAT","MMMY","MPTO","MDPC","KTPA","KFLL","MMGL"];
-var FSTOPS=APR.filter(function(a){return FSIDS.indexOf(a.i4)>=0;});
-
-// ═══ UTILS ═══
-function tds(d){return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);}
-function fdt(d){var x=new Date(d+"T12:00:00");return WK[x.getDay()]+" "+x.getDate()+" "+MN[x.getMonth()];}
-function ftm(t){if(!t||t==="STBY")return"STBY";var h=parseInt(t),m=t.split(":")[1]||"00",ap=h>=12?"PM":"AM";if(h>12)h-=12;if(h===0)h=12;return h+":"+m+" "+ap;}
-function findAP(v){return APR.find(function(x){return x.c===v||x.i4===v;});}
-function hv(a,b,c,d){var R=3440.065,pi=Math.PI,dx=(c-a)*pi/180,dy=(d-b)*pi/180,sa=Math.sin(dx/2),sb=Math.sin(dy/2);return R*2*Math.atan2(Math.sqrt(sa*sa+Math.cos(a*pi/180)*Math.cos(c*pi/180)*sb*sb),Math.sqrt(1-sa*sa-Math.cos(a*pi/180)*Math.cos(c*pi/180)*sb*sb));}
-function gmd(y,m){var f=new Date(y,m,1),l=new Date(y,m+1,0),ds=[],sp=(f.getDay()+6)%7;for(var i=sp-1;i>=0;i--)ds.push({d:new Date(y,m,-i),o:1});for(var j=1;j<=l.getDate();j++)ds.push({d:new Date(y,m,j),o:0});while(ds.length%7)ds.push({d:new Date(y,m+1,ds.length-l.getDate()-sp+1),o:1});return ds;}
-
-function calcR(orig,dest,id,px,bg){
-  var a=AC[id],oa=findAP(orig),da=findAP(dest);if(!oa||!da)return null;
-  px=px||{};bg=bg||0;
-  var gc=hv(oa.la,oa.lo,da.la,da.lo),aw=Math.round(gc*RF),em=Math.round(aw/a.kts*60),bm=em+BLK;
-  var trip=aw/a.kts*a.gph,fuel=trip+(100/a.kts)*a.gph+(45/60)*a.gph+trip*0.05;
-  var fl=Math.ceil(fuel)*JA,ok=fuel<=a.maxGal;
-  var pxW=(px.m||0)*PW.m+(px.w||0)*PW.w+(px.c||0)*PW.c,tw=Math.round(a.bow+a.crew+pxW+bg+fl);
-  var wt={tw:tw,mt:a.mtow,mg:a.mtow-tw,ov:tw>a.mtow,tp:(px.m||0)+(px.w||0)+(px.c||0),pW:Math.round(pxW)};
-  var maxNm=Math.round(((a.maxGal-(100/a.kts)*a.gph-(45/60)*a.gph)/a.gph)*a.kts/RF*0.95);
-  if(gc<=maxNm&&ok)return{dir:true,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:[]};
-  var bs=null,bt=1e9;
-  for(var i=0;i<FSTOPS.length;i++){var s=FSTOPS[i];if(s.c===orig||s.c===dest)continue;var l1=hv(oa.la,oa.lo,s.la,s.lo),l2=hv(s.la,s.lo,da.la,da.lo),f1=l1*RF/a.kts*a.gph*1.1,f2=l2*RF/a.kts*a.gph*1.1;if(f1<=a.maxGal&&f2<=a.maxGal&&l1+l2<bt){bt=l1+l2;bs={c:s.c,i4:s.i4,bm1:Math.round(l1*RF/a.kts*60+BLK),bm2:Math.round(l2*RF/a.kts*60+BLK)};}}
-  return{dir:false,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:bs?[bs]:[]};
-}
-function getPos(fs, todayIso){var t=todayIso||getOperationalTodayISO(),pos={};Object.keys(AC).forEach(function(id){var p=fs.filter(function(f){return f.ac===id&&f.date<=t&&f.st!=="canc";}).sort(function(a,b){return b.date.localeCompare(a.date)||String(b.time).localeCompare(String(a.time));});pos[id]=p.length?p[0].dest:AC[id].base;});return pos;}
-function makeCalUrl(f){var a=AC[f.ac],dc=f.date.replace(/-/g,""),st="T120000";if(f.time&&f.time!=="STBY"){var mm=f.time.match(/(\d{2}):(\d{2})/);if(mm)st="T"+mm[1]+mm[2]+"00";}var rt=calcR(f.orig,f.dest,f.ac),dur=rt?rt.bm:60;var eH=parseInt(st.slice(1,3))+Math.floor(dur/60),eM=parseInt(st.slice(3,5))+(dur%60);if(eM>=60){eH++;eM-=60;}return"https://www.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(f.ac+" "+f.orig+" a "+f.dest)+"&dates="+dc+st+"/"+dc+"T"+("0"+eH).slice(-2)+("0"+eM).slice(-2)+"00&details="+encodeURIComponent(a.type+"\n"+f.orig+"->"+f.dest+"\n"+(f.rb||""));}
-function apTz(ap){if(!ap)return null;var i4=String(ap.i4||"").toUpperCase(),i3=String(ap.i3||"").toUpperCase(),city=String(ap.c||"").toLowerCase();if(i4==="MMMD"||i3==="MID"||city.indexOf("merida")>=0||city.indexOf("mérida")>=0)return"America/Merida";if(i4==="MMUN"||i3==="CUN"||city.indexOf("cancun")>=0||city.indexOf("cancún")>=0)return"America/Cancun";if(i4==="MMCZ"||i3==="CZM"||city.indexOf("cozumel")>=0)return"America/Cancun";if(i4==="MMTO"||i3==="TLC"||city.indexOf("toluca")>=0)return"America/Mexico_City";if(i4==="MMMX"||i3==="MEX"||city.indexOf("cdmx")>=0||city.indexOf("mexico city")>=0)return"America/Mexico_City";if(i4==="KOPF"||i3==="OPF")return"America/New_York";if(i4==="KFLL"||i3==="FLL")return"America/New_York";if(i4==="KMIA"||i3==="MIA")return"America/New_York";if(i4==="KMCO"||i3==="MCO")return"America/New_York";var z={MX:"America/Merida",US:"America/New_York",DO:"America/Santo_Domingo",TC:"America/Grand_Turk",KY:"America/Cayman",JM:"America/Jamaica",BS:"America/Nassau",CU:"America/Havana",PR:"America/Puerto_Rico",AW:"America/Aruba",CW:"America/Curacao",GT:"America/Guatemala",BZ:"America/Belize",SV:"America/El_Salvador",HN:"America/Tegucigalpa",NI:"America/Managua",CR:"America/Costa_Rica",PA:"America/Panama",CO:"America/Bogota",VE:"America/Caracas",PE:"America/Lima",BR:"America/Sao_Paulo",AR:"America/Argentina/Buenos_Aires",CL:"America/Santiago"};return z[ap.co]||null;}
-function tzOffsetMin(ts,tz){try{var parts=new Intl.DateTimeFormat("en-US",{timeZone:tz,timeZoneName:"shortOffset",hour:"2-digit"}).formatToParts(new Date(ts));var label=(parts.find(function(p){return p.type==="timeZoneName";})||{}).value||"GMT+0";var m=label.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/);if(!m)return 0;var sign=m[1]==="-"?-1:1;return sign*((+m[2]||0)*60+(+m[3]||0));}catch{return 0;}}
-function originLocalToUtc(dateStr,timeStr,originTz){var d=String(dateStr||"").split("-"),t=String(timeStr||"00:00").split(":"),y=+d[0],m=(+d[1]||1)-1,da=+d[2]||1,h=+t[0]||0,mi=+t[1]||0;var guess=Date.UTC(y,m,da,h,mi,0);var off1=tzOffsetMin(guess,originTz),utc=guess-off1*60000,off2=tzOffsetMin(utc,originTz);return guess-off2*60000;}
-function etaText(f){if(!f||!f.date||!f.time||f.time==="STBY")return null;var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;var origAp=findAP(f.orig),destAp=findAP(f.dest),origTz=apTz(origAp),destTz=apTz(destAp);if(!origTz||!destTz)return null;var depUtc=originLocalToUtc(f.date,f.time,origTz);if(!isFinite(depUtc))return null;var arr=new Date(depUtc+bm*60000);try{return new Intl.DateTimeFormat("es-MX",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hour12:true,timeZone:destTz}).format(arr);}catch{return null;}}
-
-// ═══ SEED DATA ═══
-var SEED=[
-  {date:"2026-04-02",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"08:30",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
-  {date:"2026-04-06",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"07:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
-  {date:"2026-04-07",ac:"N35EA",orig:"Punta Cana",dest:"Cozumel",time:"17:00",rb:"Jabib C",nt:"",pm:2,pw:1,pc:0,bg:100,st:"comp"},
-  {date:"2026-04-07",ac:"N35EA",orig:"Cozumel",dest:"Merida",time:"20:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"comp"},
-  {date:"2026-04-12",ac:"N35EA",orig:"Merida",dest:"Providenciales",time:"15:00",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
-  {date:"2026-04-12",ac:"N35EA",orig:"Providenciales",dest:"Kingston",time:"STBY",rb:"Direccion",nt:"",pm:3,pw:1,pc:0,bg:150,st:"prog"},
-  {date:"2026-04-12",ac:"N540JL",orig:"Orlando MCO",dest:"Merida",time:"STBY",rb:"Mantenimiento",nt:"Ferry",pm:0,pw:0,pc:0,bg:0,st:"prog"},
-  {date:"2026-04-15",ac:"N540JL",orig:"Merida",dest:"Puebla",time:"08:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
-  {date:"2026-04-15",ac:"N540JL",orig:"Puebla",dest:"Merida",time:"15:00",rb:"Omar C",nt:"",pm:3,pw:2,pc:0,bg:200,st:"prog"},
-  {date:"2026-04-27",ac:"N540JL",orig:"Merida",dest:"Cancun",time:"07:00",rb:"Jabib C",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"},
-  {date:"2026-04-28",ac:"N540JL",orig:"Cancun",dest:"Miami MIA",time:"16:00",rb:"Gibran C",nt:"",pm:2,pw:0,pc:0,bg:0,st:"prog"},
-  {date:"2026-04-30",ac:"N35EA",orig:"Merida",dest:"Punta Cana",time:"09:00",rb:"Jabib C",nt:"",pm:3,pw:2,pc:1,bg:250,st:"prog"},
-  {date:"2026-05-05",ac:"N35EA",orig:"Punta Cana",dest:"Merida",time:"09:00",rb:"Jabib C",nt:"Via Cozumel",pm:3,pw:2,pc:1,bg:250,st:"prog"},
-];
-
-// ═══ DB HELPERS ═══
-async function loadFlightsFromDb() {
-  const { data, error } = await supabase
-    .from("flights")
-    .select("*")
-    .order("date", { ascending: true })
-    .order("time", { ascending: true });
-
-  if (error) throw error;
-
-  return (data || []).map((f) => ({
-    ...f,
-    pm: Number(f.pm || 0),
-    pw: Number(f.pw || 0),
-    pc: Number(f.pc || 0),
-    bg: Number(f.bg || 0),
-  }));
-}
-
-async function loadMaintFromDb() {
-  const { data, error } = await supabase
-    .from("aircraft_status")
-    .select("*");
-
-  if (error) throw error;
-
-  const mapped = {};
-  const plan = {};
-  (data || []).forEach((row) => {
-    mapped[row.ac] = row.status;
-    if (row.maintenance_start_date || row.maintenance_end_date) {
-      plan[row.ac] = {
-        from: row.maintenance_start_date || "",
-        to: row.maintenance_end_date || "",
-      };
-    }
-  });
-
-  return { statusByAc: mapped, planByAc: plan };
-}
-
-// ═══ STYLES ═══
-var LS={fontSize:12,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,marginTop:8};
-var IS={width:"100%",padding:"11px 13px",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:14,color:"#1e293b",background:"#f8fafc",outline:"none",marginBottom:4,boxSizing:"border-box"};
-var NB={background:"#f1f5f9",border:"none",borderRadius:8,width:36,height:36,fontSize:20,cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center"};
-var META_FIELDS=["created_by_email","created_by_name","updated_by_email","updated_by_name"];
-
-// ═══ COMPONENTS ═══
-function ApIn({value,onChange,label}){
-  var[q,setQ]=useState("");var[open,setOpen]=useState(false);var ref=useRef(null);
-  var sel=APR.find(function(a){return a.c===value;});
-  useEffect(function(){function h(e){if(ref.current&&!ref.current.contains(e.target))setOpen(false);}document.addEventListener("mousedown",h);return function(){document.removeEventListener("mousedown",h);};},[]);
-  var fl=useMemo(function(){if(!q)return APR.slice(0,10);var l=q.toLowerCase();return APR.filter(function(a){return a.c.toLowerCase().indexOf(l)>=0||a.i4.toLowerCase().indexOf(l)>=0||a.i3.toLowerCase().indexOf(l)>=0;}).slice(0,12);},[q]);
-  return(
-    <div ref={ref} style={{position:"relative",marginBottom:6}}>
-      <label style={LS}>{label}</label>
-      <input value={open?q:(sel?sel.c+" ("+sel.i3+"/"+sel.i4+")":(value||""))} onChange={function(e){setQ(e.target.value);setOpen(true);if(!e.target.value)onChange("");}} onFocus={function(){setOpen(true);setQ("");}} placeholder="Ciudad, IATA o ICAO..." style={Object.assign({},IS,{borderColor:open?"#1d4ed8":"#d1d5db"})}/>
-      {open&&<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:100,background:"#fff",border:"1px solid #d1d5db",borderRadius:10,maxHeight:200,overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,.15)"}}>
-        {fl.map(function(a){return <div key={a.i4+a.c} onClick={function(){onChange(a.c);setQ("");setOpen(false);}} style={{padding:"9px 14px",cursor:"pointer",fontSize:13,borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between"}}><div><strong>{a.c}</strong> <span style={{color:"#94a3b8",fontSize:11}}>{a.co}</span></div><span style={{fontSize:11,color:"#64748b",fontFamily:"monospace"}}>{a.i3}/{a.i4}</span></div>;})}
-      </div>}
-    </div>);
-}
-function Stp({label,value,onChange,icon,wl}){var ic={M:"👨",F:"👩",N:"🧒"};return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}><div><span style={{fontSize:16,marginRight:5}}>{ic[icon]||icon}</span><span style={{fontSize:13,fontWeight:600}}>{label}</span> <span style={{fontSize:11,color:"#94a3b8"}}>({wl})</span></div><div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={function(){onChange(Math.max(0,value-1));}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>-</button><span style={{fontSize:17,fontWeight:700,minWidth:22,textAlign:"center"}}>{value}</span><button onClick={function(){onChange(value+1);}} style={{width:30,height:30,borderRadius:"50%",border:"2px solid #d1d5db",background:"#fff",fontSize:16,cursor:"pointer"}}>+</button></div></div>;}
 
 // ═══ MAIN APP ═══
 export default function App(){

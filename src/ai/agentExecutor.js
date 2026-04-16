@@ -1,12 +1,12 @@
-import { supabase } from "../supabase";
-import { normalizeAgentResult, normalizeRequesterValue } from "./agentUtils";
+import { supabase } from "../supabase.js";
+import { normalizeAgentResult, normalizeRequesterValue } from "./agentUtils.js";
 import {
   formatOperationalDate,
   getOperationalTodayISO,
   getOperationalTomorrowISO,
   getOperationalWeekRangeISO,
-} from "./operationalDate";
-import { detectFlightConflicts } from "./conflictUtils";
+} from "./operationalDate.js";
+import { detectFlightConflicts } from "./conflictUtils.js";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"];
 const ACTIVE_FLIGHT_STATUSES = new Set(["prog", "enc"]);
@@ -124,15 +124,7 @@ export async function executeAgentAction(agentResult, options = {}) {
           };
         }
 
-        if (/mantenimiento/.test(instruction)) {
-          return {
-            ok: true,
-            message: maint.length ? `En mantenimiento: ${maint.map((x) => x.ac).join(", ")}.` : "No hay aeronaves en mantenimiento.",
-            data: { maint },
-          };
-        }
-
-        if (/hasta cuando|hasta cuándo/.test(instruction) && payload.ac) {
+        if (/(hasta\s+cuando|hasta\s+cuándo)/.test(instruction) && payload.ac) {
           const acStatus = statuses.find((s) => s.ac === payload.ac);
           const endDate = acStatus?.maintenance_end_date || null;
           return {
@@ -141,6 +133,14 @@ export async function executeAgentAction(agentResult, options = {}) {
               ? `${payload.ac} está en ${acStatus?.status || "estado desconocido"} hasta ${formatOperationalDate(endDate)}.`
               : `No tengo fecha fin registrada para ${payload.ac}.`,
             data: { status: acStatus || null },
+          };
+        }
+
+        if (/mantenimiento/.test(instruction)) {
+          return {
+            ok: true,
+            message: maint.length ? `En mantenimiento: ${maint.map((x) => x.ac).join(", ")}.` : "No hay aeronaves en mantenimiento.",
+            data: { maint },
           };
         }
 
