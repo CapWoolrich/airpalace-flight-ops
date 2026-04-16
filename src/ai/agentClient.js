@@ -1,6 +1,6 @@
-import { normalizeAgentResult, normalizeAgentWithAliases } from "./agentUtils";
-import { normalizeAviationInstruction } from "./aviationLanguage";
-import { supabase } from "../supabase";
+import { normalizeAgentResult, normalizeAgentWithAliases } from "./agentUtils.js";
+import { normalizeAviationInstruction } from "./aviationLanguage.js";
+import { supabase } from "../supabase.js";
 
 export async function analyzeOpsInstruction(instruction, conversationContext = []) {
   const normalizedInstruction = normalizeAviationInstruction(instruction);

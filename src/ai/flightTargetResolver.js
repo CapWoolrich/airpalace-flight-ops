@@ -1,4 +1,4 @@
-import { normalizeRequesterValue } from "./agentUtils";
+import { normalizeRequesterValue } from "./agentUtils.js";
 
 function sameText(a, b) {
   return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
