@@ -5,9 +5,43 @@ const DEFAULT_OCCUPANCY_MINUTES = 90;
 const DEFAULT_MIN_TURNAROUND_MINUTES = 30;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function parseFlexibleTime(value) {
+function normalizeDateIso(value) {
   var raw = String(value || "").trim();
   if (!raw) return null;
+  if (DATE_RE.test(raw)) return raw;
+  var dashYmd = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (dashYmd) {
+    var y1 = Number(dashYmd[1]);
+    var m1 = Number(dashYmd[2]);
+    var d1 = Number(dashYmd[3]);
+    var isoYmd = `${y1}-${String(m1).padStart(2, "0")}-${String(d1).padStart(2, "0")}`;
+    return DATE_RE.test(isoYmd) ? isoYmd : null;
+  }
+  var dmy = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+  if (!dmy) return null;
+  var d = Number(dmy[1]);
+  var m = Number(dmy[2]);
+  var y = Number(dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3]);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  var dt = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function parseFlexibleTime(value) {
+  var raw = String(value || "").trim().replace(/\u00A0/g, " ");
+  if (!raw) return null;
+  var compact = raw.toLowerCase().replace(/\./g, "").replace(/\s+/g, "");
+  var compactMeridiem = compact.match(/^(\d{1,2}):(\d{2})([ap])m?$/);
+  if (compactMeridiem) {
+    var hhCompact12 = Number(compactMeridiem[1]);
+    var mmCompact12 = Number(compactMeridiem[2]);
+    if (!Number.isInteger(hhCompact12) || !Number.isInteger(mmCompact12) || hhCompact12 < 1 || hhCompact12 > 12 || mmCompact12 < 0 || mmCompact12 > 59) return null;
+    var compactIsPm = compactMeridiem[3] === "p";
+    var compactHh = hhCompact12 % 12;
+    if (compactIsPm) compactHh += 12;
+    return compactHh * 60 + mmCompact12;
+  }
   var hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
   if (hhmm) {
     var hh24 = Number(hhmm[1]);
@@ -32,15 +66,17 @@ function parseTimeToMinutes(value) {
 }
 
 function toUtcDayBaseMinutes(dateIso) {
-  if (!DATE_RE.test(String(dateIso || ""))) return null;
-  const [y, m, d] = String(dateIso).split("-").map(Number);
+  const normalized = normalizeDateIso(dateIso);
+  if (!DATE_RE.test(String(normalized || ""))) return null;
+  const [y, m, d] = String(normalized).split("-").map(Number);
   if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
   return Math.floor(Date.UTC(y, m - 1, d, 0, 0, 0, 0) / 60000);
 }
 
 function parseIsoDateParts(dateIso) {
-  if (!DATE_RE.test(String(dateIso || ""))) return null;
-  const [y, m, d] = String(dateIso).split("-").map(Number);
+  const normalized = normalizeDateIso(dateIso);
+  if (!DATE_RE.test(String(normalized || ""))) return null;
+  const [y, m, d] = String(normalized).split("-").map(Number);
   if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
   return { y, m, d };
 }
@@ -93,7 +129,7 @@ function zonedDateTimeToUtcMs(dateIso, minutesOfDay, timeZone) {
 }
 
 function airportTimezone(code) {
-  var c = String(code || "").toUpperCase();
+  var c = String(code || "").toUpperCase().trim();
   if (["MMMD", "MID", "MERIDA", "MÉRIDA"].includes(c)) return "America/Merida";
   if (["MMUN", "CUN", "CANCUN", "CANCÚN", "MMCZ", "CZM"].includes(c)) return "America/Cancun";
   if (["MDPC", "PUJ", "PUNTA CANA", "PUNTA_CANA"].includes(c)) return "America/Santo_Domingo";
@@ -101,6 +137,10 @@ function airportTimezone(code) {
   if (["KOPF", "OPF", "KFLL", "FLL", "KMIA", "MIA", "KMCO", "MCO"].includes(c)) return "America/New_York";
   var ap = findAP(c) || findAP(String(code || ""));
   if (ap) return apTz(ap);
+  if (c.includes("PUNTA") && c.includes("CANA")) return "America/Santo_Domingo";
+  if (c.includes("MERIDA") || c.includes("MÉRIDA")) return "America/Merida";
+  if (c.includes("CANCUN") || c.includes("CANCÚN") || c.includes("COZUMEL")) return "America/Cancun";
+  if (c.includes("MIAMI")) return "America/New_York";
   return null;
 }
 
@@ -139,6 +179,7 @@ function localIso(utcIso, timeZone) {
 }
 
 function resolveFlightWindowUtc(flight, occupancyMinutes) {
+  var normalizedFlightDate = normalizeDateIso(flight?.date);
   var startRawUtc = findRawUtc(flight?.departure_utc || flight?.dep_utc || flight?.start_utc || flight?.departure_at);
   var endRawUtc = findRawUtc(flight?.arrival_utc || flight?.arr_utc || flight?.end_utc || flight?.arrival_at);
   var depClockMinutes = parseTimeToMinutes(flight?.time);
@@ -148,9 +189,9 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   var destTz = airportTimezone(flight?.dest) || originTz;
   var dayBase = toUtcDayBaseMinutes(flight?.date);
   var fallbackStartMs = null;
-  if (DATE_RE.test(String(flight?.date || "")) && Number.isFinite(depClockMinutes)) {
+  if (DATE_RE.test(String(normalizedFlightDate || "")) && Number.isFinite(depClockMinutes)) {
     fallbackStartMs = originTz
-      ? zonedDateTimeToUtcMs(flight?.date, depClockMinutes, originTz)
+      ? zonedDateTimeToUtcMs(normalizedFlightDate, depClockMinutes, originTz)
       : (dayBase !== null ? (dayBase + depClockMinutes) * 60000 : null);
   }
   var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
@@ -165,7 +206,7 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   }
 
   if (!Number.isFinite(endUtcMs) && Number.isFinite(arrClockMinutes)) {
-    var arrivalDateIso = String(flight?.date || "");
+    var arrivalDateIso = String(normalizedFlightDate || "");
     var displayedDate = parseDisplayedArrivalDate(arrRawDisplay);
     if (displayedDate && DATE_RE.test(arrivalDateIso)) {
       var depParts = arrivalDateIso.split("-").map(Number);
@@ -191,7 +232,7 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
     triggeredIssue = triggeredIssue || "low_confidence_duration_fallback";
   }
   if (String(arrRawDisplay || "").trim() && arrClockMinutes === null) triggeredIssue = triggeredIssue || "display_time_mismatch";
-  if (!DATE_RE.test(String(flight?.date || "")) || depClockMinutes === null) triggeredIssue = triggeredIssue || "timezone_mismatch";
+  if (!DATE_RE.test(String(normalizedFlightDate || "")) || depClockMinutes === null) triggeredIssue = triggeredIssue || "timezone_mismatch";
   if (Number.isFinite(startUtcMs) && Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) triggeredIssue = "invalid_chronology";
 
   return {

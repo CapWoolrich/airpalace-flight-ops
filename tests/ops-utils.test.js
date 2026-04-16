@@ -73,6 +73,36 @@ test("detectFlightConflicts normalizes Merida to Punta Cana without timezone_mis
   assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
 });
 
+test("detectFlightConflicts accepts DD/MM/YYYY and DD-MM-YYYY date formats for MID to PUJ normalization", () => {
+  const flights = [
+    { id: "DATE-FMT-1", ac: "N35EA", st: "prog", date: "30/05/2026", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+    { id: "DATE-FMT-2", ac: "N35EA", st: "prog", date: "30-05-2026", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
+});
+
+test("detectFlightConflicts normalizes Spanish/English PM time variants reliably", () => {
+  const variants = ["9:30 PM", "9:30 p.m.", "9:30 p. m.", "21:30"];
+  variants.forEach((timeValue, idx) => {
+    const flights = [
+      { id: `TIME-${idx}`, ac: "N35EA", st: "prog", date: "2026-05-30", time: timeValue, arrival_time: "11:30 PM", orig: "MID", dest: "PUJ" },
+    ];
+    const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+    assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
+  });
+});
+
+test("detectFlightConflicts resolves Punta Cana aliases to America/Santo_Domingo", () => {
+  const flights = [
+    { id: "ALIAS-PUJ", ac: "N35EA", st: "prog", date: "2026-05-30", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+    { id: "ALIAS-MDPC", ac: "N35EA", st: "prog", date: "2026-06-01", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "MDPC" },
+    { id: "ALIAS-PUNTA", ac: "N35EA", st: "prog", date: "2026-06-02", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "Punta Cana" },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
+});
+
 test("detectFlightConflicts does not flag location mismatch when immediate next leg repositions correctly", () => {
   const flights = [
     { id: "A", ac: "N35EA", st: "prog", date: "2026-04-20", time: "09:00", arrival_time: "10:00", orig: "CUN", dest: "MID" },
