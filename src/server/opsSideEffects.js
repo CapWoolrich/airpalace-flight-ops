@@ -1,37 +1,11 @@
-import { buildOpsPush } from "../src/lib/opsNotifications.js";
-import { buildWhatsAppFlightMessage } from "./_whatsappMessage.js";
-import { sendOperationalEmail } from "./_emailSender.js";
-import { getWebPushClient, sendPushBatch } from "./_push.js";
-
-function cleanNote(note) {
-  return String(note || "").replace(/\s*\[By:\s*[^\]]+\]\s*/gi, "").trim();
-}
-
-function toActorName(actor) {
-  const raw = String(actor || "").trim();
-  return raw || "Sistema";
-}
-
-function buildFlightEmailPayload(flight = {}, eventLabel = "", actorName = "") {
-  return {
-    event_label: eventLabel,
-    id: flight?.id || null,
-    flight_id: flight?.id || null,
-    date: flight?.date || "",
-    ac: flight?.ac || "",
-    orig: flight?.orig || "",
-    dest: flight?.dest || "",
-    time: flight?.time || "STBY",
-    rb: flight?.rb || "",
-    pm: Number(flight?.pm || 0),
-    pw: Number(flight?.pw || 0),
-    pc: Number(flight?.pc || 0),
-    notes: cleanNote(flight?.nt),
-    actor: toActorName(actorName),
-    edited_by: toActorName(actorName),
-    created_by: toActorName(actorName),
-  };
-}
+import {
+  buildAircraftStatusNotificationPayload,
+  buildFlightNotificationPayload,
+  buildOpsPush,
+} from "../lib/opsNotifications.js";
+import { buildWhatsAppFlightMessage } from "./whatsappMessage.js";
+import { sendOperationalEmail } from "./emailSender.js";
+import { getWebPushClient, sendPushBatch } from "./push.js";
 
 async function sendPushToSubscribers(supabase, payload) {
   const pushClient = await getWebPushClient();
@@ -103,7 +77,7 @@ export async function emitFlightSideEffects({
     };
     const emailResult = await sendOperationalEmail({
       eventType: emailTypeMap[eventType],
-      payload: buildFlightEmailPayload(flight, emailLabelMap[eventType], actorName),
+      payload: buildFlightNotificationPayload(flight, actorName, { eventLabel: emailLabelMap[eventType] }),
     });
     if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
     if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);
@@ -144,8 +118,8 @@ export async function emitAircraftStatusSideEffects({
     const emailResult = await sendOperationalEmail({
       eventType: status === "aog" ? "aircraft_aog" : "aircraft_maintenance",
       payload: status === "aog"
-        ? { event_label: "AOG", ac, actor: toActorName(actorName) }
-        : { event_label: "Mantenimiento", ac, maintenance_end_date: maintenanceEndDate || "", actor: toActorName(actorName) },
+        ? buildAircraftStatusNotificationPayload({ ac, actorName, eventLabel: "AOG" })
+        : buildAircraftStatusNotificationPayload({ ac, actorName, maintenanceEndDate, eventLabel: "Mantenimiento" }),
     });
     if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
     if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);

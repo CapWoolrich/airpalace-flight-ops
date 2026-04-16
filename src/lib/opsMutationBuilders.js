@@ -3,6 +3,22 @@ function clean(v) {
   return String(v).trim();
 }
 
+const FLIGHT_MUTATION_FIELDS = ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"];
+
+function normalizeFlightMutationValue(field, value) {
+  if (["pm", "pw", "pc", "bg"].includes(field)) return Number(value || 0);
+  return value;
+}
+
+function pickFlightMutationFields(payload = {}, { includeMissing = false } = {}) {
+  const out = {};
+  FLIGHT_MUTATION_FIELDS.forEach((field) => {
+    if (!includeMissing && (payload[field] === undefined || payload[field] === null)) return;
+    out[field] = normalizeFlightMutationValue(field, payload[field]);
+  });
+  return out;
+}
+
 export function buildAuditMeta({
   source = "manual",
   actorEmail = "",
@@ -46,6 +62,31 @@ export function withFlightUpdateMeta(baseUpdates = {}, audit = {}) {
     updated_by_name: audit.updated_by_name || null,
     updated_at: audit.nowIso || new Date().toISOString(),
   };
+}
+
+export function buildCreateFlightMutation(payload = {}, audit = {}) {
+  const base = pickFlightMutationFields(payload, { includeMissing: true });
+  if (!base.st) base.st = "prog";
+  return withFlightCreateMeta(base, audit);
+}
+
+export function buildEditFlightMutation(payload = {}, audit = {}) {
+  const base = pickFlightMutationFields(payload);
+  return withFlightUpdateMeta(base, audit);
+}
+
+export function buildCancelFlightMutation(audit = {}) {
+  return withFlightUpdateMeta({ st: "canc" }, audit);
+}
+
+export function buildDuplicateFlightMutation(sourceFlight = {}, overrides = {}, audit = {}) {
+  const source = pickFlightMutationFields(sourceFlight, { includeMissing: true });
+  const next = {
+    ...source,
+    ...pickFlightMutationFields(overrides),
+    st: "prog",
+  };
+  return withFlightCreateMeta(next, audit);
 }
 
 function normalizeMaintDate(value) {

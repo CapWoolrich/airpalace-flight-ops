@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildOpsPush } from "../src/lib/opsNotifications.js";
-import { sendOperationalEmail } from "./_emailSender.js";
+import { sendOperationalEmail } from "../src/server/emailSender.js";
 import { detectFlightConflicts } from "../src/ai/conflictUtils.js";
 import { getOperationalTodayISO, getOperationalTomorrowISO } from "../src/ai/operationalDate.js";
-import { getWebPushClient, sendPushBatch } from "./_push.js";
+import { getWebPushClient, sendPushBatch } from "../src/server/push.js";
 
 async function sendPushToAll(supabase, payload, pushClient) {
   const { data: subs, error: subsError } = await supabase

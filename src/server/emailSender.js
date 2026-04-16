@@ -1,6 +1,6 @@
-import { buildOperationalEmail } from "./_emailTemplate.js";
-import { buildFlightIcs } from "./_calendarInvite.js";
-import { computeEmailRecipients, parseCsvEmails } from "./_emailRecipients.js";
+import { buildOperationalEmail } from "./emailTemplate.js";
+import { buildFlightIcs } from "./calendarInvite.js";
+import { computeEmailRecipients, parseCsvEmails } from "./emailRecipients.js";
 
 function uniq(arr) {
   return Array.from(new Set(arr));
