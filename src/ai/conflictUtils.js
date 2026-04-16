@@ -94,6 +94,7 @@ function airportTimezone(code) {
   var c = String(code || "").toUpperCase();
   if (["MMMD", "MID", "MERIDA", "MÉRIDA"].includes(c)) return "America/Merida";
   if (["MMUN", "CUN", "CANCUN", "CANCÚN", "MMCZ", "CZM"].includes(c)) return "America/Cancun";
+  if (["MDPC", "PUJ", "PUNTA CANA", "PUNTA_CANA"].includes(c)) return "America/Santo_Domingo";
   if (["MMTO", "TLC", "MMMX", "MEX"].includes(c)) return "America/Mexico_City";
   if (["KOPF", "OPF", "KFLL", "FLL", "KMIA", "MIA", "KMCO", "MCO"].includes(c)) return "America/New_York";
   return null;
@@ -500,6 +501,7 @@ export function detectFlightConflicts(flights, options = {}) {
   }
 
   const locationMismatchPairs = new Set();
+  const uncertainSequencePairs = new Set();
   const flightsByAircraft = new Map();
   filtered.forEach((flight) => {
     const ac = String(flight?.ac || "").trim();
@@ -538,6 +540,49 @@ export function detectFlightConflicts(flights, options = {}) {
       if (gap < minTurnaroundMinutes || !firstDest || !secondOrig || firstDest === secondOrig) continue;
 
       const pairKey = `${flightIdentity(first.flight)}->${flightIdentity(second.flight)}`;
+
+      const unparseableConnector = aircraftFlights.find((candidate) => {
+        if (!candidate || candidate === first.flight || candidate === second.flight) return false;
+        if (String(candidate?.orig || "") !== firstDest || String(candidate?.dest || "") !== secondOrig) return false;
+        const candidateNorm = resolveFlightWindowUtc(candidate, occupancyMinutes);
+        const candidateStart = Number.isFinite(candidateNorm.startUtcMs) ? Math.floor(candidateNorm.startUtcMs / 60000) : null;
+        const candidateEnd = Number.isFinite(candidateNorm.endUtcMs) ? Math.floor(candidateNorm.endUtcMs / 60000) : null;
+        const invalidTimeWindow = (
+          candidateStart === null
+          || candidateEnd === null
+          || !Number.isFinite(candidateStart)
+          || !Number.isFinite(candidateEnd)
+          || ["invalid_chronology", "timezone_mismatch", "display_time_mismatch"].includes(candidateNorm.issue)
+        );
+        return invalidTimeWindow;
+      });
+
+      if (unparseableConnector) {
+        if (uncertainSequencePairs.has(pairKey)) continue;
+        uncertainSequencePairs.add(pairKey);
+        conflicts.push(buildConflict({
+          type: "sequence_uncertain_due_to_unparseable_intermediate_leg",
+          severity: "warning",
+          flight: first.flight,
+          conflictingFlight: second.flight,
+          resourceType: "schedule",
+          resourceLabel: String(ac || "Unknown aircraft"),
+          message: `Sequence is uncertain because an intermediate leg (${flightLabel(unparseableConnector)}) connecting ${firstDest} -> ${secondOrig} could not be normalized in time.`,
+          details: {
+            startA: toIsoUtcMinuteString(first.start),
+            endA: toIsoUtcMinuteString(first.end),
+            startB: toIsoUtcMinuteString(second.start),
+            endB: toIsoUtcMinuteString(second.end),
+            overlapMinutes: 0,
+            airportMismatch: false,
+            intermediateFlightId: String(unparseableConnector?.id || ""),
+          },
+          suggestedFix: "Correct date/time fields for the intermediate leg so aircraft sequence can be validated with certainty.",
+        }));
+        debugLog(debugEnabled, { reason: "sequence_uncertain_due_to_unparseable_intermediate_leg", a: flightIdentity(first.flight), b: flightIdentity(second.flight), intermediate: flightIdentity(unparseableConnector) });
+        continue;
+      }
+
       if (locationMismatchPairs.has(pairKey)) continue;
       locationMismatchPairs.add(pairKey);
 

@@ -101,3 +101,28 @@ test("detectFlightConflicts does not duplicate location mismatch alerts for the 
   const mismatches = conflicts.filter((c) => c.type === "location_mismatch" && c.flightId === "A" && c.conflictingFlightId === "B");
   assert.equal(mismatches.length, 1);
 });
+
+test("detectFlightConflicts does not flag location mismatch when Punta Cana intermediate leg normalizes correctly", () => {
+  const flights = [
+    { id: "PC-1", ac: "N35EA", st: "prog", date: "2026-05-05", time: "10:00", arrival_time: "13:00", orig: "PUJ", dest: "MID" },
+    { id: "PC-2", ac: "N35EA", st: "prog", date: "2026-05-30", time: "09:00", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+    { id: "PC-3", ac: "N35EA", st: "prog", date: "2026-06-02", time: "10:00", arrival_time: "12:00", orig: "PUJ", dest: "CZM" },
+  ];
+
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "location_mismatch").length, 0);
+});
+
+test("detectFlightConflicts warns about uncertain sequence when intermediate connector exists but is unparseable", () => {
+  const flights = [
+    { id: "PCU-1", ac: "N35EA", st: "prog", date: "2026-05-05", time: "09:00", arrival_time: "10:00", orig: "CUN", dest: "MID" },
+    { id: "PCU-2", ac: "N35EA", st: "prog", date: "2026-05-30", time: "", arrival_time: "13:00", orig: "MID", dest: "PUJ" },
+    { id: "PCU-3", ac: "N35EA", st: "prog", date: "2026-06-02", time: "10:00", arrival_time: "12:00", orig: "PUJ", dest: "CZM" },
+  ];
+
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
+  assert.equal(conflicts.filter((c) => c.type === "location_mismatch").length, 0);
+  const uncertaintyWarnings = conflicts.filter((c) => c.type === "sequence_uncertain_due_to_unparseable_intermediate_leg");
+  assert.equal(uncertaintyWarnings.length, 1);
+  assert.equal(uncertaintyWarnings[0].severity, "warning");
+});
