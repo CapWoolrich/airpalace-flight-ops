@@ -1054,6 +1054,7 @@ export default function App(){
   var glowOffset = reducedMotion ? 0 : Math.min(54, scrollY * 0.05);
   var panelPrimary={background:"linear-gradient(165deg,rgba(9,17,31,.94),rgba(16,28,45,.9))",border:"1px solid rgba(148,163,184,.25)",borderRadius:16,boxShadow:"0 14px 28px rgba(2,6,23,.26)"};
   var panelSecondary={background:"linear-gradient(165deg,rgba(12,21,37,.9),rgba(16,28,45,.82))",border:"1px solid rgba(148,163,184,.2)",borderRadius:12};
+  var flightCardSurface={background:"linear-gradient(168deg,rgba(12,21,37,.92),rgba(18,31,48,.84))",border:"1px solid rgba(196,168,120,.42)",borderRadius:12,boxShadow:"0 10px 20px rgba(2,6,23,.24)"};
   var subtleText="#9fb0cd";
   var strongText="#e2e8f0";
 
@@ -1079,7 +1080,7 @@ export default function App(){
                 key={card.id}
                 onMouseEnter={function(){setHoveredCommandCard(card.id);}}
                 onMouseLeave={function(){setHoveredCommandCard("");}}
-                style={{borderRadius:16,padding:"13px 13px 12px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 18px 30px rgba(2,6,23,.5)":"0 9px 20px rgba(2,6,23,.33)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
+                style={{borderRadius:15,padding:"11px 11px 10px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 16px 24px rgba(2,6,23,.45)":"0 8px 16px rgba(2,6,23,.3)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
               >
                 <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
                   <div>
@@ -1091,18 +1092,18 @@ export default function App(){
                     {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Live Track "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 8px",borderRadius:999,textDecoration:"none",border:"1px solid #7dd3fc4a",background:"rgba(8,36,60,.62)",color:"#9eddff",fontWeight:700,display:"inline-flex",alignItems:"center",gap:4}}>● Live Track</a>}
                   </div>
                 </div>
-                <div style={{marginTop:9,padding:"8px 9px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
+                <div style={{marginTop:7,padding:"7px 8px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
                   <div style={{fontSize:11,fontWeight:600,color:"#e2e8f0",display:"flex",alignItems:"center",gap:5}}>
                     <span style={{fontSize:10,color:"#93c5fd"}}>◈</span>
                     {card.location}
                   </div>
-                  <div style={{fontSize:9,color:"#afbee6",marginTop:4,lineHeight:1.35}}>Último tramo: {card.routeStatus}</div>
+                  <div style={{fontSize:9,color:"#afbee6",marginTop:3,lineHeight:1.3}}>{card.nextLine}</div>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:8,alignItems:"center"}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:7,alignItems:"center"}}>
                   <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes · {monthHoursLabel}</div>
                   <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Command</div>
                 </div>
-                <div style={{fontSize:9,color:"#bfdbfe",marginTop:4,lineHeight:1.35}}>{card.nextLine}</div>
+                <div style={{fontSize:9,color:"#bfdbfe",marginTop:3,lineHeight:1.3}}>{card.routeStatus}</div>
               </div>
             );
           })}
@@ -1137,7 +1138,7 @@ export default function App(){
         </div>
         {dayF.length===0?<div style={{textAlign:"center",color:"#475569",padding:"24px 0"}}>✈️ Sin vuelos este día</div>
         :dayF.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog,px=(f.pm||0)+(f.pw||0)+(f.pc||0),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);return(
-          <div key={f.id} style={Object.assign({},panelSecondary,{borderLeft:"3px solid "+a.clr,padding:"14px 16px",marginBottom:10})}>
+          <div key={f.id} style={Object.assign({},flightCardSurface,{borderLeft:"3px solid "+a.clr,padding:"14px 16px",marginBottom:10})}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
               <span style={{fontSize:12,fontWeight:800,color:a.clr}}>{f.ac} {a.tag}</span>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
@@ -1219,7 +1220,7 @@ export default function App(){
         ) : (
           listFlights.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div> : listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
             <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
-              <div style={Object.assign({},panelSecondary,{borderLeft:"3px solid "+a.clr,padding:"8px 12px"})}>
+              <div style={Object.assign({},flightCardSurface,{borderLeft:"3px solid "+a.clr,padding:"8px 12px"})}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
                 <div style={{fontWeight:700,color:"#f1f5f9",fontSize:14}}>{f.orig+" → "+f.dest}</div>
                 <div style={{fontSize:12,color:"#9fb0cd"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
@@ -1253,7 +1254,7 @@ export default function App(){
         </div>
         {recentFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:22}}>Sin resultados</div>
         :recentFlights.slice(0,60).map(function(f){var s=STS[f.st]||STS.prog;return(
-          <div key={f.id} style={Object.assign({},panelSecondary,{padding:12,marginBottom:8,borderLeft:"3px solid "+(AC[f.ac]?.clr||"#64748b")})}>
+          <div key={f.id} style={Object.assign({},flightCardSurface,{padding:12,marginBottom:8,borderLeft:"3px solid "+(AC[f.ac]?.clr||"#64748b")})}>
             <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
             <div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{f.date} · {ftm(f.time)}</div>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
@@ -1336,7 +1337,7 @@ export default function App(){
             </div>);})}
         </div>
         <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
-          <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>📊 Analítica operativa</div>
+          <div style={{fontWeight:800,fontSize:16,marginBottom:10,color:"#eaf2ff"}}>📊 Analítica operativa</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
             <select value={anMonth} onChange={function(e){setAnMonth(e.target.value);}} style={IS}>
               <option value="all">Mes: Todos</option>
@@ -1347,16 +1348,16 @@ export default function App(){
               {Array.from(new Set(fs.map(function(f){return String(f.date||"").slice(0,4);}).filter(Boolean))).sort().map(function(y){return <option key={y} value={y}>{y}</option>;})}
             </select>
           </div>
-          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginBottom:6}}>Vuelos programados por aeronave</div>
-          {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
-          {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{ac}</span><strong>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:AC[ac].clr,borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
-          {requestsByPerson.length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0f172a",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Top destinos</div>
-          {Object.keys(metrics.byDest).length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:Object.entries(metrics.byDest).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(r){var max=Math.max.apply(null,Object.values(metrics.byDest));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{r[0]}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#0ea5e9",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#334155",marginTop:12,marginBottom:6}}>Vuelos por estatus</div>
-          {Object.keys(metrics.bySt).length===0?<div style={{fontSize:11,color:"#64748b"}}>Sin registros.</div>:Object.entries(metrics.bySt).map(function(r){var max=Math.max.apply(null,Object.values(metrics.bySt));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#334155"}}><span>{(STS[r[0]]||{l:r[0]}).l}</span><strong>{r[1]}</strong></div><div style={{height:8,background:"#e2e8f0",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"#7c3aed",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginBottom:6}}>Vuelos programados por aeronave</div>
+          {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{ac}</span><strong style={{color:"#f8fafc"}}>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:ac==="N540JL"?"#fb923c":"#60a5fa",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
+          {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{ac}</span><strong style={{color:"#f8fafc"}}>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:ac==="N540JL"?"#fdba74":"#93c5fd",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
+          {requestsByPerson.length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{r[0]}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#fbbf24",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Top destinos</div>
+          {Object.keys(metrics.byDest).length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:Object.entries(metrics.byDest).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(r){var max=Math.max.apply(null,Object.values(metrics.byDest));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{r[0]}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#38bdf8",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Vuelos por estatus</div>
+          {Object.keys(metrics.bySt).length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:Object.entries(metrics.bySt).map(function(r){var max=Math.max.apply(null,Object.values(metrics.bySt));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{(STS[r[0]]||{l:r[0]}).l}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#a78bfa",borderRadius:999}}/></div></div>;})}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
             <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Cancelaciones</div><div style={{fontSize:19,fontWeight:800,color:"#dc2626"}}>{metrics.cancelled}</div></div>
             <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Utilización estimada</div><div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>{Object.values(metrics.byAc).reduce(function(a,b){return a+b;},0)} vuelos</div></div>
