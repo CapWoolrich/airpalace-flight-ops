@@ -200,23 +200,27 @@ export default function AuthGate({ children }) {
   }
 
   return (
-    <>
-      <div style={{ position: "fixed", top: 10, right: 10, zIndex: 2000 }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1 }}>{children}</div>
+      <div style={{ display: "flex", justifyContent: "center", padding: "10px 14px 22px" }}>
         <button
           onClick={signOut}
           style={{
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: "none",
-            background: "#111827",
-            color: "#fff",
+            width: "100%",
+            maxWidth: 480,
+            padding: "10px 14px",
+            borderRadius: 11,
+            border: "1px solid rgba(148,163,184,.45)",
+            background: "linear-gradient(150deg,rgba(9,16,29,.9),rgba(16,28,45,.82))",
+            color: "#dbe7fb",
             cursor: "pointer",
+            fontWeight: 700,
+            letterSpacing: 0.2,
           }}
         >
-          Salir
+          Cerrar sesión
         </button>
       </div>
-      {children}
-    </>
+    </div>
   );
 }
