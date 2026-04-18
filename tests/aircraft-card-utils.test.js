@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AC } from "../src/app/data.js";
-import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
+import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
 
 test("resolveFlightAwareUrl returns mapped URL per aircraft", () => {
   assert.equal(resolveFlightAwareUrl(AC.N35EA), "https://es.flightaware.com/live/flight/N35EA");
@@ -15,7 +15,7 @@ test("deriveOperationalStatus prioritizes in-flight over maintenance states", ()
 
 test("buildRouteStatusLine falls back to last leg when not in flight", () => {
   const line = buildRouteStatusLine({ inFlight: null, lastLeg: { orig: "MID", dest: "PUJ" }, isAtBase: false });
-  assert.equal(line, "Último tramo: MID → PUJ");
+  assert.equal(line, "Vuelo anterior: MID → PUJ");
 });
 
 test("buildNextFlightLine renders graceful fallback without schedule", () => {
@@ -32,4 +32,9 @@ test("getMonthlyAircraftMetrics computes flights, hours, and utilization with re
   assert.equal(metrics.flights, 2);
   assert.ok(metrics.hours > 0);
   assert.ok(Number.isFinite(metrics.utilization));
+});
+
+test("formatMonthlyHoursLabel keeps hour suffix attached", () => {
+  assert.equal(formatMonthlyHoursLabel(23.4), "23.4 h");
+  assert.equal(formatMonthlyHoursLabel(null), "-- h");
 });

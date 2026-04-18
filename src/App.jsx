@@ -4,7 +4,7 @@ import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
 import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
-import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, getAircraftTimeline, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
+import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -1074,36 +1074,35 @@ export default function App(){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
           {aircraftCommandCards.map(function(card){
-            var monthHoursLabel=Number.isFinite(card?.metricsMonth?.hours)?card.metricsMonth.hours.toFixed(1)+" h":"-- h";
+            var monthHoursLabel=formatMonthlyHoursLabel(card?.metricsMonth?.hours);
             return(
               <div
                 key={card.id}
                 onMouseEnter={function(){setHoveredCommandCard(card.id);}}
                 onMouseLeave={function(){setHoveredCommandCard("");}}
-                style={{borderRadius:15,padding:"11px 11px 10px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 16px 24px rgba(2,6,23,.45)":"0 8px 16px rgba(2,6,23,.3)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
+                style={{borderRadius:15,padding:"10px 10px 9px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 14px 22px rgba(2,6,23,.45)":"0 8px 14px rgba(2,6,23,.3)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease",minHeight:146}}
               >
                 <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
                   <div>
                     <div style={{fontSize:11,fontWeight:700,color:card.color,letterSpacing:0.4}}>{card.id} · {card.tag}</div>
-                    <div style={{fontSize:9,color:"#8a9ab5",marginTop:1}}>{card.type}</div>
+                    <div style={{fontSize:9,color:"#8a9ab5",marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{getCompactAircraftTypeLabel(card.type)}</div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
                     <span style={{fontSize:9,padding:"2px 8px",borderRadius:999,border:"1px solid "+card.opStatus.tone+"65",background:"rgba(11,18,32,.8)",color:card.opStatus.tone,fontWeight:700,letterSpacing:0.3}}>{card.opStatus.label}</span>
                     {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Live Track "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 8px",borderRadius:999,textDecoration:"none",border:"1px solid #7dd3fc4a",background:"rgba(8,36,60,.62)",color:"#9eddff",fontWeight:700,display:"inline-flex",alignItems:"center",gap:4}}>● Live Track</a>}
                   </div>
                 </div>
-                <div style={{marginTop:7,padding:"7px 8px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
+                <div style={{marginTop:6,padding:"6px 7px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
                   <div style={{fontSize:11,fontWeight:600,color:"#e2e8f0",display:"flex",alignItems:"center",gap:5}}>
                     <span style={{fontSize:10,color:"#93c5fd"}}>◈</span>
                     {card.location}
                   </div>
-                  <div style={{fontSize:9,color:"#afbee6",marginTop:3,lineHeight:1.3}}>{card.nextLine}</div>
+                  <div style={{fontSize:8.5,color:"#afbee6",marginTop:2,lineHeight:1.25,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.nextLine}</div>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:7,alignItems:"center"}}>
-                  <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes · {monthHoursLabel}</div>
-                  <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Command</div>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,alignItems:"center"}}>
+                  <div style={{fontSize:8.5,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes · <span style={{whiteSpace:"nowrap"}}>{monthHoursLabel}</span></div>
                 </div>
-                <div style={{fontSize:9,color:"#bfdbfe",marginTop:3,lineHeight:1.3}}>{card.routeStatus}</div>
+                <div style={{fontSize:8.5,color:"#bfdbfe",marginTop:2,lineHeight:1.25,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.routeStatus}</div>
               </div>
             );
           })}

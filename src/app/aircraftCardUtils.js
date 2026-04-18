@@ -1,4 +1,5 @@
 import { calcR, etaLocalUtc } from "./helpers.js";
+import { APR } from "./data.js";
 import { formatUtcLabel, parseTimeToMinutes } from "../lib/timezones.js";
 
 export function resolveFlightAwareUrl(aircraft){
@@ -43,10 +44,39 @@ export function buildRouteStatusLine(input){
     return "En vuelo";
   }
   if(input?.lastLeg?.orig && input?.lastLeg?.dest){
-    return "Último tramo: "+input.lastLeg.orig+" → "+input.lastLeg.dest;
+    return "Vuelo anterior: "+toIataLabel(input.lastLeg.orig)+" → "+toIataLabel(input.lastLeg.dest);
   }
   if(input?.isAtBase)return "En base";
   return "Estado operativo no disponible";
+}
+
+function toIataLabel(value){
+  var raw=String(value||"").trim();
+  if(!raw)return "--";
+  var upper=raw.toUpperCase();
+  if(/^[A-Z]{3}$/.test(upper))return upper;
+  if(/^[A-Z]{4}$/.test(upper)){
+    var matchIcao=APR.find(function(ap){return String(ap.i4||"").toUpperCase()===upper;});
+    if(matchIcao?.i3)return String(matchIcao.i3).toUpperCase();
+  }
+  var normalized=raw.toLowerCase();
+  var matchCity=APR.find(function(ap){
+    return String(ap.c||"").trim().toLowerCase()===normalized;
+  });
+  if(matchCity?.i3)return String(matchCity.i3).toUpperCase();
+  return raw;
+}
+
+export function getCompactAircraftTypeLabel(type){
+  var raw=String(type||"").trim();
+  if(!raw)return "";
+  var firstWord=raw.split(/\s+/)[0]||raw;
+  return firstWord;
+}
+
+export function formatMonthlyHoursLabel(hours){
+  if(!Number.isFinite(hours))return "-- h";
+  return hours.toFixed(1)+" h";
 }
 
 export function buildNextFlightLine(flight){

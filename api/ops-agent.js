@@ -9,6 +9,7 @@ const OPS_AGENT_JSON_SCHEMA = {
   additionalProperties: false,
   properties: {
     action: { type: ["string", "null"] },
+    intent_category: { type: "string", enum: ["internal_ops_query", "internal_schedule_action", "external_aviation_query", "unknown"] },
     confidence: { type: "number" },
     requires_confirmation: { type: "boolean" },
     human_summary: { type: "string" },
@@ -62,6 +63,7 @@ const OPS_AGENT_JSON_SCHEMA = {
   },
   required: [
     "action",
+    "intent_category",
     "confidence",
     "requires_confirmation",
     "human_summary",
@@ -74,6 +76,7 @@ const OPS_AGENT_JSON_SCHEMA = {
 
 const RESPONSE_TEMPLATE = {
   action: "create_flight",
+  intent_category: "internal_schedule_action",
   confidence: 0,
   requires_confirmation: true,
   human_summary: "",
@@ -253,6 +256,9 @@ export default async function handler(req, res) {
             "Allowed actions: create_flight, edit_flight, cancel_flight, change_aircraft_status, duplicate_flight, query_schedule, query_notam. " +
             "Allowed aircraft: N35EA, N540JL. Allowed aircraft statuses: disponible, mantenimiento, aog. Allowed flight statuses: prog, enc, comp, canc. " +
             "Critical create_flight fields: date, ac, orig, dest, time, rb. " +
+            "Default behavior: treat user requests as INTERNAL AirPalace operations unless user explicitly requests external sources (FlightAware, weather, NOTAM, traffic, or third-party flights). " +
+            "When user mentions N35EA or N540JL, always assume internal fleet context by default. " +
+            "Use intent_category: internal_ops_query for read-only internal ops questions, internal_schedule_action for create/edit/cancel/status internal operations, external_aviation_query only for explicit external aviation data requests, unknown otherwise. " +
             "For queries, prioritize read-only actions and provide concise human_summary in Spanish. " +
             "Before any write action, prepare confirmation-only output first; do not claim completion before explicit confirmation. " +
             "If critical fields are missing or ambiguous, set requires_confirmation=true and list them in missing_fields.",

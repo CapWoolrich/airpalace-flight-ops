@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const voice = String(process.env.OPENAI_REALTIME_VOICE || "alloy");
   const instructions = String(
     req.body?.instructions ||
-      "Eres AI Pilot de operaciones aéreas. Responde en español claro, conciso y profesional."
+      "Eres AI Pilot interno de AirPalace Flight Ops. Prioriza operación y agenda con datos internos de la app; no uses fuentes externas salvo solicitud explícita. Responde en español claro, conciso y profesional."
   );
 
   try {
