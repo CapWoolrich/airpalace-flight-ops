@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
-import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaText } from "./app/helpers";
+import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -152,6 +152,11 @@ export default function App(){
     if (!dateIso || !Number.isFinite(depMins) || !tz) return "UTC --:--";
     var utcMs = localDateTimeToUtcMs(dateIso, depMins, tz);
     return formatUtcLabel(utcMs);
+  }
+
+  function flightArrivalUtcLabel(f) {
+    var eta = etaLocalUtc(f);
+    return eta?.utc || "UTC --:--";
   }
 
   useEffect(function () {
@@ -954,18 +959,13 @@ export default function App(){
   },[filteredAnalytics]);
 
   useEffect(function(){
-    if(conflictPairs.length>0){
-      var ac=conflictPairs[0]?.resourceLabel||conflictPairs[0]?.ac||"Aeronave";
-      var conflictPush=buildOpsPush("operational_conflict",{ac:ac});
-      sendPushOnce("push_conflict_"+today,conflictPush.title,conflictPush.body);
-    }
     var tomFlights=fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";});
     if(tomFlights.length>0){
       var f0=tomFlights[0];
       var tomorrowPush=buildOpsPush("tomorrow_flight",{ac:f0.ac});
       sendPushOnce("push_tomorrow_"+tomorrow, tomorrowPush.title, tomorrowPush.body);
     }
-  },[conflictPairs,fs,today,tomorrow]);
+  },[fs,tomorrow]);
 
   if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
 
@@ -1035,8 +1035,9 @@ export default function App(){
             </div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:17}}>{f.orig} <span style={{color:"#94a3b8"}}>→</span> {f.dest}</div>
             <div style={{color:"#64748b",fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
-            <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
-            {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:3}}>🕓 ETA local destino: {etaText(f)}</div>}
+            <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
+            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#334155",marginTop:3}}>🕓 ETA local destino: {etaLocalUtc(f).local}</div>}
+            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
             {rt&&<div style={{marginTop:6,fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:8,padding:"6px 8px"}}>
               {"~"+rt.aw+" NM | "}<strong>{Math.floor(rt.bm/60)+"h"+("0"+(rt.bm%60)).slice(-2)+"m block"}</strong>
               {rt.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
@@ -1109,9 +1110,10 @@ export default function App(){
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
                 <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
                 <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
-                <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
+                <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
+                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
                 <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
-                {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
+                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaLocalUtc(f).local}</div>}
               </div>
             </div>
           );})
@@ -1143,7 +1145,8 @@ export default function App(){
               <div style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>{f.date} · {ftm(f.time)}</div>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
             </div>
-            <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
+            <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
+            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
             <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
             <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
             <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>

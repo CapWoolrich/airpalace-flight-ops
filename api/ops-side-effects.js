@@ -44,7 +44,7 @@ export default async function handler(req, res) {
         eventType: map[eventType],
         flight: payload.flight,
         actorName,
-        sendWhatsapp: payload.sendWhatsapp !== false && eventType !== "flight_cancel",
+        sendWhatsapp: payload.sendWhatsapp !== false && eventType === "flight_cancel",
       });
       return res.status(200).json({ ok: true, warnings: effects.warnings || [] });
     }

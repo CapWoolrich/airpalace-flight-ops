@@ -1,3 +1,5 @@
+import { normalizeLegacyTime } from "./timezones.js";
+
 function clean(v) {
   if (v === null || v === undefined) return "";
   return String(v).trim();
@@ -7,6 +9,12 @@ const FLIGHT_MUTATION_FIELDS = ["date", "ac", "orig", "dest", "time", "rb", "nt"
 
 function normalizeFlightMutationValue(field, value) {
   if (["pm", "pw", "pc", "bg"].includes(field)) return Number(value || 0);
+  if (field === "time") {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.toUpperCase() === "STBY") return "STBY";
+    return normalizeLegacyTime(raw) || raw;
+  }
   return value;
 }
 

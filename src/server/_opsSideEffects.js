@@ -38,6 +38,10 @@ async function sendWhatsApp(flight, label) {
   }
 }
 
+export function shouldEmitCancellationNotifications(eventType) {
+  return String(eventType || "").toLowerCase() === "cancel";
+}
+
 export async function emitFlightSideEffects({
   supabase,
   eventType,
@@ -62,31 +66,21 @@ export async function emitFlightSideEffects({
     warnings.push("push:unexpected_error");
   }
 
-  try {
-    const emailTypeMap = {
-      create: "flight_created",
-      edit: "flight_updated",
-      cancel: "flight_cancelled",
-      duplicate: "flight_created",
-    };
-    const emailLabelMap = {
-      create: "Vuelo programado",
-      edit: "Vuelo modificado",
-      cancel: "Vuelo cancelado",
-      duplicate: "Vuelo programado",
-    };
-    const emailResult = await sendOperationalEmail({
-      eventType: emailTypeMap[eventType],
-      payload: buildFlightNotificationPayload(flight, actorName, { eventLabel: emailLabelMap[eventType] }),
-    });
-    if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
-    if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);
-  } catch {
-    warnings.push("email:unexpected_error");
+  if (shouldEmitCancellationNotifications(eventType)) {
+    try {
+      const emailResult = await sendOperationalEmail({
+        eventType: "flight_cancelled",
+        payload: buildFlightNotificationPayload(flight, actorName, { eventLabel: "Vuelo cancelado" }),
+      });
+      if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
+      if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);
+    } catch {
+      warnings.push("email:unexpected_error");
+    }
   }
 
-  if (sendWhatsapp) {
-    const wa = await sendWhatsApp(flight, eventType === "edit" ? "MODIFICADO" : "PROGRAMADO");
+  if (sendWhatsapp && shouldEmitCancellationNotifications(eventType)) {
+    const wa = await sendWhatsApp(flight, "CANCELADO");
     if (!wa.ok && wa.warning && wa.warning !== "whatsapp_env_missing") warnings.push(`whatsapp:${wa.warning}`);
   }
 

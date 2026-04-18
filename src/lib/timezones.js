@@ -57,6 +57,12 @@ function normalizeCode(raw) {
   return String(raw || "").trim().toUpperCase();
 }
 
+function normalizeTimeRaw(value) {
+  return String(value || "")
+    .replace(/\u00A0/g, " ")
+    .trim();
+}
+
 export function findAirport(value) {
   const code = normalizeCode(value);
   if (!code) return null;
@@ -125,32 +131,89 @@ export function normalizeDateIso(value) {
 }
 
 export function parseTimeToMinutes(value) {
-  const raw = String(value || "").trim().replace(/\u00A0/g, " ");
-  if (!raw || raw.toUpperCase() === "STBY") return null;
+  const result = parseTimeToMinutesDetailed(value);
+  return Number.isFinite(result.minutes) ? result.minutes : null;
+}
+
+function isValidMinutePair(hours, minutes) {
+  return Number.isInteger(hours) && Number.isInteger(minutes)
+    && hours >= 0
+    && hours <= 23
+    && minutes >= 0
+    && minutes <= 59;
+}
+
+function normalize12Hour(h12, minutes, meridiem) {
+  if (!Number.isInteger(h12) || !Number.isInteger(minutes)) return null;
+  if (h12 < 1 || h12 > 12 || minutes < 0 || minutes > 59) return null;
+  const pm = String(meridiem || "").toLowerCase() === "p";
+  return (h12 % 12 + (pm ? 12 : 0)) * 60 + minutes;
+}
+
+export function parseTimeToMinutesDetailed(value) {
+  const raw = normalizeTimeRaw(value);
+  if (!raw) return { minutes: null, reason: "missing_departure_time" };
+  if (raw.toUpperCase() === "STBY") return { minutes: null, reason: "standby_without_canonical_departure" };
+
   const compact = raw.toLowerCase().replace(/\./g, "").replace(/\s+/g, "");
-  const compactMeridiem = compact.match(/^(\d{1,2}):(\d{2})([ap])m?$/);
+  const compactMeridiem = compact.match(/^(\d{1,2})(?::|\.|h)?(\d{2})?([ap])m?$/);
   if (compactMeridiem) {
     const h12 = Number(compactMeridiem[1]);
-    const mm = Number(compactMeridiem[2]);
-    if (h12 < 1 || h12 > 12 || mm < 0 || mm > 59) return null;
-    const pm = compactMeridiem[3] === "p";
-    return (h12 % 12 + (pm ? 12 : 0)) * 60 + mm;
+    const mm = Number(compactMeridiem[2] || "0");
+    const mins = normalize12Hour(h12, mm, compactMeridiem[3]);
+    if (!Number.isFinite(mins)) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: mins, reason: "ok" };
   }
-  const hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
+
+  const hhmmss = raw.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (hhmmss) {
+    const hh = Number(hhmmss[1]);
+    const mm = Number(hhmmss[2]);
+    const ss = Number(hhmmss[3]);
+    if (!isValidMinutePair(hh, mm) || ss < 0 || ss > 59) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: hh * 60 + mm, reason: "ok" };
+  }
+
+  const hhmm = raw.match(/^(\d{1,2})[:.](\d{2})$/);
   if (hhmm) {
     const hh = Number(hhmm[1]);
     const mm = Number(hhmm[2]);
-    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) return hh * 60 + mm;
+    if (!isValidMinutePair(hh, mm)) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: hh * 60 + mm, reason: "ok" };
   }
-  const twelve = raw.match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m?\.?/i);
+
+  const twelve = raw.match(/^(\d{1,2})(?::|\.)(\d{2})\s*([ap])\.?\s*m?\.?$/i);
   if (twelve) {
-    const h12 = Number(twelve[1]);
-    const mm = Number(twelve[2]);
-    if (h12 < 1 || h12 > 12 || mm < 0 || mm > 59) return null;
-    const pm = String(twelve[3]).toLowerCase() === "p";
-    return (h12 % 12 + (pm ? 12 : 0)) * 60 + mm;
+    const mins = normalize12Hour(Number(twelve[1]), Number(twelve[2]), twelve[3]);
+    if (!Number.isFinite(mins)) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: mins, reason: "ok" };
   }
-  return null;
+
+  const hhmmCompact = compact.match(/^(\d{2})(\d{2})$/);
+  if (hhmmCompact) {
+    const hh = Number(hhmmCompact[1]);
+    const mm = Number(hhmmCompact[2]);
+    if (!isValidMinutePair(hh, mm)) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: hh * 60 + mm, reason: "ok" };
+  }
+
+  const hourOnly = compact.match(/^(\d{1,2})$/);
+  if (hourOnly) {
+    const hh = Number(hourOnly[1]);
+    if (!Number.isInteger(hh) || hh < 0 || hh > 23) return { minutes: null, reason: "invalid_time_format" };
+    return { minutes: hh * 60, reason: "ok" };
+  }
+
+  if (/[ap]m?/i.test(compact) || /[:.\d]/.test(compact)) return { minutes: null, reason: "unsupported_time_variant" };
+  return { minutes: null, reason: "invalid_time_format" };
+}
+
+export function normalizeLegacyTime(value) {
+  const parsed = parseTimeToMinutesDetailed(value);
+  if (!Number.isFinite(parsed.minutes)) return null;
+  const hh = String(Math.floor(parsed.minutes / 60)).padStart(2, "0");
+  const mm = String(parsed.minutes % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 function parseIsoDateParts(dateIso) {
@@ -225,4 +288,49 @@ export function formatLocalAndUtcFromUtc(utcValue, timeZone, locale = "es-MX") {
     local: utcMsToLocalTime(utcMs, timeZone, locale) || "--:--",
     utc: formatUtcLabel(utcMs),
   };
+}
+
+export function utcMsToLocalParts(utcMs, timeZone, locale = "en-CA") {
+  if (!Number.isFinite(utcMs) || !timeZone) return null;
+  try {
+    const formatter = new Intl.DateTimeFormat(locale, {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    const values = {};
+    formatter.formatToParts(new Date(utcMs)).forEach((part) => {
+      if (part.type !== "literal") values[part.type] = part.value;
+    });
+    if (!values.year || !values.month || !values.day || !values.hour || !values.minute) return null;
+    return {
+      dateIso: `${values.year}-${values.month}-${values.day}`,
+      minutesOfDay: Number(values.hour) * 60 + Number(values.minute),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function resolveOperationalWindowUtc({
+  dateIso,
+  timeValue,
+  timeZone,
+  durationMinutes = 0,
+  explicitStartUtc,
+  explicitEndUtc,
+} = {}) {
+  const startUtcMs = Number.isFinite(new Date(explicitStartUtc).getTime())
+    ? new Date(explicitStartUtc).getTime()
+    : localDateTimeToUtcMs(dateIso, parseTimeToMinutes(timeValue), timeZone);
+  if (!Number.isFinite(startUtcMs)) return { startUtcMs: null, endUtcMs: null };
+  const parsedDuration = Number(durationMinutes || 0);
+  const endUtcMs = Number.isFinite(new Date(explicitEndUtc).getTime())
+    ? new Date(explicitEndUtc).getTime()
+    : (startUtcMs + Math.max(0, parsedDuration) * 60000);
+  return { startUtcMs, endUtcMs };
 }
