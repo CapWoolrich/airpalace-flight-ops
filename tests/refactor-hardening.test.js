@@ -22,7 +22,7 @@ test("buildOperationalEmail escapes interpolated html values", () => {
   assert.doesNotMatch(email.html, /<img src=x onerror=/);
 });
 
-test("makeCalUrl advances end date for overnight flights", () => {
+test("makeCalUrl encodes UTC timestamps for overnight flights", () => {
   const url = makeCalUrl({
     ac: "N35EA",
     orig: "Merida",
@@ -32,10 +32,10 @@ test("makeCalUrl advances end date for overnight flights", () => {
     rb: "Ops",
   });
 
-  const dates = decodeURIComponent(url).match(/dates=(\d{8}T\d{6})\/(\d{8}T\d{6})/);
+  const dates = decodeURIComponent(url).match(/dates=(\d{8}T\d{6}Z)\/(\d{8}T\d{6}Z)/);
   assert.ok(dates, "Calendar URL should contain dates range");
-  assert.equal(dates[1].slice(0, 8), "20260416");
-  assert.equal(dates[2].slice(0, 8), "20260417");
+  assert.equal(dates[1].slice(0, 8), "20260417");
+  assert.ok(dates[2] > dates[1]);
 });
 
 test("executeAgentAction answers specific maintenance end-date query before generic branch", async () => {
