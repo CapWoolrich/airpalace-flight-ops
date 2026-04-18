@@ -1,4 +1,5 @@
 import { APR } from "../app/data.js";
+import { findAirportByAny } from "./airports.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATIC_AMERICA_FALLBACK = [
@@ -66,7 +67,7 @@ function normalizeTimeRaw(value) {
 export function findAirport(value) {
   const code = normalizeCode(value);
   if (!code) return null;
-  return APR.find((x) => x.c === code || x.i4 === code || x.i3 === code || normalizeCode(x.c) === code) || null;
+  return findAirportByAny(code) || APR.find((x) => x.c === code || x.i4 === code || x.i3 === code || normalizeCode(x.c) === code) || null;
 }
 
 export function airportTimezoneFromAirport(ap) {
