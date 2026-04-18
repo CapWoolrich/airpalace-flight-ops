@@ -1433,63 +1433,76 @@ export default function App(){
 
       <button
         onClick={function(){setAgentOpen(function(v){return !v;});}}
-        style={{position:"fixed",right:16,bottom:88,zIndex:950,width:52,height:52,borderRadius:"50%",border:"1px solid #334155",background:"linear-gradient(145deg,#0f172a,#1e293b)",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}
+        style={{position:"fixed",right:16,bottom:88,zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(148,163,184,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
         aria-label="AI Pilot"
       >
         👨🏼‍✈️
       </button>
 
-      {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.94))",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid rgba(148,163,184,.28)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>👨🏼‍✈️ AI Pilot</div>
-          <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:144,width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}>
+            <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(30,64,175,.24)",border:"1px solid rgba(96,165,250,.34)",fontSize:11}}>🧠</span>
+            <div>
+              <div style={{fontWeight:700,fontSize:12.5,color:"#e2e8f0",lineHeight:1.1}}>AI Pilot</div>
+              <div style={{fontSize:9.5,color:"#8ea2c8",lineHeight:1.1}}>Assistant Console</div>
+            </div>
+          </div>
+          <button onClick={function(){setAgentOpen(false);}} style={{border:"1px solid rgba(148,163,184,.28)",background:"rgba(15,23,42,.62)",fontSize:11,cursor:"pointer",color:"#9fb0cd",borderRadius:999,padding:"3px 8px",lineHeight:1}}>Salir</button>
         </div>
-        <div style={{fontSize:11,color:"#9fb0cd",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
-        <div style={{fontSize:11,fontWeight:700,color:"#cbd5e1",marginBottom:6}}>
-          Estado: {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Esperando aclaración":"✅ En espera"}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,marginBottom:5}}>
+          <span style={{fontSize:9.5,color:"#7dd3fc",fontWeight:700,letterSpacing:0.2}}>Estado de agente</span>
+          <span style={{fontSize:9.5,fontWeight:700,padding:"2px 7px",borderRadius:999,border:"1px solid rgba(148,163,184,.28)",background:"rgba(15,23,42,.72)",color:"#dbeafe"}}>
+            {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Aclaración":"✓ En espera"}
+          </span>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
-          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:realtimeConnected?"rgba(20,83,45,.56)":"rgba(15,23,42,.72)",fontSize:11,fontWeight:700,cursor:realtimeConnected?"default":"pointer",color:"#e2e8f0"}}>
-            {realtimeConnecting?"⏳ Conectando...":realtimeConnected?"🟢 Realtime activo":"🎧 Conectar Realtime"}
+        <div style={{fontSize:10,color:"#9fb0cd",marginBottom:5,padding:"5px 7px",borderRadius:8,background:"rgba(15,23,42,.5)",border:"1px solid rgba(148,163,184,.18)",lineHeight:1.3}}>
+          AI: ¿En qué te puedo ayudar hoy? Puedo apoyar agenda, conflictos y cambios operativos.
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:5}}>
+          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:"6px 7px",border:"1px solid rgba(148,163,184,.3)",borderRadius:8,background:realtimeConnected?"rgba(20,83,45,.52)":"rgba(15,23,42,.72)",fontSize:10,fontWeight:700,cursor:realtimeConnected?"default":"pointer",color:"#e2e8f0",lineHeight:1.15}}>
+            {realtimeConnecting?"⏳ Conectando":realtimeConnected?"🟢 Realtime ON":"🎧 Realtime ON"}
           </button>
-          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",fontSize:11,fontWeight:700,cursor:"pointer",color:"#e2e8f0"}}>
-            ⏹️ Cerrar Realtime
+          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:"6px 7px",border:"1px solid rgba(148,163,184,.3)",borderRadius:8,background:"rgba(15,23,42,.72)",fontSize:10,fontWeight:700,cursor:"pointer",color:"#dbeafe",lineHeight:1.15}}>
+            ⏹️ Realtime OFF
           </button>
         </div>
-        {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:8,background:"rgba(15,23,42,.65)",marginBottom:8}}>
-          {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#dbeafe":"#cbd5e1",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
+        {agentMessages.length>0&&<div style={{maxHeight:76,overflowY:"auto",border:"1px solid rgba(148,163,184,.18)",borderRadius:8,padding:"5px 6px",background:"rgba(15,23,42,.6)",marginBottom:5}}>
+          {agentMessages.slice(-2).map(function(m,i){return <div key={i} style={{fontSize:10,color:m.role==="assistant"?"#dbeafe":"#cbd5e1",marginBottom:3,lineHeight:1.28}}><strong style={{fontWeight:700}}>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
         </div>}
-        {realtimeText&&<div style={{fontSize:11,color:"#cbd5e1",background:"rgba(15,23,42,.7)",border:"1px solid rgba(148,163,184,.24)",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Realtime: {realtimeText.slice(-240)}</div>}
-        {agentLiveTranscript&&<div style={{fontSize:11,color:"#0369a1",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Transcripción en vivo: {agentLiveTranscript}</div>}
+        {realtimeText&&<div style={{fontSize:10,color:"#cbd5e1",background:"rgba(15,23,42,.7)",border:"1px solid rgba(148,163,184,.18)",borderRadius:8,padding:"4px 6px",marginBottom:5,lineHeight:1.25}}>Realtime: {realtimeText.slice(-160)}</div>}
+        {agentLiveTranscript&&<div style={{fontSize:10,color:"#7dd3fc",background:"rgba(8,47,73,.38)",border:"1px solid rgba(125,211,252,.28)",borderRadius:8,padding:"4px 6px",marginBottom:5,lineHeight:1.25}}>Transcripción: {agentLiveTranscript}</div>}
         <textarea
           value={agentInstruction}
           onChange={function(e){setAgentInstruction(e.target.value);}}
           placeholder="Escribe o dicta una instrucción..."
-          style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
+          style={{width:"100%",minHeight:54,padding:"7px 8px",border:"1px solid rgba(148,163,184,.32)",borderRadius:9,fontSize:12,resize:"vertical",boxSizing:"border-box",marginBottom:5,background:"rgba(15,23,42,.76)",color:"#e2e8f0",lineHeight:1.3}}
         />
-        <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
-          {recording?"⏹️ Detener escucha en vivo":"🎙️ Hablar en vivo"}
-        </button>
-        <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{width:"100%",padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
-          🔇 Detener voz del asistente
-        </button>
-        <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:5}}>
+          <button onClick={toggleVoiceInput} disabled={transcribing} style={{padding:"6px 7px",border:"1px solid rgba(148,163,184,.3)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            {recording?"⏹️ Detener":"🎙️ Hablar en vivo"}
+          </button>
+          <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{padding:"6px 7px",border:"1px solid rgba(148,163,184,.3)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+            🔇 Detener voz
+          </button>
+        </div>
+        <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:"8px 9px",border:"1px solid rgba(125,211,252,.34)",borderRadius:9,background:agentInstruction.trim()&&!agentBusy?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(71,85,105,.68)",color:"#fff",fontSize:11.5,fontWeight:700,cursor:"pointer",letterSpacing:0.2}}>
           {agentBusy?"⏳ Analizando...":"🔍 Analizar instrucción"}
         </button>
-        {agentValidation&&<div style={{marginTop:8,border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:9,background:"rgba(15,23,42,.65)"}}>
-          <div style={{fontSize:11,color:"#cbd5e1"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
-          <div style={{fontSize:11,color:"#cbd5e1"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
-          <div style={{fontSize:11,color:"#cbd5e1"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+        {agentValidation&&<div style={{marginTop:5,border:"1px solid rgba(148,163,184,.2)",borderRadius:8,padding:7,background:"rgba(15,23,42,.65)"}}>
+          <div style={{fontSize:10,color:"#cbd5e1"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+          <div style={{fontSize:10,color:"#cbd5e1"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+          <div style={{fontSize:10,color:"#cbd5e1"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
           {agentValidation.clarification_prompts&&agentValidation.clarification_prompts.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>{agentValidation.clarification_prompts.map(function(c,i){return <div key={i}>• {c}</div>;})}</div>}
           {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
           {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
-          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy||isAgentWriteAction(agentValidation.action)} style={{width:"100%",marginTop:8,padding:10,border:"none",borderRadius:10,background:agentValidation.can_execute&&!agentBusy&&!isAgentWriteAction(agentValidation.action)?"#16a34a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={executeAgentInstruction} disabled={!agentValidation.can_execute||agentBusy||isAgentWriteAction(agentValidation.action)} style={{width:"100%",marginTop:6,padding:"7px 8px",border:"none",borderRadius:8,background:agentValidation.can_execute&&!agentBusy&&!isAgentWriteAction(agentValidation.action)?"#16a34a":"#64748b",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>
             {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
           </button>
         </div>}
-        {pendingWrite&&<div style={{marginTop:8,border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:10,background:"rgba(15,23,42,.68)"}}>
-          <div style={{fontSize:11,fontWeight:800,color:"#e2e8f0",marginBottom:6}}>🧾 Confirmación escrita requerida (pendiente)</div>
-          <div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.6}}>
+        {pendingWrite&&<div style={{marginTop:5,border:"1px solid rgba(148,163,184,.22)",borderRadius:8,padding:7,background:"rgba(15,23,42,.68)"}}>
+          <div style={{fontSize:10,fontWeight:800,color:"#e2e8f0",marginBottom:4}}>🧾 Confirmación escrita requerida</div>
+          <div style={{fontSize:10,color:"#cbd5e1",lineHeight:1.45}}>
             <div><strong>Acción:</strong> {pendingWrite.card.action}</div>
             <div><strong>Aeronave:</strong> {pendingWrite.card.aircraft}</div>
             <div><strong>Ruta:</strong> {pendingWrite.card.route}</div>
@@ -1497,10 +1510,10 @@ export default function App(){
             <div><strong>Solicitó:</strong> {pendingWrite.card.requester}</div>
             <div><strong>Notas:</strong> {pendingWrite.card.notes}</div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:8}}>
-            <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:8,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
-            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:8,border:"1px solid rgba(148,163,184,.35)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:11,fontWeight:700,cursor:"pointer"}}>Editar</button>
-            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:8,border:"1px solid #fca5a5",borderRadius:8,background:"rgba(127,29,29,.28)",color:"#fecaca",fontSize:11,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginTop:5}}>
+            <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:"6px 5px",border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:"6px 5px",border:"1px solid rgba(148,163,184,.33)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:10,fontWeight:700,cursor:"pointer"}}>Editar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:"6px 5px",border:"1px solid #fca5a5",borderRadius:8,background:"rgba(127,29,29,.28)",color:"#fecaca",fontSize:10,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
           </div>
         </div>}
       </div>}
