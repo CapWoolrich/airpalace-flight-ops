@@ -4,7 +4,7 @@ import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
 import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
-import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
+import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -933,6 +933,7 @@ export default function App(){
         metricsMonth:metricsMonth,
         opStatus:opStatus,
         nextLine:buildNextFlightLine(timeline.upcoming),
+        nextRouteLine:buildNextFlightRouteLine(timeline.upcoming),
       };
     });
   },[fs,today,pos,mt,monthKey]);
@@ -1097,7 +1098,8 @@ export default function App(){
                     <span style={{fontSize:10,color:"#93c5fd"}}>◈</span>
                     {card.location}
                   </div>
-                  <div style={{fontSize:8.5,color:"#afbee6",marginTop:2,lineHeight:1.25,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{card.nextLine}</div>
+                  <div style={{fontSize:8.5,color:"#afbee6",marginTop:2,lineHeight:1.25,whiteSpace:"nowrap"}}>{card.nextLine}</div>
+                  {card.nextRouteLine&&<div style={{fontSize:9,color:"#d6e8ff",marginTop:1,lineHeight:1.2,fontWeight:600,letterSpacing:0.25,whiteSpace:"nowrap"}}>{card.nextRouteLine}</div>}
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,alignItems:"center"}}>
                   <div style={{fontSize:8.5,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes · <span style={{whiteSpace:"nowrap"}}>{monthHoursLabel}</span></div>

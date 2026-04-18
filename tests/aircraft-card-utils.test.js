@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AC } from "../src/app/data.js";
-import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
+import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
 
 test("resolveFlightAwareUrl returns mapped URL per aircraft", () => {
   assert.equal(resolveFlightAwareUrl(AC.N35EA), "https://es.flightaware.com/live/flight/N35EA");
@@ -19,7 +19,12 @@ test("buildRouteStatusLine falls back to last leg when not in flight", () => {
 });
 
 test("buildNextFlightLine renders graceful fallback without schedule", () => {
-  assert.equal(buildNextFlightLine(null), "No programado");
+  assert.equal(buildNextFlightLine(null), "Próximo: No programado");
+});
+
+test("buildNextFlightRouteLine renders route in IATA format", () => {
+  assert.equal(buildNextFlightRouteLine({ orig: "Merida", dest: "Punta Cana" }), "MID → PUJ");
+  assert.equal(buildNextFlightRouteLine({ orig: "MID", dest: "PUJ" }), "MID → PUJ");
 });
 
 test("getMonthlyAircraftMetrics computes flights, hours, and utilization with real route calculator", () => {
