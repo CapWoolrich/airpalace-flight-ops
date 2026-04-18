@@ -4,7 +4,7 @@ import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
 import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
-import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, formatOpsClock, getAircraftTimeline, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
+import { buildNextFlightLine, buildRouteStatusLine, deriveOperationalStatus, getAircraftTimeline, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "./app/aircraftCardUtils";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -866,8 +866,6 @@ export default function App(){
       var atBase=(pos[a.id]||a.base)===a.base;
       var routeStatus=buildRouteStatusLine({inFlight:timeline.inFlight,lastLeg:timeline.lastLeg,isAtBase:atBase});
       var metricsMonth=getMonthlyAircraftMetrics(fs,a.id,monthKey);
-      var activeTimezone=resolveAirportTimezone(pos[a.id]||a.baseAirport||a.base,{fallbackTimeZone:a.baseTimezone||"America/Merida"}).timeZone || a.baseTimezone || "America/Merida";
-      var clocks=formatOpsClock(Date.now(),activeTimezone);
       var isStandby=!timeline.inFlight && String(timeline.upcoming?.time||"").toUpperCase()==="STBY";
       var opStatus=deriveOperationalStatus({maintenanceStatus:mt[a.id]||"disponible",isInFlight:Boolean(timeline.inFlight),isStandby:isStandby});
       return {
@@ -877,9 +875,7 @@ export default function App(){
         color:a.clr,
         location:pos[a.id]||a.base,
         liveUrl:liveUrl,
-        docsUrl:String(a.docsUrl||""),
         routeStatus:routeStatus,
-        clocks:clocks,
         metricsMonth:metricsMonth,
         opStatus:opStatus,
         nextLine:buildNextFlightLine(timeline.upcoming),
@@ -933,31 +929,6 @@ export default function App(){
     else if(lbl==="Pendientes")setListAlertFilter("pending");
     else setListAlertFilter("all");
     if(lbl==="Mantenimiento"){setVw("gest");}
-  }
-  function runAircraftQuickAction(action, card){
-    if(action==="agenda"){
-      setFa(card.id);
-      setVw("cal");
-      return;
-    }
-    if(action==="conflictos"){
-      setFa(card.id);
-      setListAlertFilter("conflicts");
-      setVw("gest");
-      return;
-    }
-    if(action==="track"&&card.liveUrl){
-      window.open(card.liveUrl,"_blank","noopener,noreferrer");
-      return;
-    }
-    if(action==="mantenimiento"){
-      setFa(card.id);
-      setVw("gest");
-      return;
-    }
-    if(action==="docs"&&card.docsUrl){
-      window.open(card.docsUrl,"_blank","noopener,noreferrer");
-    }
   }
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
@@ -1042,39 +1013,30 @@ export default function App(){
                 key={card.id}
                 onMouseEnter={function(){setHoveredCommandCard(card.id);}}
                 onMouseLeave={function(){setHoveredCommandCard("");}}
-                style={{borderRadius:12,padding:"10px 10px 9px",border:"1px solid "+card.opStatus.tone+"55",background:"linear-gradient(145deg,rgba(30,41,59,.5),rgba(15,23,42,.55))",boxShadow:hoveredCommandCard===card.id?"0 10px 26px rgba(15,23,42,.45)":"0 4px 14px rgba(2,6,23,.35)",transform:hoveredCommandCard===card.id?"translateY(-1px)":"none",transition:"transform .2s ease, box-shadow .2s ease, border-color .2s ease"}}
+                style={{borderRadius:16,padding:"12px 12px 11px",border:"1px solid "+card.opStatus.tone+"66",background:"linear-gradient(160deg,rgba(8,16,32,.94),rgba(15,23,42,.78))",boxShadow:hoveredCommandCard===card.id?"0 14px 28px rgba(2,6,23,.5)":"0 8px 18px rgba(2,6,23,.36)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
               >
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <div style={{fontSize:11,fontWeight:800,color:card.color}}>{card.id} · {card.tag}</div>
-                  <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:9,padding:"2px 7px",borderRadius:999,border:"1px solid "+card.opStatus.tone+"66",background:"#0b1220",color:card.opStatus.tone,fontWeight:700}}>{card.opStatus.label}</span>
-                    {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Track live "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 7px",borderRadius:999,textDecoration:"none",border:"1px solid #38bdf855",background:"#082f49",color:"#7dd3fc",fontWeight:700}}>Live Track ↗</a>}
+                <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:800,color:card.color,letterSpacing:0.3}}>{card.id} · {card.tag}</div>
+                    <div style={{fontSize:9,color:"#64748b",marginTop:1}}>{card.type}</div>
+                  </div>
+                  <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:999,border:"1px solid "+card.opStatus.tone+"70",background:"#0b1220",color:card.opStatus.tone,fontWeight:700,letterSpacing:0.2}}>{card.opStatus.label}</span>
+                    {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Live Track "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 8px",borderRadius:999,textDecoration:"none",border:"1px solid #38bdf840",background:"#08243c",color:"#7dd3fc",fontWeight:700,display:"inline-flex",alignItems:"center",gap:4}}>◉ Live</a>}
                   </div>
                 </div>
-                <div style={{fontSize:10,color:"#94a3b8",marginTop:1}}>{card.type}</div>
-                <div style={{fontSize:9,color:"#cbd5e1",marginTop:3}}>{card.routeStatus}</div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
-                  {card.liveUrl?<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:11,fontWeight:700,color:"#e2e8f0",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>📍 {card.location} <span style={{fontSize:10,color:"#93c5fd"}}>⌖</span></a>:<div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>📍 {card.location}</div>}
-                  <div style={{marginLeft:"auto",textAlign:"right"}}>
-                    <div style={{fontSize:9,color:"#e2e8f0",fontWeight:700}}>Local {card.clocks.local}</div>
-                    <div style={{fontSize:8,color:"#94a3b8"}}>{card.clocks.utc}</div>
+                <div style={{marginTop:9,padding:"8px 9px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0",display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{fontSize:10,color:"#93c5fd"}}>⌖</span>
+                    {card.location}
                   </div>
+                  <div style={{fontSize:9,color:"#a5b4fc",marginTop:4,lineHeight:1.35}}>{card.routeStatus}</div>
                 </div>
-                <div style={{display:"flex",gap:8,marginTop:6,fontSize:9,color:"#cbd5e1",flexWrap:"wrap"}}>
-                  {card.metricsMonth.flights>0&&<span>{card.metricsMonth.flights} vuelos mes</span>}
-                  {card.metricsMonth.hours>0&&<span>{card.metricsMonth.hours.toFixed(1)} h</span>}
-                  {Number.isFinite(card.metricsMonth.utilization)&&<span>Util. {card.metricsMonth.utilization}%</span>}
-                  {card.metricsMonth.flights===0&&<span style={{color:"#94a3b8"}}>Sin métricas del mes</span>}
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:8,alignItems:"center"}}>
+                  <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes</div>
+                  <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Ops</div>
                 </div>
-                <div style={{fontSize:9,color:"#bfdbfe",marginTop:5}}>{card.nextLine}</div>
-                <div style={{display:"flex",gap:4,marginTop:7,flexWrap:"wrap"}}>
-                  {[{k:"agenda",l:"Agenda"},{k:"conflictos",l:"Conflictos"},{k:"track",l:"Track"},{k:"mantenimiento",l:"Manto"},{k:"docs",l:"Docs",disabled:!card.docsUrl}].map(function(action){
-                    if(action.k==="track"&&card.liveUrl){
-                      return <a key={action.k} href={card.liveUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:9,padding:"3px 6px",borderRadius:8,textDecoration:"none",color:"#cbd5e1",background:"#0f172a",border:"1px solid #334155"}}>{action.l}</a>;
-                    }
-                    return <button key={action.k} disabled={Boolean(action.disabled)} onClick={function(){runAircraftQuickAction(action.k,card);}} style={{fontSize:9,padding:"3px 6px",borderRadius:8,color:action.disabled?"#64748b":"#cbd5e1",background:"#0f172a",border:"1px solid "+(action.disabled?"#1e293b":"#334155"),cursor:action.disabled?"not-allowed":"pointer"}}>{action.l}</button>;
-                  })}
-                </div>
+                <div style={{fontSize:9,color:"#bfdbfe",marginTop:4,lineHeight:1.35}}>{card.nextLine}</div>
               </div>
             );
           })}
@@ -1087,12 +1049,6 @@ export default function App(){
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
       </div>}
-      <div style={{padding:"0 14px 8px"}}>
-        <button onClick={enablePushNotifications} style={{width:"100%",padding:"8px 10px",border:"1px solid #334155",borderRadius:10,background:"#fff",fontSize:11,fontWeight:700,color:"#0f172a",cursor:"pointer"}}>
-          {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
-        </button>
-      </div>
-
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
         <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:14,marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -1282,6 +1238,11 @@ export default function App(){
       </div>}
 
       {vw==="gest"&&<div style={{padding:"0 14px 24px"}}>
+        <div style={{marginTop:8,marginBottom:10}}>
+          <button onClick={enablePushNotifications} style={{width:"100%",padding:"9px 11px",border:"1px solid #334155",borderRadius:10,background:"#0b1220",fontSize:11,fontWeight:700,color:"#e2e8f0",cursor:"pointer"}}>
+            {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
+          </button>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,marginTop:8}}>
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
           <div style={{background:"#d1fae5",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{fs.filter(function(f){return f.st==="prog";}).length}</div><div style={{fontSize:10,color:"#059669",fontWeight:700}}>Programados</div></div>
