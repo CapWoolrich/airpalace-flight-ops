@@ -1,6 +1,6 @@
 export const AC = {
-  N35EA: { id:"N35EA", type:"Embraer Phenom 300E", tag:"P300E", kts:453, gph:145, maxGal:782, mtow:18387, bow:11880, maxPax:9, crew:400, clr:"#1d4ed8", base:"Merida" },
-  N540JL: { id:"N540JL", type:"Cessna Citation M2", tag:"M2", kts:418, gph:115, maxGal:567, mtow:10700, bow:7280, maxPax:7, crew:400, clr:"#c2410c", base:"Merida" },
+  N35EA: { id:"N35EA", type:"Embraer Phenom 300E", tag:"P300E", kts:453, gph:145, maxGal:782, mtow:18387, bow:11880, maxPax:9, crew:400, clr:"#1d4ed8", base:"Merida", baseAirport:"MID", baseTimezone:"America/Merida", flightAwareUrl:"https://es.flightaware.com/live/flight/N35EA", docsUrl:"", maintenanceRoute:"gest" },
+  N540JL: { id:"N540JL", type:"Cessna Citation M2", tag:"M2", kts:418, gph:115, maxGal:567, mtow:10700, bow:7280, maxPax:7, crew:400, clr:"#c2410c", base:"Merida", baseAirport:"MID", baseTimezone:"America/Merida", flightAwareUrl:"https://es.flightaware.com/live/flight/N540JL", docsUrl:"", maintenanceRoute:"gest" },
 };
 
 export const RF=1.18;
