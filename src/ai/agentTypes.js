@@ -13,9 +13,11 @@ export const VALID_AIRCRAFT_STATUSES = ["disponible", "mantenimiento", "aog"];
 export const VALID_FLIGHT_STATUSES = ["prog", "enc", "comp", "canc"];
 
 export const CREATE_CRITICAL_FIELDS = ["date", "ac", "orig", "dest", "time", "rb"];
+export const AGENT_INTENT_TYPES = ["internal_ops_query", "internal_schedule_action", "external_aviation_query", "unknown"];
 
 export const EMPTY_AGENT_RESULT = {
   action: null,
+  intent_category: "unknown",
   confidence: 0,
   requires_confirmation: true,
   human_summary: "",
