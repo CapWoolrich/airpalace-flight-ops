@@ -8,8 +8,8 @@ export const BLK=20;
 export const JA=6.7;
 export const PW={m:190,w:150,c:80};
 export const REQBY=["Jabib C","Omar C","Gibran C","Jose C","Anuar C","Direccion","Mantenimiento","Otro"];
-export const STS={prog:{l:"Programado",c:"#2563eb",b:"#dbeafe",i:"📋"},enc:{l:"En Curso",c:"#d97706",b:"#fef3c7",i:"✈️"},comp:{l:"Completado",c:"#16a34a",b:"#dcfce7",i:"✅"},canc:{l:"Cancelado",c:"#dc2626",b:"#fee2e2",i:"❌"}};
-export const MST={disponible:{l:"Disponible",c:"#16a34a",b:"#dcfce7"},mantenimiento:{l:"Mantenimiento",c:"#d97706",b:"#fef3c7"},aog:{l:"AOG",c:"#dc2626",b:"#fee2e2"}};
+export const STS={prog:{l:"Programado",c:"#93c5fd",b:"rgba(30,58,138,.32)",i:"📋"},enc:{l:"En Curso",c:"#fcd34d",b:"rgba(146,64,14,.35)",i:"✈️"},comp:{l:"Completado",c:"#86efac",b:"rgba(20,83,45,.34)",i:"✅"},canc:{l:"Cancelado",c:"#fca5a5",b:"rgba(127,29,29,.36)",i:"❌"}};
+export const MST={disponible:{l:"Disponible",c:"#86efac",b:"rgba(20,83,45,.34)"},mantenimiento:{l:"Mantenimiento",c:"#fcd34d",b:"rgba(146,64,14,.35)"},aog:{l:"AOG",c:"#fca5a5",b:"rgba(127,29,29,.36)"}};
 export const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 export const WK=["Dom","Lun","Mar","Mie","Jue","Vie","Sab"];
 
@@ -45,7 +45,7 @@ export const APR=[
 const FSIDS=["MMMD","MMCZ","MMUN","KMIA","KOPF","KFXE","KHOU","MYNN","MKJP","MBPV","MZBZ","MGGT","KSAT","MMMY","MPTO","MDPC","KTPA","KFLL","MMGL"];
 export const FSTOPS=APR.filter(function(a){return FSIDS.indexOf(a.i4)>=0;});
 
-export const LS={fontSize:12,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,marginTop:8};
-export const IS={width:"100%",padding:"11px 13px",border:"1.5px solid #d1d5db",borderRadius:10,fontSize:14,color:"#1e293b",background:"#f8fafc",outline:"none",marginBottom:4,boxSizing:"border-box"};
-export const NB={background:"#f1f5f9",border:"none",borderRadius:8,width:36,height:36,fontSize:20,cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",justifyContent:"center"};
+export const LS={fontSize:12,fontWeight:700,color:"#9fb0cd",display:"block",marginBottom:4,marginTop:8,letterSpacing:0.2};
+export const IS={width:"100%",padding:"11px 13px",border:"1px solid rgba(148,163,184,.35)",borderRadius:10,fontSize:14,color:"#e2e8f0",background:"linear-gradient(165deg,rgba(15,23,42,.94),rgba(15,23,42,.78))",outline:"none",marginBottom:4,boxSizing:"border-box"};
+export const NB={background:"rgba(15,23,42,.86)",border:"1px solid rgba(148,163,184,.3)",borderRadius:8,width:36,height:36,fontSize:20,cursor:"pointer",color:"#c7d2fe",display:"flex",alignItems:"center",justifyContent:"center"};
 export const META_FIELDS=["created_by_email","created_by_name","updated_by_email","updated_by_name"];
