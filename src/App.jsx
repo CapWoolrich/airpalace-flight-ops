@@ -1052,6 +1052,10 @@ export default function App(){
   var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
   var glowOffset = reducedMotion ? 0 : Math.min(54, scrollY * 0.05);
+  var panelPrimary={background:"linear-gradient(165deg,rgba(9,17,31,.94),rgba(16,28,45,.9))",border:"1px solid rgba(148,163,184,.25)",borderRadius:16,boxShadow:"0 14px 28px rgba(2,6,23,.26)"};
+  var panelSecondary={background:"linear-gradient(165deg,rgba(12,21,37,.9),rgba(16,28,45,.82))",border:"1px solid rgba(148,163,184,.2)",borderRadius:12};
+  var subtleText="#9fb0cd";
+  var strongText="#e2e8f0";
 
   return(
     <div className="ops-app-shell">
@@ -1069,6 +1073,7 @@ export default function App(){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
           {aircraftCommandCards.map(function(card){
+            var monthHoursLabel=Number.isFinite(card?.metricsMonth?.hours)?card.metricsMonth.hours.toFixed(1)+" h":"-- h";
             return(
               <div
                 key={card.id}
@@ -1094,7 +1099,7 @@ export default function App(){
                   <div style={{fontSize:9,color:"#afbee6",marginTop:4,lineHeight:1.35}}>Último tramo: {card.routeStatus}</div>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:8,alignItems:"center"}}>
-                  <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes</div>
+                  <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes · {monthHoursLabel}</div>
                   <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Command</div>
                 </div>
                 <div style={{fontSize:9,color:"#bfdbfe",marginTop:4,lineHeight:1.35}}>{card.nextLine}</div>
@@ -1111,17 +1116,17 @@ export default function App(){
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
       </div>}
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:14,marginBottom:14}}>
+        <div style={Object.assign({},panelPrimary,{borderRadius:18,padding:14,marginBottom:14})}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
             <button onClick={function(){var m=cM-1,y=cY;if(m<0){m=11;y--;}setCM(m);setCY(y);}} style={NB}>◀</button>
-            <span style={{fontSize:21,fontWeight:800,color:"#0f172a"}}>{MN[cM]+" "+cY}</span>
+            <span style={{fontSize:21,fontWeight:700,color:strongText}}>{MN[cM]+" "+cY}</span>
             <button onClick={function(){var m=cM+1,y=cY;if(m>11){m=0;y++;}setCM(m);setCY(y);}} style={NB}>▶</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,textAlign:"center"}}>
-            {["L","M","X","J","V","S","D"].map(function(d){return <div key={d} style={{fontSize:11,color:"#94a3b8",fontWeight:700,padding:"4px 0"}}>{d}</div>;})}
+            {["L","M","X","J","V","S","D"].map(function(d){return <div key={d} style={{fontSize:11,color:"#8ea2c8",fontWeight:700,padding:"4px 0"}}>{d}</div>;})}
             {gmd(cY,cM).map(function(d,i){var ds=tds(d.d),df=fs.filter(function(f){return f.date===ds&&(fa==="all"||f.ac===fa);}),iS=ds===sel,iT=ds===today;return(
-              <div key={i} onClick={function(){if(!d.o)setSel(ds);}} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,cursor:d.o?"default":"pointer",background:iS?"#0f172a":iT?"#f1f5f9":"transparent",opacity:d.o?.25:1}}>
-                <span style={{fontSize:13,fontWeight:iT||iS?700:400,color:iS?"#fff":"#1e293b"}}>{d.d.getDate()}</span>
+              <div key={i} onClick={function(){if(!d.o)setSel(ds);}} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,cursor:d.o?"default":"pointer",background:iS?"#1e3a5f":iT?"rgba(30,41,59,.68)":"transparent",opacity:d.o?.25:1}}>
+                <span style={{fontSize:13,fontWeight:iT||iS?700:400,color:iS?"#f8fafc":"#dbeafe"}}>{d.d.getDate()}</span>
                 {df.length>0&&<div style={{display:"flex",gap:2,marginTop:1}}>{df.some(function(f){return f.ac==="N35EA";})&&<div style={{width:5,height:5,borderRadius:"50%",background:AC.N35EA.clr}}/>}{df.some(function(f){return f.ac==="N540JL";})&&<div style={{width:5,height:5,borderRadius:"50%",background:AC.N540JL.clr}}/>}</div>}
               </div>);})}
           </div>
@@ -1132,21 +1137,21 @@ export default function App(){
         </div>
         {dayF.length===0?<div style={{textAlign:"center",color:"#475569",padding:"24px 0"}}>✈️ Sin vuelos este día</div>
         :dayF.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog,px=(f.pm||0)+(f.pw||0)+(f.pc||0),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);return(
-          <div key={f.id} style={{background:"rgba(255,255,255,.97)",borderLeft:"4px solid "+a.clr,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+          <div key={f.id} style={Object.assign({},panelSecondary,{borderLeft:"3px solid "+a.clr,padding:"14px 16px",marginBottom:10})}>
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
               <span style={{fontSize:12,fontWeight:800,color:a.clr}}>{f.ac} {a.tag}</span>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
               <div style={{flex:1}}/>
-              <a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"4px 8px",fontSize:13,textDecoration:"none",color:"#475569"}}>📅</a>
-              <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer"}}>✏️</button>
-              <button onClick={function(){delFlight(f.id);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#94a3b8"}}>×</button>
+              <a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,textDecoration:"none",color:"#cbd5e1"}}>📅</a>
+              <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#cbd5e1"}}>✏️</button>
+              <button onClick={function(){delFlight(f.id);}} style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#94a3b8"}}>×</button>
             </div>
-            <div style={{fontWeight:800,color:"#0f172a",fontSize:17}}>{f.orig} <span style={{color:"#94a3b8"}}>→</span> {f.dest}</div>
-            <div style={{color:"#64748b",fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
-            <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
-            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#334155",marginTop:3}}>🕓 ETA local destino: {etaLocalUtc(f).local}</div>}
-            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
-            {rt&&<div style={{marginTop:6,fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:8,padding:"6px 8px"}}>
+            <div style={{fontWeight:700,color:"#f1f5f9",fontSize:17}}>{f.orig} <span style={{color:"#94a3b8"}}>→</span> {f.dest}</div>
+            <div style={{color:subtleText,fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
+            <div style={{fontSize:11,color:"#9fb0cd"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
+            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#bfdbfe",marginTop:3}}>🕓 ETA local destino: {etaLocalUtc(f).local}</div>}
+            {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#9fb0cd"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
+            {rt&&<div style={{marginTop:6,fontSize:12,color:"#cbd5e1",background:"rgba(15,23,42,.72)",borderRadius:8,padding:"6px 8px",border:"1px solid rgba(148,163,184,.2)"}}>
               {"~"+rt.aw+" NM | "}<strong>{Math.floor(rt.bm/60)+"h"+("0"+(rt.bm%60)).slice(-2)+"m block"}</strong>
               {rt.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
               {rt.wt.ov&&<div style={{color:"#dc2626",fontWeight:700}}>❌ SOBREPESO +{Math.abs(rt.wt.mg).toLocaleString()} lbs</div>}
@@ -1201,7 +1206,7 @@ export default function App(){
                 <div style={{fontSize:11,color:"#dbeafe",marginTop:3}}>
                   <strong>Registros involucrados:</strong> {c.flightId||"-"}{c.conflictingFlightId?(" , "+c.conflictingFlightId):""}
                 </div>
-                {(c.details?.rawTimestamps||c.details?.parsedUtc||c.details?.displayedLocal)&&<div style={{fontSize:10,color:"#475569",marginTop:4,background:"#fff",borderRadius:8,padding:"6px 8px"}}>
+                {(c.details?.rawTimestamps||c.details?.parsedUtc||c.details?.displayedLocal)&&<div style={{fontSize:10,color:"#cbd5e1",marginTop:4,background:"rgba(15,23,42,.65)",borderRadius:8,padding:"6px 8px",border:"1px solid rgba(148,163,184,.2)"}}>
                   <div><strong>Raw stored:</strong> {JSON.stringify(c.details?.rawTimestamps||{})}</div>
                   <div><strong>Parsed UTC:</strong> {JSON.stringify(c.details?.parsedUtc||{})}</div>
                   <div><strong>Displayed local:</strong> {JSON.stringify(c.details?.displayedLocal||{})}</div>
@@ -1214,14 +1219,14 @@ export default function App(){
         ) : (
           listFlights.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div> : listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
             <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
-              <div style={{background:"rgba(255,255,255,.95)",borderLeft:"4px solid "+a.clr,borderRadius:10,padding:"8px 12px"}}>
+              <div style={Object.assign({},panelSecondary,{borderLeft:"3px solid "+a.clr,padding:"8px 12px"})}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
-                <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
-                <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
-                <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
-                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
-                <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
-                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaLocalUtc(f).local}</div>}
+                <div style={{fontWeight:700,color:"#f1f5f9",fontSize:14}}>{f.orig+" → "+f.dest}</div>
+                <div style={{fontSize:12,color:"#9fb0cd"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
+                <div style={{fontSize:11,color:"#9fb0cd"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
+                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#9fb0cd"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
+                <div style={{fontSize:11,color:"#9fb0cd"}}>Última edición: {getCreatorLabel(f)}</div>
+                {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#bfdbfe",marginTop:2}}>ETA destino: {etaLocalUtc(f).local}</div>}
               </div>
             </div>
           );})
@@ -1230,7 +1235,7 @@ export default function App(){
 
       {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:10,marginBottom:10}}>
+        <div style={Object.assign({},panelPrimary,{padding:10,marginBottom:10})}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
             <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
               <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
@@ -1248,37 +1253,37 @@ export default function App(){
         </div>
         {recentFlights.length===0?<div style={{textAlign:"center",color:"#475569",padding:22}}>Sin resultados</div>
         :recentFlights.slice(0,60).map(function(f){var s=STS[f.st]||STS.prog;return(
-          <div key={f.id} style={{background:"rgba(255,255,255,.97)",borderRadius:12,padding:12,marginBottom:8,borderLeft:"4px solid "+(AC[f.ac]?.clr||"#64748b")}}>
+          <div key={f.id} style={Object.assign({},panelSecondary,{padding:12,marginBottom:8,borderLeft:"3px solid "+(AC[f.ac]?.clr||"#64748b")})}>
             <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-              <div style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>{f.date} · {ftm(f.time)}</div>
+            <div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{f.date} · {ftm(f.time)}</div>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
             </div>
             <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
-            <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
-            <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
-            <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
+            <div style={{fontWeight:800,color:"#f8fafc",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
+            <div style={{fontSize:12,color:"#9fb0cd"}}>Solicitó: {f.rb||"-"}</div>
+            <div style={{fontSize:11,color:"#9fb0cd",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
             <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
           </div>);})}
       </div>}
 
       {vw==="plan"&&<div style={{padding:"0 14px 24px"}}>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:18,padding:16}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#0f172a"}}>🧭 Planificación de vuelo</div>
-          <div style={{fontSize:11,color:"#94a3b8",marginBottom:14}}>Rutas IFR +18% · Block +20min</div>
+        <div style={Object.assign({},panelPrimary,{borderRadius:18,padding:16})}>
+          <div style={{fontWeight:800,fontSize:16,color:"#e2e8f0"}}>🧭 Planificación de vuelo</div>
+          <div style={{fontSize:11,color:"#8ea2c8",marginBottom:14}}>Rutas IFR +18% · Block +20min</div>
           <label style={LS}>Aeronave</label>
           <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setRc(function(p){return Object.assign({},p,{ac:a.id,res:null});});}} style={{flex:1,padding:"10px 8px",border:"2px solid "+a.clr,borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:rc.ac===a.id?a.clr:"transparent",color:rc.ac===a.id?"#fff":a.clr}}>{a.id}<br/><span style={{fontSize:10,fontWeight:500}}>{a.tag}</span></button>;})}</div>
           <ApIn value={rc.orig} onChange={function(v){setRc(function(p){return Object.assign({},p,{orig:v,res:null});});}} label="Origen"/>
           <ApIn value={rc.dest} onChange={function(v){setRc(function(p){return Object.assign({},p,{dest:v,res:null});});}} label="Destino"/>
-          <div style={{background:"#f8fafc",borderRadius:12,padding:12,border:"1.5px solid #e2e8f0",marginTop:6}}>
+          <div style={{background:"rgba(15,23,42,.66)",borderRadius:12,padding:12,border:"1px solid rgba(148,163,184,.24)",marginTop:6}}>
             <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>👥 Pasajeros + 2 pilotos</div>
             <Stp label="Hombres" value={rc.pm} onChange={function(v){setRc(function(p){return Object.assign({},p,{pm:v,res:null});});}} icon="M" wl="190 lbs"/>
             <Stp label="Mujeres" value={rc.pw} onChange={function(v){setRc(function(p){return Object.assign({},p,{pw:v,res:null});});}} icon="F" wl="150 lbs"/>
             <Stp label="Niños" value={rc.pc} onChange={function(v){setRc(function(p){return Object.assign({},p,{pc:v,res:null});});}} icon="N" wl="80 lbs"/>
           </div>
-          <button onClick={function(){if(rc.orig&&rc.dest)setRc(function(p){return Object.assign({},p,{res:calcR(rc.orig,rc.dest,rc.ac,{m:rc.pm,w:rc.pw,c:rc.pc},rc.bg)});});}} disabled={!rc.orig||!rc.dest} style={{width:"100%",padding:14,background:rc.orig&&rc.dest?"#0f172a":"#cbd5e1",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:14}}>🧭 Calcular</button>
+          <button onClick={function(){if(rc.orig&&rc.dest)setRc(function(p){return Object.assign({},p,{res:calcR(rc.orig,rc.dest,rc.ac,{m:rc.pm,w:rc.pw,c:rc.pc},rc.bg)});});}} disabled={!rc.orig||!rc.dest} style={{width:"100%",padding:14,background:rc.orig&&rc.dest?"linear-gradient(140deg,#1d4ed8,#1e3a8a)":"rgba(71,85,105,.7)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:14}}>🧭 Calcular</button>
           {rc.res&&<div style={{marginTop:14}}>
-            <div style={{background:"#f8fafc",borderRadius:14,padding:14,border:"1.5px solid #e2e8f0"}}>
+            <div style={{background:"rgba(15,23,42,.7)",borderRadius:14,padding:14,border:"1px solid rgba(148,163,184,.24)"}}>
               <div style={{fontWeight:800,fontSize:17}}>{rc.orig+" → "+rc.dest}</div>
               <div style={{fontSize:12,color:"#64748b",lineHeight:1.9,marginTop:4}}>GC: {rc.res.gc} NM | Vía aérea: ~{rc.res.aw} NM<br/>En ruta: {Math.floor(rc.res.em/60)}h{("0"+(rc.res.em%60)).slice(-2)}m | <strong>Block: {Math.floor(rc.res.bm/60)}h{("0"+(rc.res.bm%60)).slice(-2)}m</strong></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:10}}>
@@ -1308,16 +1313,16 @@ export default function App(){
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
           <div style={{background:"#d1fae5",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{fs.filter(function(f){return f.st==="prog";}).length}</div><div style={{fontSize:10,color:"#059669",fontWeight:700}}>Programados</div></div>
         </div>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:12,marginBottom:12}}>
+        <div style={Object.assign({},panelPrimary,{padding:12,marginBottom:12})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🚨 Alertas operativas</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-            {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <button key={r[0]} onClick={function(){onAlertClick(r[0]);}} style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 6px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{r[1]}</div><div style={{fontSize:10,color:"#64748b"}}>{r[0]}</div></button>;})}
+            {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <button key={r[0]} onClick={function(){onAlertClick(r[0]);}} style={{background:"rgba(15,23,42,.78)",border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:"8px 6px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>{r[1]}</div><div style={{fontSize:10,color:"#9fb0cd"}}>{r[0]}</div></button>;})}
           </div>
         </div>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
+        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>✈️ Estado de flota</div>
           {Object.values(AC).map(function(a){var ms=getAcStatus(a.id,today),ml=MST[ms],p=pos[a.id],plan=maintPlan[a.id]||{};return(
-            <div key={a.id} style={{marginBottom:10,padding:12,borderRadius:12,border:"1.5px solid "+(ms!=="disponible"?ml.c:"#e2e8f0")}}>
+            <div key={a.id} style={{marginBottom:10,padding:12,borderRadius:12,border:"1px solid "+(ms!=="disponible"?ml.c+"88":"rgba(148,163,184,.25)"),background:"rgba(15,23,42,.58)"}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
@@ -1330,7 +1335,7 @@ export default function App(){
               </div>
             </div>);})}
         </div>
-        <div style={{background:"rgba(255,255,255,.97)",borderRadius:16,padding:14,marginBottom:12}}>
+        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10}}>📊 Analítica operativa</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
             <select value={anMonth} onChange={function(e){setAnMonth(e.target.value);}} style={IS}>
@@ -1360,53 +1365,53 @@ export default function App(){
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
 
-      {sf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
-        <div style={{background:"#fff",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px"}} onClick={function(e){e.stopPropagation();}}>
-          <div style={{width:36,height:4,background:"#d1d5db",borderRadius:2,margin:"0 auto 12px"}}/>
-          <div style={{fontWeight:800,fontSize:17,marginBottom:14}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
+      {sf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
+        <div style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
+          <div style={{width:36,height:4,background:"rgba(148,163,184,.45)",borderRadius:2,margin:"0 auto 12px"}}/>
+          <div style={{fontWeight:800,fontSize:17,marginBottom:14,color:"#e2e8f0"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
           <label style={LS}>Fecha</label><input type="date" value={nf.date} onChange={function(e){setNf(function(p){return Object.assign({},p,{date:e.target.value});});}} style={IS}/>
           <label style={LS}>Aeronave</label>
           <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setNf(function(p){return Object.assign({},p,{ac:a.id});});}} style={{flex:1,padding:"10px 8px",border:"2px solid "+a.clr,borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:nf.ac===a.id?a.clr:"transparent",color:nf.ac===a.id?"#fff":a.clr}}>{a.id}<br/><span style={{fontSize:10}}>{a.tag}</span></button>;})}</div>
           <ApIn value={nf.orig} onChange={function(v){setNf(function(p){return Object.assign({},p,{orig:v});});}} label="Origen"/>
           <ApIn value={nf.dest} onChange={function(v){setNf(function(p){return Object.assign({},p,{dest:v});});}} label="Destino"/>
-          {formR&&<div style={{marginBottom:8,background:formR.dir&&!formR.wt.ov?"#f0fdf4":"#fef2f2",borderRadius:10,padding:10,fontSize:12,border:"1px solid "+(formR.dir&&!formR.wt.ov?"#86efac":"#fca5a5")}}>
+          {formR&&<div style={{marginBottom:8,background:formR.dir&&!formR.wt.ov?"rgba(20,83,45,.36)":"rgba(127,29,29,.35)",borderRadius:10,padding:10,fontSize:12,border:"1px solid "+(formR.dir&&!formR.wt.ov?"#86efac":"#fca5a5"),color:"#e2e8f0"}}>
             📏 ~{formR.aw} NM | ⏱ {Math.floor(formR.bm/60)}h{("0"+(formR.bm%60)).slice(-2)}m block
             {formR.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Auto-escala: {formR.stops[0].c}</div>}
             {formR.dir&&<div style={{color:"#166534",fontWeight:600}}>✅ Directo</div>}
             <div style={{color:formR.wt.ov?"#dc2626":"#166534",fontWeight:600}}>⚖️ {formR.wt.tw.toLocaleString()}/{formR.wt.mt.toLocaleString()} lbs {formR.wt.ov?"❌ SOBREPESO":""}</div>
           </div>}
-          <div style={{background:"#f8fafc",borderRadius:12,padding:12,border:"1.5px solid #e2e8f0"}}>
+          <div style={{background:"rgba(15,23,42,.66)",borderRadius:12,padding:12,border:"1px solid rgba(148,163,184,.24)"}}>
             <Stp label="Hombres" value={nf.pm} onChange={function(v){setNf(function(p){return Object.assign({},p,{pm:v});});}} icon="M" wl="190"/>
             <Stp label="Mujeres" value={nf.pw} onChange={function(v){setNf(function(p){return Object.assign({},p,{pw:v});});}} icon="F" wl="150"/>
             <Stp label="Niños" value={nf.pc} onChange={function(v){setNf(function(p){return Object.assign({},p,{pc:v});});}} icon="N" wl="80"/>
           </div>
           <label style={LS}>Hora</label>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
-            {["STBY","07:00","08:00","09:00","12:00","15:00","16:00","18:00"].map(function(t){return <button key={t} onClick={function(){setNf(function(p){return Object.assign({},p,{time:t});});}} style={{padding:"7px 11px",border:"1.5px solid "+(nf.time===t?"#0f172a":"#e2e8f0"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.time===t?"#0f172a":"#fff",color:nf.time===t?"#fff":"#475569"}}>{t==="STBY"?t:ftm(t)}</button>;})}
+            {["STBY","07:00","08:00","09:00","12:00","15:00","16:00","18:00"].map(function(t){return <button key={t} onClick={function(){setNf(function(p){return Object.assign({},p,{time:t});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.time===t?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.time===t?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{t==="STBY"?t:ftm(t)}</button>;})}
           </div>
           <input type="time" value={nf.time!=="STBY"?nf.time:""} onChange={function(e){setNf(function(p){return Object.assign({},p,{time:e.target.value});});}} style={IS}/>
           <label style={LS}>Solicitado por</label>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
-            {REQBY.map(function(r){return <button key={r} onClick={function(){setNf(function(p){return Object.assign({},p,{rb:r});});}} style={{padding:"7px 11px",border:"1.5px solid "+(nf.rb===r?"#0f172a":"#e2e8f0"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.rb===r?"#0f172a":"#fff",color:nf.rb===r?"#fff":"#475569"}}>{r}</button>;})}
+            {REQBY.map(function(r){return <button key={r} onClick={function(){setNf(function(p){return Object.assign({},p,{rb:r});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.rb===r?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.rb===r?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{r}</button>;})}
           </div>
           <label style={LS}>Notas</label>
           <input type="text" placeholder="Ferry, observaciones..." value={nf.nt} onChange={function(e){setNf(function(p){return Object.assign({},p,{nt:e.target.value});});}} style={IS}/>
           <label style={LS}>Programado/Editado por</label>
           <input type="text" placeholder="Nombre o correo" value={actorName} onChange={function(e){setActorName(e.target.value);}} style={IS}/>
           <button onClick={handleSave} disabled={!nf.orig||!nf.dest||!nf.time||!nf.rb||phase==="saving"} style={{width:"100%",padding:15,border:"none",borderRadius:14,fontSize:16,fontWeight:700,cursor:"pointer",marginTop:10,background:nf.orig&&nf.dest&&nf.time&&nf.rb?"#0f172a":"#cbd5e1",color:"#fff"}}>{phase==="saving"?"⏳ Guardando...":editId!==null?"✅ Guardar cambios":"✈️ Programar vuelo"}</button>
-          {editId!==null&&<button onClick={function(){if(confirm("¿Cancelar este vuelo?"))chgStatus(editId,"canc");setSf(false);}} style={{width:"100%",padding:12,border:"1.5px solid #dc2626",borderRadius:12,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:8,background:"#fff",color:"#dc2626"}}>❌ Cancelar vuelo</button>}
+          {editId!==null&&<button onClick={function(){if(confirm("¿Cancelar este vuelo?"))chgStatus(editId,"canc");setSf(false);}} style={{width:"100%",padding:12,border:"1px solid #f87171",borderRadius:12,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:8,background:"rgba(127,29,29,.28)",color:"#fecaca"}}>❌ Cancelar vuelo</button>}
         </div>
       </div>}
 
-      {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
-        <div style={{background:"#fff",borderRadius:22,width:"100%",maxWidth:400,padding:"24px 22px",boxShadow:"0 20px 45px rgba(15,23,42,.25)"}} onClick={function(e){e.stopPropagation();}}>
+      {ntf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:2000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={function(){setNtf(null);}}>
+        <div style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.94))",borderRadius:22,width:"100%",maxWidth:400,padding:"24px 22px",boxShadow:"0 20px 45px rgba(15,23,42,.45)",border:"1px solid rgba(148,163,184,.25)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
             <div style={{width:34,height:34,borderRadius:"50%",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
-            <div style={{fontWeight:900,fontSize:18,color:"#0f172a",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
+            <div style={{fontWeight:900,fontSize:18,color:"#e2e8f0",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
           </div>
-          <div style={{fontSize:21,fontWeight:900,color:"#0f172a",lineHeight:1.2,marginBottom:4}}>{ntf.fl.orig} <span style={{color:"#94a3b8"}}>→</span> {ntf.fl.dest}</div>
-          <div style={{fontSize:12,color:"#64748b",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
-          <div style={{background:"#f8fafc",borderRadius:14,padding:"12px 13px",border:"1px solid #e2e8f0",fontSize:13,color:"#334155",lineHeight:1.7}}>
+          <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{ntf.fl.orig} <span style={{color:"#94a3b8"}}>→</span> {ntf.fl.dest}</div>
+          <div style={{fontSize:12,color:"#9fb0cd",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
+          <div style={{background:"rgba(15,23,42,.72)",borderRadius:14,padding:"12px 13px",border:"1px solid rgba(148,163,184,.25)",fontSize:13,color:"#cbd5e1",lineHeight:1.7}}>
             <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
             <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
             <div><strong>Hora salida:</strong> {ftm(ntf.fl.time)}</div>
@@ -1433,27 +1438,27 @@ export default function App(){
         👨🏼‍✈️
       </button>
 
-      {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"rgba(255,255,255,.98)",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid #dbeafe"}}>
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:146,width:"calc(100% - 24px)",maxWidth:360,zIndex:960,background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.94))",borderRadius:16,padding:12,boxShadow:"0 20px 45px rgba(0,0,0,.45)",border:"1px solid rgba(148,163,184,.28)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>👨🏼‍✈️ AI Pilot</div>
+          <div style={{fontWeight:800,fontSize:14,color:"#e2e8f0"}}>👨🏼‍✈️ AI Pilot</div>
           <button onClick={function(){setAgentOpen(false);}} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
         </div>
-        <div style={{fontSize:11,color:"#475569",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
-        <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:6}}>
+        <div style={{fontSize:11,color:"#9fb0cd",marginBottom:7}}>Estoy listo para ayudarte con la operación de hoy.</div>
+        <div style={{fontSize:11,fontWeight:700,color:"#cbd5e1",marginBottom:6}}>
           Estado: {agentVoiceState==="listening"?"🎙️ Escuchando":agentVoiceState==="thinking"?"🧠 Analizando":agentVoiceState==="speaking"?"🔊 Hablando":agentVoiceState==="clarification"?"❓ Esperando aclaración":"✅ En espera"}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
-          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:8,border:"1px solid #0f172a",borderRadius:10,background:realtimeConnected?"#dcfce7":"#fff",fontSize:11,fontWeight:700,cursor:realtimeConnected?"default":"pointer"}}>
+          <button onClick={startRealtimeVoice} disabled={realtimeConnected||realtimeConnecting} style={{padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:realtimeConnected?"rgba(20,83,45,.56)":"rgba(15,23,42,.72)",fontSize:11,fontWeight:700,cursor:realtimeConnected?"default":"pointer",color:"#e2e8f0"}}>
             {realtimeConnecting?"⏳ Conectando...":realtimeConnected?"🟢 Realtime activo":"🎧 Conectar Realtime"}
           </button>
-          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={stopRealtimeVoice} disabled={!realtimeConnected&&!realtimeConnecting} style={{padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",fontSize:11,fontWeight:700,cursor:"pointer",color:"#e2e8f0"}}>
             ⏹️ Cerrar Realtime
           </button>
         </div>
-        {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10,padding:8,background:"#f8fafc",marginBottom:8}}>
-          {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#0f172a":"#334155",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
+        {agentMessages.length>0&&<div style={{maxHeight:120,overflowY:"auto",border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:8,background:"rgba(15,23,42,.65)",marginBottom:8}}>
+          {agentMessages.slice(-6).map(function(m,i){return <div key={i} style={{fontSize:11,color:m.role==="assistant"?"#dbeafe":"#cbd5e1",marginBottom:6}}><strong>{m.role==="assistant"?"AI":"Tú"}:</strong> {m.text}</div>;})}
         </div>}
-        {realtimeText&&<div style={{fontSize:11,color:"#334155",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Realtime: {realtimeText.slice(-240)}</div>}
+        {realtimeText&&<div style={{fontSize:11,color:"#cbd5e1",background:"rgba(15,23,42,.7)",border:"1px solid rgba(148,163,184,.24)",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Realtime: {realtimeText.slice(-240)}</div>}
         {agentLiveTranscript&&<div style={{fontSize:11,color:"#0369a1",background:"#e0f2fe",border:"1px solid #bae6fd",borderRadius:8,padding:"6px 8px",marginBottom:8}}>Transcripción en vivo: {agentLiveTranscript}</div>}
         <textarea
           value={agentInstruction}
@@ -1461,19 +1466,19 @@ export default function App(){
           placeholder="Escribe o dicta una instrucción..."
           style={{width:"100%",minHeight:80,padding:10,border:"1.5px solid #d1d5db",borderRadius:10,fontSize:13,resize:"vertical",boxSizing:"border-box",marginBottom:8}}
         />
-        <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid #334155",borderRadius:10,background:"#fff",color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+        <button onClick={toggleVoiceInput} disabled={transcribing} style={{width:"100%",padding:9,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
           {recording?"⏹️ Detener escucha en vivo":"🎙️ Hablar en vivo"}
         </button>
-        <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{width:"100%",padding:8,border:"1px solid #cbd5e1",borderRadius:10,background:"#fff",color:"#334155",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+        <button onClick={function(){try{if(window.speechSynthesis)window.speechSynthesis.cancel();setAgentVoiceState("idle");}catch{}}} style={{width:"100%",padding:8,border:"1px solid rgba(148,163,184,.34)",borderRadius:10,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
           🔇 Detener voz del asistente
         </button>
         <button onClick={analyzeAgentInstruction} disabled={!agentInstruction.trim()||agentBusy} style={{width:"100%",padding:10,border:"none",borderRadius:10,background:agentInstruction.trim()&&!agentBusy?"#0f172a":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
           {agentBusy?"⏳ Analizando...":"🔍 Analizar instrucción"}
         </button>
-        {agentValidation&&<div style={{marginTop:8,border:"1px solid #e2e8f0",borderRadius:10,padding:9,background:"#f8fafc"}}>
-          <div style={{fontSize:11,color:"#334155"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
-          <div style={{fontSize:11,color:"#334155"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
-          <div style={{fontSize:11,color:"#334155"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
+        {agentValidation&&<div style={{marginTop:8,border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:9,background:"rgba(15,23,42,.65)"}}>
+          <div style={{fontSize:11,color:"#cbd5e1"}}>Acción: <strong>{agentValidation.action||"-"}</strong></div>
+          <div style={{fontSize:11,color:"#cbd5e1"}}>Confianza: <strong>{Math.round((agentValidation.confidence||0)*100)}%</strong></div>
+          <div style={{fontSize:11,color:"#cbd5e1"}}>Confirmación: <strong>{agentValidation.requires_confirmation?"Sí":"No"}</strong></div>
           {agentValidation.clarification_prompts&&agentValidation.clarification_prompts.length>0&&<div style={{fontSize:11,color:"#92400e",marginTop:5}}>{agentValidation.clarification_prompts.map(function(c,i){return <div key={i}>• {c}</div>;})}</div>}
           {agentValidation.warnings.length>0&&<div style={{marginTop:5,fontSize:11,color:"#92400e"}}>{agentValidation.warnings.map(function(w,i){return <div key={i}>⚠️ {w}</div>;})}</div>}
           {agentValidation.errors.length>0&&<div style={{marginTop:5,fontSize:11,color:"#b91c1c"}}>{agentValidation.errors.map(function(er,i){return <div key={i}>❌ {er}</div>;})}</div>}
@@ -1481,9 +1486,9 @@ export default function App(){
             {agentBusy?"⏳ Ejecutando...":"✅ Execute"}
           </button>
         </div>}
-        {pendingWrite&&<div style={{marginTop:8,border:"1px solid #cbd5e1",borderRadius:10,padding:10,background:"#fff"}}>
-          <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:6}}>🧾 Confirmación escrita requerida (pendiente)</div>
-          <div style={{fontSize:11,color:"#334155",lineHeight:1.6}}>
+        {pendingWrite&&<div style={{marginTop:8,border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:10,background:"rgba(15,23,42,.68)"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#e2e8f0",marginBottom:6}}>🧾 Confirmación escrita requerida (pendiente)</div>
+          <div style={{fontSize:11,color:"#cbd5e1",lineHeight:1.6}}>
             <div><strong>Acción:</strong> {pendingWrite.card.action}</div>
             <div><strong>Aeronave:</strong> {pendingWrite.card.aircraft}</div>
             <div><strong>Ruta:</strong> {pendingWrite.card.route}</div>
@@ -1493,8 +1498,8 @@ export default function App(){
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:8}}>
             <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:8,border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
-            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:8,border:"1px solid #cbd5e1",borderRadius:8,background:"#fff",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer"}}>Editar</button>
-            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:8,border:"1px solid #fecaca",borderRadius:8,background:"#fff",color:"#b91c1c",fontSize:11,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:8,border:"1px solid rgba(148,163,184,.35)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:11,fontWeight:700,cursor:"pointer"}}>Editar</button>
+            <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:8,border:"1px solid #fca5a5",borderRadius:8,background:"rgba(127,29,29,.28)",color:"#fecaca",fontSize:11,fontWeight:700,cursor:"pointer"}}>Cancelar</button>
           </div>
         </div>}
       </div>}
