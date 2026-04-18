@@ -1113,11 +1113,14 @@ export default function App(){
       <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:5,padding:"10px 14px 0"}}>
         {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"10px 6px",border:"1px solid "+(vw===t.k?"rgba(212,185,140,.54)":"rgba(184,150,104,.38)"),borderRadius:11,fontSize:12,fontWeight:600,cursor:"pointer",background:vw===t.k?"linear-gradient(140deg,rgba(244,231,214,.95),rgba(214,191,160,.88))":"rgba(15,23,42,.52)",color:vw===t.k?"#0f172a":"#c7b08a",boxShadow:vw===t.k?"0 6px 16px rgba(212,185,140,.18)":"inset 0 0 0 1px rgba(212,185,140,.06)",transition:"all .2s ease"}}>{t.l}</button>;})}
       </div>
-      {vw==="cal"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"8px 14px 0"}}>
-        <button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{background:"linear-gradient(145deg,rgba(15,23,42,.86),rgba(30,41,59,.88))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.44)",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 10px 18px rgba(2,6,23,.3)",letterSpacing:0.2}}>✦ Vuelo nuevo</button>
-      </div>}
-      {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
-        {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
+      {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"8px 14px",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {[{k:"all",l:"Ambas",tone:"#b8c6db"},{k:"N35EA",l:"N35EA",tone:"#7fb0ff"},{k:"N540JL",l:"N540JL",tone:"#f6be86"}].map(function(f){
+            var isActive=fa===f.k;
+            return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"6px 12px",border:"1px solid "+(isActive?"rgba(212,185,140,.52)":"rgba(148,163,184,.3)"),borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",background:isActive?"linear-gradient(145deg,rgba(25,36,57,.95),rgba(17,26,44,.9))":"rgba(15,23,42,.56)",color:isActive?"#f3dfbf":f.tone,letterSpacing:0.2,boxShadow:isActive?"0 8px 16px rgba(2,6,23,.28)":"none",transition:"all .18s ease"} }>{f.l}</button>;
+          })}
+        </div>
+        {vw==="cal"&&<button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{marginLeft:"auto",background:"linear-gradient(145deg,rgba(15,23,42,.88),rgba(30,41,59,.9))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.44)",borderRadius:10,padding:"7px 13px",fontSize:11.5,fontWeight:700,cursor:"pointer",boxShadow:"0 8px 16px rgba(2,6,23,.28)",letterSpacing:0.2,whiteSpace:"nowrap"}}>✦ Vuelo nuevo</button>}
       </div>}
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
         <div style={Object.assign({},panelPrimary,{borderRadius:18,padding:14,marginBottom:14})}>
