@@ -208,5 +208,23 @@ export function normalizeAgentWithAliases(input, instruction = "") {
     payload.query_scope = "flights";
   }
 
+  result.intent_category = classifyAgentIntent(instructionText, result);
+
   return result;
+}
+
+export function classifyAgentIntent(instructionText, result) {
+  const text = normalizeText(instructionText);
+  const explicitExternalRegex = /\b(flightaware|notam|metar|taf|clima|weather|tr[áa]fico a[ée]reo|ads-b|flightradar|aviaci[oó]n comercial|vuelo comercial)\b/i;
+  if (explicitExternalRegex.test(text)) return "external_aviation_query";
+
+  const payloadAc = String(result?.payload?.ac || "").toUpperCase();
+  const mentionsInternalFleet = /\bN35EA\b|\bN540JL\b/i.test(text) || ["N35EA", "N540JL"].includes(payloadAc);
+  const internalOpsRegex = /\b(vuelos?|agenda|programad[oa]s?|hoy|mañana|mes|semana|pr[oó]ximo|disponibilidad|conflictos?|mantenimiento|estado operativo)\b/i;
+  const writeActionRegex = /\b(programa|programar|agendar|agenda\s+un|crear|crea|editar|edita|cancelar|cancela|duplicar|duplica)\b/i;
+  const action = String(result?.action || "");
+  const isWriteAction = ["create_flight", "edit_flight", "cancel_flight", "change_aircraft_status", "duplicate_flight"].includes(action);
+  if (isWriteAction || writeActionRegex.test(text)) return "internal_schedule_action";
+  if (action === "query_schedule" || mentionsInternalFleet || internalOpsRegex.test(text)) return "internal_ops_query";
+  return "unknown";
 }
