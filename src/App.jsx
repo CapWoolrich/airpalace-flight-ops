@@ -14,6 +14,33 @@ import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "./lib/timezones.js";
 
+const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' fill='none'>
+    <defs>
+      <linearGradient id='line' x1='0' x2='1' y1='0' y2='0'>
+        <stop offset='0' stop-color='rgba(91,141,179,.04)'/>
+        <stop offset='0.5' stop-color='rgba(143,203,255,.28)'/>
+        <stop offset='1' stop-color='rgba(91,141,179,.04)'/>
+      </linearGradient>
+    </defs>
+    <g opacity='.32' stroke='url(#line)' stroke-width='1.2'>
+      <path d='M80 280 C180 220 290 210 390 245 C475 275 560 275 655 240 C750 204 860 205 955 248 C1050 292 1165 300 1280 268' />
+      <path d='M40 500 C145 455 230 450 320 474 C410 498 490 503 590 468 C700 430 810 430 910 472 C1010 514 1110 528 1310 495' />
+      <path d='M120 670 C220 636 320 635 415 661 C510 686 625 690 730 655 C835 620 940 620 1040 650 C1140 680 1235 688 1350 660' />
+      <path d='M245 140 L292 190 L370 175 L420 222 L476 208 L540 248' />
+      <path d='M690 162 L754 205 L822 188 L900 236 L975 218 L1058 244' />
+      <path d='M590 566 L670 600 L752 588 L828 622 L925 608' />
+      <path d='M294 360 L352 404 L440 388 L508 426 L585 415' />
+      <path d='M965 400 L1044 436 L1118 420 L1198 446' />
+    </g>
+    <g opacity='.23' fill='rgba(154,208,255,.45)'>
+      <circle cx='292' cy='190' r='4'/><circle cx='420' cy='222' r='3'/><circle cx='754' cy='205' r='4'/>
+      <circle cx='900' cy='236' r='3'/><circle cx='670' cy='600' r='3.5'/><circle cx='508' cy='426' r='3'/>
+      <circle cx='1044' cy='436' r='3.5'/><circle cx='1198' cy='446' r='3'/>
+    </g>
+  </svg>`
+)}`;
+
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
 */
@@ -75,6 +102,8 @@ export default function App(){
   var[listAlertFilter,setListAlertFilter]=useState("all");
   var[expandedConflictKeys,setExpandedConflictKeys]=useState({});
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
+  var[scrollY,setScrollY]=useState(0);
+  var[reducedMotion,setReducedMotion]=useState(false);
   var today=getOperationalTodayISO();
 
   function toErrorMessage(e) {
@@ -244,6 +273,31 @@ export default function App(){
       }
     })();
   }, [DEMO_SEED_ENABLED]);
+
+  useEffect(function () {
+    if (typeof window === "undefined") return;
+    var mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    var updatePreference = function(){ setReducedMotion(!!mq.matches); };
+    updatePreference();
+    if (mq.addEventListener) mq.addEventListener("change", updatePreference);
+    else mq.addListener(updatePreference);
+    var ticking = false;
+    var onScroll = function(){
+      if (reducedMotion) return;
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function(){
+        setScrollY(window.scrollY || window.pageYOffset || 0);
+        ticking = false;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return function(){
+      window.removeEventListener("scroll", onScroll);
+      if (mq.removeEventListener) mq.removeEventListener("change", updatePreference);
+      else mq.removeListener(updatePreference);
+    };
+  }, [reducedMotion]);
 
   useEffect(() => {
     const flightsChannel = supabase
@@ -993,17 +1047,24 @@ export default function App(){
     }
   },[fs,tomorrow]);
 
-  if(phase==="loading")return <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#94a3b8"}}><div style={{fontSize:32,marginBottom:12}}>✈️</div><div style={{fontSize:14,fontWeight:600}}>Cargando datos...</div></div></div>;
+  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{fontSize:34,marginBottom:12}}>✈</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"📅 Agenda"},{k:"list",l:"✈️ Vuelos"},{k:"recent",l:"🕘 Recientes"},{k:"plan",l:"🧭 Planificar"},{k:"gest",l:"⚙️ Gestión"}];
+  var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
+  var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
+  var glowOffset = reducedMotion ? 0 : Math.min(54, scrollY * 0.05);
 
   return(
-    <div style={{fontFamily:"-apple-system,sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",background:"#0c1220",backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 39px,#1a2d4a22 40px),repeating-linear-gradient(90deg,transparent,transparent 39px,#1a2d4a22 40px)",backgroundSize:"40px 40px"}}>
+    <div className="ops-app-shell">
+      <div className="ops-bg-base" />
+      <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
+      <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
+      <div className="ops-bg-noise" />
+      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:10}}>
 
-      <div style={{background:"linear-gradient(145deg,#0a1220,#14243c)",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 4px 25px rgba(0,0,0,.4)"}}>
+      <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <div style={{display:"flex",alignItems:"center"}}>
-            <div><div style={{fontSize:9,color:"#475569",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:800,color:"#fff"}}>Flight Ops</div></div>
+            <div><div style={{fontSize:9,color:"#7b8cab",fontWeight:700,letterSpacing:4}}>AIRPALACE</div><div style={{fontSize:22,fontWeight:700,color:"#e7eefb",letterSpacing:0.3}}>Flight Ops</div></div>
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8}}>
@@ -1013,28 +1074,28 @@ export default function App(){
                 key={card.id}
                 onMouseEnter={function(){setHoveredCommandCard(card.id);}}
                 onMouseLeave={function(){setHoveredCommandCard("");}}
-                style={{borderRadius:16,padding:"12px 12px 11px",border:"1px solid "+card.opStatus.tone+"66",background:"linear-gradient(160deg,rgba(8,16,32,.94),rgba(15,23,42,.78))",boxShadow:hoveredCommandCard===card.id?"0 14px 28px rgba(2,6,23,.5)":"0 8px 18px rgba(2,6,23,.36)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
+                style={{borderRadius:16,padding:"13px 13px 12px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 18px 30px rgba(2,6,23,.5)":"0 9px 20px rgba(2,6,23,.33)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease"}}
               >
                 <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:800,color:card.color,letterSpacing:0.3}}>{card.id} · {card.tag}</div>
-                    <div style={{fontSize:9,color:"#64748b",marginTop:1}}>{card.type}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:card.color,letterSpacing:0.4}}>{card.id} · {card.tag}</div>
+                    <div style={{fontSize:9,color:"#8a9ab5",marginTop:1}}>{card.type}</div>
                   </div>
                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:999,border:"1px solid "+card.opStatus.tone+"70",background:"#0b1220",color:card.opStatus.tone,fontWeight:700,letterSpacing:0.2}}>{card.opStatus.label}</span>
-                    {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Live Track "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 8px",borderRadius:999,textDecoration:"none",border:"1px solid #38bdf840",background:"#08243c",color:"#7dd3fc",fontWeight:700,display:"inline-flex",alignItems:"center",gap:4}}>◉ Live</a>}
+                    <span style={{fontSize:9,padding:"2px 8px",borderRadius:999,border:"1px solid "+card.opStatus.tone+"65",background:"rgba(11,18,32,.8)",color:card.opStatus.tone,fontWeight:700,letterSpacing:0.3}}>{card.opStatus.label}</span>
+                    {card.liveUrl&&<a href={card.liveUrl} target="_blank" rel="noopener noreferrer" aria-label={"Live Track "+card.id+" en FlightAware"} style={{fontSize:9,padding:"2px 8px",borderRadius:999,textDecoration:"none",border:"1px solid #7dd3fc4a",background:"rgba(8,36,60,.62)",color:"#9eddff",fontWeight:700,display:"inline-flex",alignItems:"center",gap:4}}>● Live Track</a>}
                   </div>
                 </div>
                 <div style={{marginTop:9,padding:"8px 9px",borderRadius:10,background:"rgba(15,23,42,.56)",border:"1px solid rgba(148,163,184,.2)"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0",display:"flex",alignItems:"center",gap:5}}>
-                    <span style={{fontSize:10,color:"#93c5fd"}}>⌖</span>
+                  <div style={{fontSize:11,fontWeight:600,color:"#e2e8f0",display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{fontSize:10,color:"#93c5fd"}}>◈</span>
                     {card.location}
                   </div>
-                  <div style={{fontSize:9,color:"#a5b4fc",marginTop:4,lineHeight:1.35}}>{card.routeStatus}</div>
+                  <div style={{fontSize:9,color:"#afbee6",marginTop:4,lineHeight:1.35}}>Último tramo: {card.routeStatus}</div>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:8,alignItems:"center"}}>
                   <div style={{fontSize:9,color:"#cbd5e1"}}>{card.metricsMonth.flights} vuelos mes</div>
-                  <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Ops</div>
+                  <div style={{fontSize:8,color:"#64748b",letterSpacing:0.4,textTransform:"uppercase"}}>Command</div>
                 </div>
                 <div style={{fontSize:9,color:"#bfdbfe",marginTop:4,lineHeight:1.35}}>{card.nextLine}</div>
               </div>
@@ -1043,8 +1104,8 @@ export default function App(){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:3,padding:"10px 14px 0"}}>
-        {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"9px 4px",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",background:vw===t.k?"#fff":"rgba(255,255,255,.07)",color:vw===t.k?"#0f172a":"#94a3b8"}}>{t.l}</button>;})}
+      <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:5,padding:"10px 14px 0"}}>
+        {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"10px 6px",border:"1px solid "+(vw===t.k?"rgba(148,163,184,.44)":"rgba(71,85,105,.28)"),borderRadius:11,fontSize:12,fontWeight:600,cursor:"pointer",background:vw===t.k?"linear-gradient(140deg,rgba(226,232,240,.95),rgba(203,213,225,.86))":"rgba(15,23,42,.52)",color:vw===t.k?"#0f172a":"#a9b5cc",transition:"all .2s ease"}}>{t.l}</button>;})}
       </div>
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
@@ -1099,13 +1160,13 @@ export default function App(){
 
       {vw==="list"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>📋 {listAlertFilter==="conflicts"?"Vuelos con conflictos":"Próximos vuelos"}</div>
-        {listAlertFilter==="conflicts"&&<div style={{background:"rgba(255,255,255,.95)",borderRadius:12,padding:10,marginBottom:10,border:"1px solid #e2e8f0"}}>
-          <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>Total conflictos: {conflictPairs.length}</div>
+        {listAlertFilter==="conflicts"&&<div style={{background:"linear-gradient(160deg,rgba(11,20,35,.92),rgba(15,27,43,.84))",borderRadius:12,padding:10,marginBottom:10,border:"1px solid rgba(148,163,184,.24)"}}>
+          <div style={{fontSize:13,fontWeight:800,color:"#f1f5f9"}}>Total conflictos: {conflictPairs.length}</div>
           <div style={{display:"flex",gap:8,marginTop:6}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#991b1b",background:"#fee2e2",padding:"3px 8px",borderRadius:999}}>Críticos: {conflictsBySeverity.critical||0}</span>
-            <span style={{fontSize:11,fontWeight:700,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:999}}>Warning: {conflictsBySeverity.warning||0}</span>
-            <span style={{fontSize:11,fontWeight:700,color:"#1d4ed8",background:"#dbeafe",padding:"3px 8px",borderRadius:999}}>Operacionales: {conflictBuckets.operational||0}</span>
-            <span style={{fontSize:11,fontWeight:700,color:"#7c3aed",background:"#ede9fe",padding:"3px 8px",borderRadius:999}}>Tiempo/Datos: {conflictBuckets.timeData||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#fca5a5",background:"rgba(127,29,29,.28)",padding:"3px 8px",borderRadius:999,border:"1px solid rgba(239,68,68,.35)"}}>Críticos: {conflictsBySeverity.critical||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#fcd34d",background:"rgba(113,63,18,.28)",padding:"3px 8px",borderRadius:999,border:"1px solid rgba(245,158,11,.35)"}}>Warning: {conflictsBySeverity.warning||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#93c5fd",background:"rgba(30,64,175,.25)",padding:"3px 8px",borderRadius:999,border:"1px solid rgba(59,130,246,.35)"}}>Operacionales: {conflictBuckets.operational||0}</span>
+            <span style={{fontSize:11,fontWeight:700,color:"#c4b5fd",background:"rgba(91,33,182,.24)",padding:"3px 8px",borderRadius:999,border:"1px solid rgba(139,92,246,.34)"}}>Tiempo/Datos: {conflictBuckets.timeData||0}</span>
           </div>
         </div>}
         {listAlertFilter==="conflicts" ? (
@@ -1113,31 +1174,31 @@ export default function App(){
             var key=String(c.flightId||"")+"::"+String(c.conflictingFlightId||"")+"::"+String(c.type||idx);
             var isOpen=!!expandedConflictKeys[key];
             var sevCritical=c.severity==="critical";
-            var cardBg=sevCritical?"#fef2f2":"#fffbeb";
-            var borderColor=sevCritical?"#ef4444":"#f59e0b";
-            var fg=sevCritical?"#991b1b":"#92400e";
+            var cardBg=sevCritical?"linear-gradient(155deg,rgba(69,10,10,.5),rgba(24,24,27,.78))":"linear-gradient(155deg,rgba(120,53,15,.45),rgba(24,24,27,.76))";
+            var borderColor=sevCritical?"#f87171":"#fbbf24";
+            var fg=sevCritical?"#fecaca":"#fde68a";
             var flightA=(c.flights&&c.flights[0])||null;
             var flightB=(c.flights&&c.flights[1])||null;
-            return <div key={key} style={{background:cardBg,border:"1px solid "+borderColor,borderLeft:"4px solid "+borderColor,borderRadius:12,padding:"10px 12px",marginBottom:8}}>
+            return <div key={key} style={{background:cardBg,border:"1px solid "+borderColor+"66",borderLeft:"3px solid "+borderColor,borderRadius:12,padding:"10px 12px",marginBottom:8,boxShadow:"0 10px 26px rgba(2,6,23,.24)"}}>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:10,fontWeight:800,color:fg,background:sevCritical?"#fecaca":"#fde68a",padding:"2px 8px",borderRadius:999}}>{sevCritical?"CRITICAL":"WARNING"}</span>
                 <span style={{fontSize:11,fontWeight:700,color:fg}}>{conflictTypeLabel(c.type)}</span>
                 <div style={{flex:1}}/>
                 <button onClick={function(){setExpandedConflictKeys(function(prev){var n=Object.assign({},prev);n[key]=!n[key];return n;});}} style={{border:"none",background:"transparent",fontSize:11,fontWeight:700,color:fg,cursor:"pointer"}}>{isOpen?"Ocultar":"Ver detalle"}</button>
               </div>
-              <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginTop:4}}>{c.message}</div>
-              <div style={{fontSize:11,color:"#334155",marginTop:5}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",marginTop:4}}>{c.message}</div>
+              <div style={{fontSize:11,color:"#cbd5e1",marginTop:5}}>
                 Vuelo A: {flightA?(String(flightA.id||"-")+" · "+String(flightA.ac||"-")+" · "+String(flightA.orig||"-")+" → "+String(flightA.dest||"-")):"-"}
                 {flightB&&<span> | Vuelo B: {String(flightB.id||"-")} · {String(flightB.ac||"-")} · {String(flightB.orig||"-")} → {String(flightB.dest||"-")}</span>}
               </div>
-              {isOpen&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px dashed "+borderColor}}>
-                <div style={{fontSize:11,color:"#334155"}}><strong>Tipo:</strong> {conflictTypeLabel(c.type)}</div>
-                <div style={{fontSize:11,color:"#334155"}}><strong>Recurso:</strong> {c.resourceType} · {c.resourceLabel||"-"}</div>
-                <div style={{fontSize:11,color:"#334155"}}><strong>Razón exacta:</strong> {c.details?.reason||"n/a"}</div>
-                <div style={{fontSize:11,color:"#334155",marginTop:3}}>Ventana A: {c.details?.startA||"-"} → {c.details?.endA||"-"}</div>
-                <div style={{fontSize:11,color:"#334155"}}>Ventana B: {c.details?.startB||"-"} → {c.details?.endB||"-"}</div>
-                <div style={{fontSize:11,color:"#334155"}}>Solape: {Number(c.details?.overlapMinutes||0)} min{c.details?.airportMismatch?" · mismatch de aeropuerto":""}</div>
-                <div style={{fontSize:11,color:"#334155",marginTop:3}}>
+              {isOpen&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px dashed "+borderColor+"AA"}}>
+                <div style={{fontSize:11,color:"#dbeafe"}}><strong>Tipo:</strong> {conflictTypeLabel(c.type)}</div>
+                <div style={{fontSize:11,color:"#dbeafe"}}><strong>Recurso:</strong> {c.resourceType} · {c.resourceLabel||"-"}</div>
+                <div style={{fontSize:11,color:"#dbeafe"}}><strong>Razón exacta:</strong> {c.details?.reason||"n/a"}</div>
+                <div style={{fontSize:11,color:"#dbeafe",marginTop:3}}>Ventana A: {c.details?.startA||"-"} → {c.details?.endA||"-"}</div>
+                <div style={{fontSize:11,color:"#dbeafe"}}>Ventana B: {c.details?.startB||"-"} → {c.details?.endB||"-"}</div>
+                <div style={{fontSize:11,color:"#dbeafe"}}>Solape: {Number(c.details?.overlapMinutes||0)} min{c.details?.airportMismatch?" · mismatch de aeropuerto":""}</div>
+                <div style={{fontSize:11,color:"#dbeafe",marginTop:3}}>
                   <strong>Registros involucrados:</strong> {c.flightId||"-"}{c.conflictingFlightId?(" , "+c.conflictingFlightId):""}
                 </div>
                 {(c.details?.rawTimestamps||c.details?.parsedUtc||c.details?.displayedLocal)&&<div style={{fontSize:10,color:"#475569",marginTop:4,background:"#fff",borderRadius:8,padding:"6px 8px"}}>
@@ -1239,7 +1300,7 @@ export default function App(){
 
       {vw==="gest"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{marginTop:8,marginBottom:10}}>
-          <button onClick={enablePushNotifications} style={{width:"100%",padding:"9px 11px",border:"1px solid #334155",borderRadius:10,background:"#0b1220",fontSize:11,fontWeight:700,color:"#e2e8f0",cursor:"pointer"}}>
+          <button onClick={enablePushNotifications} style={{width:"100%",padding:"11px 12px",border:"1px solid rgba(148,163,184,.42)",borderRadius:11,background:"linear-gradient(145deg,rgba(8,18,34,.9),rgba(15,23,42,.74))",fontSize:11,fontWeight:700,color:"#dce7fb",cursor:"pointer",letterSpacing:0.25}}>
             {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
           </button>
         </div>
@@ -1439,6 +1500,7 @@ export default function App(){
       </div>}
 
       <div style={{height:70}}/>
+      </div>
     </div>
   );
 }
