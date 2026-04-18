@@ -27,7 +27,9 @@ async function main() {
     }
 
     const { data: keywordRows } = await supabase.rpc("refresh_airport_keywords");
+    const { data: aliasRows } = await supabase.rpc("rebuild_airport_aliases");
     counters.notes.keyword_rows = keywordRows ?? null;
+    counters.notes.alias_rows = aliasRows ?? null;
     await finishImportRun(supabase, runId, counters);
     console.log("FAA overlay import finished", counters);
   } catch (error) {

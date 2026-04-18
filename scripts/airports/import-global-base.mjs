@@ -76,7 +76,8 @@ async function main() {
 
     const { data: longest } = await supabase.rpc("refresh_airport_longest_runway");
     const { data: keywords } = await supabase.rpc("refresh_airport_keywords");
-    counters.notes = { longest_runway_rows: longest ?? null, keyword_rows: keywords ?? null };
+    const { data: aliases } = await supabase.rpc("rebuild_airport_aliases");
+    counters.notes = { longest_runway_rows: longest ?? null, keyword_rows: keywords ?? null, aliases_rebuilt: aliases ?? null };
     await finishImportRun(supabase, runId, counters);
     console.log("Done", counters);
   } catch (error) {
