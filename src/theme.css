@@ -1,0 +1,106 @@
+:root{
+  color-scheme: dark;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+html,body,#root{
+  margin:0;
+  min-height:100%;
+  background:#050b16;
+}
+
+body{
+  color:#dbe4f3;
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;
+}
+
+input,select,textarea,button{
+  font-family:inherit;
+}
+
+input::placeholder,textarea::placeholder{
+  color:#8ea2c8;
+}
+
+input:focus,select:focus,textarea:focus{
+  outline:none;
+  border-color:#60a5fa !important;
+  box-shadow:0 0 0 2px rgba(59,130,246,.22);
+}
+
+select option{
+  background:#0f172a;
+  color:#e2e8f0;
+}
+
+.ops-app-shell{
+  position:relative;
+  overflow-x:hidden;
+  min-height:100vh;
+}
+
+.ops-bg-base,
+.ops-bg-map,
+.ops-bg-glow,
+.ops-bg-noise{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+}
+
+.ops-bg-base{
+  z-index:0;
+  background:
+    radial-gradient(120% 72% at 50% -5%, rgba(32,76,135,.24), transparent 60%),
+    radial-gradient(90% 60% at 95% 12%, rgba(62,91,135,.18), transparent 64%),
+    linear-gradient(180deg,#070d19 0%,#0a1220 38%,#0d1728 100%);
+}
+
+.ops-bg-map{
+  z-index:0;
+  opacity:.64;
+  background-position:center top;
+  background-repeat:no-repeat;
+  background-size:1500px auto;
+  filter:blur(.12px) saturate(1.14) contrast(1.08);
+  transition:transform .35s ease-out;
+  will-change:transform;
+}
+
+.ops-bg-glow{
+  z-index:0;
+  background:
+    radial-gradient(45% 36% at 52% 13%, rgba(97,173,235,.21), transparent 72%),
+    radial-gradient(35% 26% at 30% 28%, rgba(125,211,252,.11), transparent 76%);
+  transition:transform .35s ease-out;
+  will-change:transform;
+}
+
+.ops-bg-noise{
+  z-index:0;
+  opacity:.06;
+  background-image:radial-gradient(rgba(255,255,255,.55) .4px, transparent .5px);
+  background-size:3px 3px;
+}
+
+.ops-loading-shell{
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;
+  max-width:480px;
+  margin:0 auto;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(180deg,#070d19,#0a1424);
+}
+
+@media (prefers-reduced-motion: reduce){
+  .ops-bg-map,
+  .ops-bg-glow{
+    transition:none;
+    transform:none !important;
+  }
+}
