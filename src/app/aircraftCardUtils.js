@@ -1,5 +1,5 @@
 import { calcR, etaLocalUtc } from "./helpers.js";
-import { APR } from "./data.js";
+import { findAirportByAny } from "../lib/airports.js";
 import { formatUtcLabel, parseTimeToMinutes } from "../lib/timezones.js";
 
 export function resolveFlightAwareUrl(aircraft){
@@ -56,13 +56,10 @@ export function toIataLabel(value){
   var upper=raw.toUpperCase();
   if(/^[A-Z]{3}$/.test(upper))return upper;
   if(/^[A-Z]{4}$/.test(upper)){
-    var matchIcao=APR.find(function(ap){return String(ap.i4||"").toUpperCase()===upper;});
+    var matchIcao=findAirportByAny(upper);
     if(matchIcao?.i3)return String(matchIcao.i3).toUpperCase();
   }
-  var normalized=raw.toLowerCase();
-  var matchCity=APR.find(function(ap){
-    return String(ap.c||"").trim().toLowerCase()===normalized;
-  });
+  var matchCity=findAirportByAny(raw);
   if(matchCity?.i3)return String(matchCity.i3).toUpperCase();
   return raw;
 }

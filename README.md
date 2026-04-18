@@ -89,3 +89,61 @@ npm run dev
 ```
 
 Abre **http://localhost:5173**
+
+---
+
+## 🌍 Catálogo global de aeropuertos (`airports_master`)
+
+### Importación inicial
+
+1. Corre migraciones de Supabase (incluye tablas `airports_master`, `airport_runways`, `airport_frequencies`, índices y funciones RPC).
+2. Define variables de entorno para scripts:
+
+```bash
+export SUPABASE_URL="https://<project>.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
+```
+
+3. Importa base global (OurAirports):
+
+```bash
+npm run airports:import:global
+```
+
+4. Aplica overlay FAA para priorizar USA (NASR/5010 exportado a CSV):
+
+```bash
+export FAA_CSV_PATH="./data/faa/faa_airports.csv"
+npm run airports:import:faa
+```
+
+5. Recalcula derivados (runway más larga + keywords):
+
+```bash
+npm run airports:refresh:derived
+```
+
+6. Consulta reporte de importación:
+
+```bash
+npm run airports:report
+```
+
+### Refresco periódico (idempotente)
+
+- Re-ejecuta `airports:import:global` y luego `airports:import:faa`.
+- La deduplicación conserva el mejor registro por prioridad de fuente (FAA > OurAirports > OpenFlights fallback).
+- `upsert_airport_master` hace merge conservador y evita eliminar aeropuertos válidos por coincidencias ambiguas.
+
+### Validar que USA quedó priorizado por FAA
+
+Ejemplo SQL de validación:
+
+```sql
+select source, source_priority, icao_code, iata_code, name
+from public.airports_master
+where country_code = 'US' and icao_code in ('KASE','KEGE','KHOU','KLAS','KSFO')
+order by source_priority desc;
+```
+
+Debe devolver `source = 'faa_nasr'` y prioridad mayor en aeropuertos USA cuando existe overlay FAA.
