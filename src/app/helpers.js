@@ -66,6 +66,20 @@ export function etaText(f){
   return local+" ("+formatUtcLabel(arrUtc)+")";
 }
 
+export function etaLocalUtc(f){
+  if(!f||!f.date||!f.time||f.time==="STBY")return null;
+  var rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);var bm=rt?rt.bm:60;
+  var origTz=resolveAirportTimezone(f.orig,{fallbackTimeZone:"America/Merida"}).timeZone;
+  var destTz=resolveAirportTimezone(f.dest,{fallbackTimeZone:origTz||"America/Merida"}).timeZone;
+  var depDate=normalizeDateIso(f.date);var depMinutes=parseTimeToMinutes(f.time);
+  if(!depDate||!Number.isFinite(depMinutes)||!origTz||!destTz)return null;
+  var depUtc=localDateTimeToUtcMs(depDate,depMinutes,origTz);if(!Number.isFinite(depUtc))return null;
+  var arrUtc=depUtc+bm*60000;
+  var local=utcMsToLocalTime(arrUtc,destTz,"es-MX");
+  if(!local)return null;
+  return {local:local,utc:formatUtcLabel(arrUtc)};
+}
+
 export async function loadFlightsFromDb() {
   const { data, error } = await supabase.from("flights").select("*").order("date", { ascending: true }).order("time", { ascending: true });
   if (error) throw error;

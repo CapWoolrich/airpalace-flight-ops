@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { buildOpsPush } from "../src/lib/opsNotifications.js";
 import { sendOperationalEmail } from "../src/server/_emailSender.js";
-import { detectFlightConflicts } from "../src/ai/conflictUtils.js";
 import { getOperationalTodayISO, getOperationalTomorrowISO } from "../src/ai/operationalDate.js";
 import { getWebPushClient, sendPushBatch } from "../src/server/_push.js";
 
@@ -57,22 +56,6 @@ export default async function handler(req, res) {
     });
   });
 
-  const { data: operationalFlights, error: opErr } = await supabase
-    .from("flights")
-    .select("id, ac, date, time, st")
-    .gte("date", today)
-    .neq("st", "canc")
-    .neq("st", "comp");
-  if (opErr) throw opErr;
-  const conflicts = detectFlightConflicts(operationalFlights || [], {
-    activeStatuses: ["prog", "enc"],
-    dateRange: { start: today, end: "9999-12-31" },
-  });
-  const conflictAircraft = Array.from(new Set(conflicts.map((c) => c.ac))).filter(Boolean);
-  conflictAircraft.forEach((ac) => {
-    events.push({ key: `conflict_${today}_${ac}`, ac, payload: buildOpsPush("operational_conflict", { ac }) });
-  });
-
   const sent = [];
   for (const event of events) {
     const { data: existing } = await supabase
@@ -89,12 +72,6 @@ export default async function handler(req, res) {
       await sendOperationalEmail({
         eventType: "tomorrow_flight_reminder",
         payload: { event_label: "Vuelo de mañana", ...(event.flight || {}), ac: event.ac || "Aeronave", date: tomorrow },
-      });
-    }
-    if (event.key.startsWith("conflict_")) {
-      await sendOperationalEmail({
-        eventType: "operational_conflict",
-        payload: { event_label: "Conflicto operativo", ac: event.ac || "Aeronave", date: today },
       });
     }
     await supabase.from("push_notification_events").insert([{ event_key: event.key }]);

@@ -4,6 +4,7 @@ import { buildOperationalEmail } from "../src/server/_emailTemplate.js";
 import { makeCalUrl } from "../src/app/helpers.js";
 import { executeAgentAction } from "../src/ai/agentExecutor.js";
 import { supabase } from "../src/supabase.js";
+import { shouldEmitCancellationNotifications } from "../src/server/_opsSideEffects.js";
 
 test("buildOperationalEmail escapes interpolated html values", () => {
   const email = buildOperationalEmail("flight_created", {
@@ -64,4 +65,12 @@ test("executeAgentAction answers specific maintenance end-date query before gene
   } finally {
     supabase.from = originalFrom;
   }
+});
+
+test("status notifications only emit for cancelled flights", () => {
+  assert.equal(shouldEmitCancellationNotifications("create"), false);
+  assert.equal(shouldEmitCancellationNotifications("edit"), false);
+  assert.equal(shouldEmitCancellationNotifications("in_progress"), false);
+  assert.equal(shouldEmitCancellationNotifications("completed"), false);
+  assert.equal(shouldEmitCancellationNotifications("cancel"), true);
 });

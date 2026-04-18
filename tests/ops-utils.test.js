@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { detectFlightConflicts, uniqueFlightsFromConflicts } from "../src/ai/conflictUtils.js";
 import { getOperationalDateOffsetISO, parseOperationalDateFromText } from "../src/ai/operationalDate.js";
 import { normalizeRequesterValue } from "../src/ai/agentUtils.js";
+import { normalizeLegacyTime } from "../src/lib/timezones.js";
 
 test("normalizeRequesterValue maps Habib alias to Jabib C", () => {
   assert.equal(normalizeRequesterValue("Habib"), "Jabib C");
@@ -180,5 +181,42 @@ test("detectFlightConflicts uses route-duration estimate before 90-minute fallba
   ];
   const conflicts = detectFlightConflicts(flights, { occupancyMinutes: 90 });
   assert.equal(conflicts.filter((c) => c.type === "sequence_uncertain_due_to_low_confidence_duration").length, 0);
+  assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
+});
+
+test("normalizeLegacyTime supports multiple legacy hour formats", () => {
+  const pairs = [
+    ["7 am", "07:00"],
+    ["7am", "07:00"],
+    ["7 pm", "19:00"],
+    ["7pm", "19:00"],
+    ["07 AM", "07:00"],
+    ["07PM", "19:00"],
+    ["07:00:00", "07:00"],
+    ["7.00 am", "07:00"],
+    ["0700", "07:00"],
+    ["07", "07:00"],
+    ["  07PM  ", "19:00"],
+  ];
+  pairs.forEach(([input, expected]) => {
+    assert.equal(normalizeLegacyTime(input), expected);
+  });
+});
+
+test("detectFlightConflicts uses departure_utc even when local date/time is malformed", () => {
+  const flights = [
+    {
+      id: "UTC-PRIORITY-1",
+      ac: "N35EA",
+      st: "prog",
+      date: "30/55/2026",
+      time: "bogus",
+      departure_utc: "2026-05-30T14:00:00Z",
+      arrival_utc: "2026-05-30T16:00:00Z",
+      orig: "MID",
+      dest: "PUJ",
+    },
+  ];
+  const conflicts = detectFlightConflicts(flights, { minTurnaroundMinutes: 30 });
   assert.equal(conflicts.filter((c) => c.type === "timezone_mismatch").length, 0);
 });

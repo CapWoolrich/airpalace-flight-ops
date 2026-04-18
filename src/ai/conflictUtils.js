@@ -1,5 +1,13 @@
 import { calcR } from "../app/helpers.js";
-import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone, utcMsToLocalTime } from "../lib/timezones.js";
+import {
+  localDateTimeToUtcMs,
+  normalizeDateIso,
+  normalizeLegacyTime,
+  parseTimeToMinutes,
+  parseTimeToMinutesDetailed,
+  resolveAirportTimezone,
+  utcMsToLocalTime,
+} from "../lib/timezones.js";
 
 const DEFAULT_ACTIVE_STATUSES = new Set(["prog", "enc"]);
 const DEFAULT_OCCUPANCY_MINUTES = 90;
@@ -44,19 +52,26 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   var normalizedFlightDate = normalizeDateIso(flight?.date);
   var startRawUtc = findRawUtc(flight?.departure_utc || flight?.dep_utc || flight?.start_utc || flight?.departure_at);
   var endRawUtc = findRawUtc(flight?.arrival_utc || flight?.arr_utc || flight?.end_utc || flight?.arrival_at);
-  var depClockMinutes = parseTimeToMinutes(flight?.time);
+  var depClock = parseTimeToMinutesDetailed(flight?.time);
+  var depClockMinutes = depClock.minutes;
   var arrRawDisplay = flight?.arrival_time || flight?.arr_time || flight?.eta_time || flight?.eta || "";
-  var arrClockMinutes = parseTimeToMinutes(arrRawDisplay);
+  var arrClock = parseTimeToMinutesDetailed(arrRawDisplay);
+  var arrClockMinutes = arrClock.minutes;
   var originTz = airportTimezone(flight?.orig, "America/Merida");
   var destTz = airportTimezone(flight?.dest, originTz || "America/Merida") || originTz;
+  var originTzResolved = resolveAirportTimezone(flight?.orig, { fallbackTimeZone: null });
+  var destTzResolved = resolveAirportTimezone(flight?.dest, { fallbackTimeZone: originTz || null });
   var dayBase = toUtcDayBaseMinutes(flight?.date);
   var fallbackStartMs = null;
-  if (DATE_RE.test(String(normalizedFlightDate || "")) && Number.isFinite(depClockMinutes)) {
+  if (DATE_RE.test(String(normalizedFlightDate || "")) && Number.isFinite(depClockMinutes) && originTz) {
     fallbackStartMs = originTz
       ? localDateTimeToUtcMs(normalizedFlightDate, depClockMinutes, originTz)
       : (dayBase !== null ? (dayBase + depClockMinutes) * 60000 : null);
   }
   var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
+  if (startRawUtc && !Number.isFinite(startUtcMs)) {
+    return { startUtcMs: null, endUtcMs: null, issue: "timezone_mismatch", reason: "invalid_departure_utc", originTz, destTz, arrRawDisplay };
+  }
   var endUtcMs = endRawUtc ? new Date(endRawUtc).getTime() : null;
   var triggeredIssue = null;
   var estimatedBlockMinutes = null;
@@ -64,7 +79,14 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   if (routeEstimate && Number.isFinite(routeEstimate?.bm) && routeEstimate.bm > 0) estimatedBlockMinutes = routeEstimate.bm;
 
   if (!Number.isFinite(startUtcMs)) {
-    return { startUtcMs: null, endUtcMs: null, issue: "timezone_mismatch", reason: "departure_cannot_be_normalized", originTz, destTz, arrRawDisplay };
+    var reason = "departure_cannot_be_normalized";
+    if (!DATE_RE.test(String(normalizedFlightDate || ""))) reason = "invalid_date_format";
+    else if (depClock.reason === "standby_without_canonical_departure") reason = "standby_without_canonical_departure";
+    else if (depClock.reason === "missing_departure_time") reason = "missing_departure_time";
+    else if (!originTz || originTzResolved.source === "unknown") reason = "missing_timezone_mapping";
+    else if (depClock.reason === "unsupported_time_variant") reason = "unsupported_time_variant";
+    else if (depClock.reason && depClock.reason !== "ok") reason = depClock.reason;
+    return { startUtcMs: null, endUtcMs: null, issue: "timezone_mismatch", reason, originTz, destTz, arrRawDisplay };
   }
 
   if (!Number.isFinite(endUtcMs) && Number.isFinite(arrClockMinutes)) {
@@ -93,10 +115,12 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
     endUtcMs = startUtcMs + occupancyMinutes * 60 * 1000;
     triggeredIssue = triggeredIssue || "low_confidence_duration_fallback";
   }
-  if (String(arrRawDisplay || "").trim() && arrClockMinutes === null) triggeredIssue = triggeredIssue || "display_time_mismatch";
-  if (!DATE_RE.test(String(normalizedFlightDate || "")) || depClockMinutes === null) triggeredIssue = triggeredIssue || "timezone_mismatch";
+  if (String(arrRawDisplay || "").trim() && arrClockMinutes === null && arrClock.reason !== "standby_without_canonical_departure") triggeredIssue = triggeredIssue || "display_time_mismatch";
+  if (!DATE_RE.test(String(normalizedFlightDate || "")) || depClockMinutes === null || !originTz || originTzResolved.source === "unknown" || destTzResolved.source === "unknown") triggeredIssue = triggeredIssue || "timezone_mismatch";
   if (Number.isFinite(startUtcMs) && Number.isFinite(endUtcMs) && endUtcMs <= startUtcMs) triggeredIssue = "invalid_chronology";
 
+  var canonicalDepartureTime = normalizeLegacyTime(flight?.time);
+  var canonicalArrivalTime = normalizeLegacyTime(arrRawDisplay);
   return {
     startUtcMs,
     endUtcMs,
@@ -110,6 +134,8 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
       departureUtcStored: startRawUtc,
       arrivalStored: String(arrRawDisplay || "") || null,
       arrivalUtcStored: endRawUtc,
+      canonicalDepartureTime,
+      canonicalArrivalTime,
     },
     parsedUtc: {
       departure: new Date(startUtcMs).toISOString(),

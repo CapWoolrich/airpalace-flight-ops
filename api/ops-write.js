@@ -143,7 +143,7 @@ export default async function handler(req, res) {
         eventType: eventTypeMap[action],
         flight: mutation.flight,
         actorName,
-        sendWhatsapp: action !== "cancel_flight",
+        sendWhatsapp: action === "cancel_flight",
       });
       sideEffectWarnings.push(...(sideEffects.warnings || []));
       const messageMap = {
