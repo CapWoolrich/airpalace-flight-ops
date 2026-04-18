@@ -42,6 +42,18 @@ export function shouldEmitCancellationNotifications(eventType) {
   return String(eventType || "").toLowerCase() === "cancel";
 }
 
+export function mapFlightEmailEventType(eventType) {
+  const normalized = String(eventType || "").toLowerCase();
+  if (normalized === "create" || normalized === "duplicate") return "flight_created";
+  if (normalized === "edit") return "flight_updated";
+  if (normalized === "cancel") return "flight_cancelled";
+  return null;
+}
+
+export function shouldEmitFlightEmail(eventType) {
+  return !!mapFlightEmailEventType(eventType);
+}
+
 export async function emitFlightSideEffects({
   supabase,
   eventType,
@@ -66,11 +78,19 @@ export async function emitFlightSideEffects({
     warnings.push("push:unexpected_error");
   }
 
-  if (shouldEmitCancellationNotifications(eventType)) {
+  if (shouldEmitFlightEmail(eventType)) {
     try {
+      const emailEventType = mapFlightEmailEventType(eventType);
+      const emailLabelByType = {
+        flight_created: "Vuelo programado",
+        flight_updated: "Vuelo modificado",
+        flight_cancelled: "Vuelo cancelado",
+      };
       const emailResult = await sendOperationalEmail({
-        eventType: "flight_cancelled",
-        payload: buildFlightNotificationPayload(flight, actorName, { eventLabel: "Vuelo cancelado" }),
+        eventType: emailEventType,
+        payload: buildFlightNotificationPayload(flight, actorName, {
+          eventLabel: emailLabelByType[emailEventType] || "Actualización de vuelo",
+        }),
       });
       if (emailResult?.warning) warnings.push(`email:${emailResult.warning}`);
       if (emailResult?.ok === false && emailResult?.error) warnings.push(`email:${emailResult.error}`);

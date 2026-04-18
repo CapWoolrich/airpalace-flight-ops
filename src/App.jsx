@@ -190,6 +190,24 @@ export default function App(){
     return eta?.utc || "UTC --:--";
   }
 
+  function formatFlightListDateHeader(dateStr) {
+    if (!dateStr) return { day: "-", label: "Fecha no disponible" };
+    try {
+      var dt = new Date(`${dateStr}T12:00:00`);
+      if (isNaN(dt.getTime())) return { day: "-", label: dateStr };
+      var dayShort = dt.toLocaleDateString("es-MX", { weekday: "short" }).replace(".", "");
+      var dayNum = dt.toLocaleDateString("es-MX", { day: "2-digit" });
+      var monthLong = dt.toLocaleDateString("es-MX", { month: "long" });
+      var year = dt.toLocaleDateString("es-MX", { year: "numeric" });
+      return {
+        day: dayShort.charAt(0).toUpperCase() + dayShort.slice(1),
+        label: dayNum + " " + monthLong.charAt(0).toUpperCase() + monthLong.slice(1) + " " + year,
+      };
+    } catch {
+      return { day: "-", label: dateStr };
+    }
+  }
+
   useEffect(function () {
     supabase.auth.getUser().then(function (r) {
       setCurrentUser(r?.data?.user || null);
@@ -975,6 +993,18 @@ export default function App(){
     if(listAlertFilter==="pending")return fs.filter(function(f){return f.st==="prog";});
     return upcoming;
   },[listAlertFilter,conflictList,fs,today,upcoming]);
+  var listFlightGroups=useMemo(function(){
+    if(listAlertFilter==="conflicts")return [];
+    var grouped={};
+    listFlights.forEach(function(f){
+      var dateKey=String(f.date||"sin-fecha");
+      if(!grouped[dateKey])grouped[dateKey]=[];
+      grouped[dateKey].push(f);
+    });
+    return Object.keys(grouped).sort().map(function(dateKey){
+      return {date:dateKey,header:formatFlightListDateHeader(dateKey),flights:grouped[dateKey]};
+    });
+  },[listFlights,listAlertFilter]);
   function onAlertClick(lbl){
     if(lbl==="Cambios recientes"){setVw("recent");setRecentDate("today");return;}
     setVw("list");
@@ -1224,8 +1254,15 @@ export default function App(){
             </div>;
           })
         ) : (
-          listFlights.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div> : listFlights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
-            <div key={f.id} style={{marginBottom:4}}><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:8,marginBottom:2}}>{fdt(f.date)}</div>
+          listFlightGroups.length===0 ? <div style={{textAlign:"center",color:"#475569",padding:30}}>Sin vuelos</div> : listFlightGroups.map(function(group){
+            return <div key={group.date} style={{marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:9,marginTop:12,marginBottom:8,padding:"8px 10px",borderRadius:11,background:"linear-gradient(150deg,rgba(15,25,41,.9),rgba(23,37,58,.82))",border:"1px solid rgba(212,185,140,.32)",boxShadow:"0 10px 20px rgba(2,6,23,.22)"}}>
+                <span style={{fontSize:10,fontWeight:800,letterSpacing:0.7,color:"#f3dfbf",padding:"4px 8px",borderRadius:999,border:"1px solid rgba(212,185,140,.45)",background:"rgba(212,185,140,.08)"}}>{group.header.day}</span>
+                <div style={{fontSize:17,fontWeight:800,color:"#f8fafc",letterSpacing:0.25,lineHeight:1.15}}>{group.header.label}</div>
+                <div style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(212,185,140,.45),rgba(148,163,184,.12))"}} />
+              </div>
+              {group.flights.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog;return(
+            <div key={f.id} style={{marginBottom:6}}>
               <div style={Object.assign({},flightCardSurface,{borderLeft:"3px solid "+a.clr,padding:"8px 12px"})}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
                 <div style={{fontWeight:700,color:"#f1f5f9",fontSize:14}}>{f.orig+" → "+f.dest}</div>
@@ -1236,7 +1273,9 @@ export default function App(){
                 {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#bfdbfe",marginTop:2}}>ETA destino: {etaLocalUtc(f).local}</div>}
               </div>
             </div>
-          );})
+          );})}
+            </div>;
+          })
         )}
       </div>}
 
