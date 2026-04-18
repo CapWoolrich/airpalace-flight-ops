@@ -7,7 +7,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "airports:import:global": "node scripts/airports/import-global-base.mjs",
+    "airports:import:faa": "node scripts/airports/import-faa-overlay.mjs",
+    "airports:refresh:derived": "node scripts/airports/refresh-derived-fields.mjs",
+    "airports:report": "node scripts/airports/import-report.mjs",
+    "airports:import_global_airports": "node scripts/airports/import_global_airports.mjs",
+    "airports:import_faa_us_overlay": "node scripts/airports/import_faa_us_overlay.mjs",
+    "airports:import_country_validations": "node scripts/airports/import_country_validations.mjs",
+    "airports:rebuild_airport_aliases": "node scripts/airports/rebuild_airport_aliases.mjs",
+    "airports:rebuild_airport_search_index": "node scripts/airports/rebuild_airport_search_index.mjs"
   },
   "dependencies": {
     "openai": "^6.1.0",

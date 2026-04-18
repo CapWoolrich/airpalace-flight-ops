@@ -89,3 +89,50 @@ npm run dev
 ```
 
 Abre **http://localhost:5173**
+
+---
+
+## 🌍 Catálogo global de aeropuertos (`airports_master` + `airport_aliases`)
+
+### Import inicial (producción)
+
+```bash
+export SUPABASE_URL="https://<project>.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
+export FAA_CSV_PATH="./data/faa/faa_airports.csv"
+
+npm run airports:import_global_airports
+npm run airports:import_faa_us_overlay
+npm run airports:rebuild_airport_aliases
+npm run airports:rebuild_airport_search_index
+npm run airports:import_country_validations
+```
+
+### Refresh periódico (idempotente)
+
+```bash
+npm run airports:import_global_airports
+npm run airports:import_faa_us_overlay
+npm run airports:rebuild_airport_aliases
+npm run airports:rebuild_airport_search_index
+npm run airports:import_country_validations
+npm run airports:report
+```
+
+### Qué valida `import_country_validations`
+
+- Cobertura por país en **US, MX, CO, PE, JM, TC**.
+- Búsquedas obligatorias operacionales:
+  - Boston / BOS / KBOS
+  - Tampa / TPA / KTPA
+  - Aspen / ASE / KASE
+  - Vail/Eagle / EGE / KEGE
+  - Houston Hobby / HOU / KHOU
+  - San Francisco / SFO / KSFO
+  - Las Vegas / LAS / KLAS
+  - San Antonio / SAT / KSAT
+  - Ocho Rios / Boscobel / Ian Fleming / OCJ / MKBS
+  - Providenciales / Provo / PLS / MBPV
+  - Grand Turk / JAGS McCartney / GDT / MBGT
+
+Si falta cualquier hit obligatorio, el script termina con error.
