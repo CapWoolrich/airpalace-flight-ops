@@ -23,7 +23,7 @@ const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
         <stop offset='1' stop-color='rgba(91,141,179,.04)'/>
       </linearGradient>
     </defs>
-    <g opacity='.32' stroke='url(#line)' stroke-width='1.2'>
+    <g opacity='.44' stroke='url(#line)' stroke-width='1.25'>
       <path d='M80 280 C180 220 290 210 390 245 C475 275 560 275 655 240 C750 204 860 205 955 248 C1050 292 1165 300 1280 268' />
       <path d='M40 500 C145 455 230 450 320 474 C410 498 490 503 590 468 C700 430 810 430 910 472 C1010 514 1110 528 1310 495' />
       <path d='M120 670 C220 636 320 635 415 661 C510 686 625 690 730 655 C835 620 940 620 1040 650 C1140 680 1235 688 1350 660' />
@@ -33,7 +33,7 @@ const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
       <path d='M294 360 L352 404 L440 388 L508 426 L585 415' />
       <path d='M965 400 L1044 436 L1118 420 L1198 446' />
     </g>
-    <g opacity='.23' fill='rgba(154,208,255,.45)'>
+    <g opacity='.34' fill='rgba(154,208,255,.58)'>
       <circle cx='292' cy='190' r='4'/><circle cx='420' cy='222' r='3'/><circle cx='754' cy='205' r='4'/>
       <circle cx='900' cy='236' r='3'/><circle cx='670' cy='600' r='3.5'/><circle cx='508' cy='426' r='3'/>
       <circle cx='1044' cy='436' r='3.5'/><circle cx='1198' cy='446' r='3'/>
@@ -1111,8 +1111,11 @@ export default function App(){
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:5,padding:"10px 14px 0"}}>
-        {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"10px 6px",border:"1px solid "+(vw===t.k?"rgba(148,163,184,.44)":"rgba(71,85,105,.28)"),borderRadius:11,fontSize:12,fontWeight:600,cursor:"pointer",background:vw===t.k?"linear-gradient(140deg,rgba(226,232,240,.95),rgba(203,213,225,.86))":"rgba(15,23,42,.52)",color:vw===t.k?"#0f172a":"#a9b5cc",transition:"all .2s ease"}}>{t.l}</button>;})}
+        {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"10px 6px",border:"1px solid "+(vw===t.k?"rgba(212,185,140,.54)":"rgba(184,150,104,.38)"),borderRadius:11,fontSize:12,fontWeight:600,cursor:"pointer",background:vw===t.k?"linear-gradient(140deg,rgba(244,231,214,.95),rgba(214,191,160,.88))":"rgba(15,23,42,.52)",color:vw===t.k?"#0f172a":"#c7b08a",boxShadow:vw===t.k?"0 6px 16px rgba(212,185,140,.18)":"inset 0 0 0 1px rgba(212,185,140,.06)",transition:"all .2s ease"}}>{t.l}</button>;})}
       </div>
+      {vw==="cal"&&<div style={{display:"flex",justifyContent:"flex-end",padding:"8px 14px 0"}}>
+        <button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{background:"linear-gradient(145deg,rgba(15,23,42,.86),rgba(30,41,59,.88))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.44)",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 10px 18px rgba(2,6,23,.3)",letterSpacing:0.2}}>✦ Vuelo nuevo</button>
+      </div>}
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",gap:5,padding:"8px 14px"}}>
         {[{k:"all",l:"✈️ Ambas",c:"#22c55e"},{k:"N35EA",l:"🔵 N35EA",c:AC.N35EA.clr},{k:"N540JL",l:"🟠 N540JL",c:AC.N540JL.clr}].map(function(f){return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"5px 12px",border:"1.5px solid "+f.c,borderRadius:16,fontSize:11,fontWeight:700,cursor:"pointer",background:fa===f.k?f.c:"transparent",color:fa===f.k?"#fff":f.c}}>{f.l}</button>;})}
       </div>}
@@ -1134,7 +1137,6 @@ export default function App(){
         </div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <span style={{fontWeight:700,color:"#fff",fontSize:15}}>{fdt(sel)}</span>
-          <button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{background:"#fff",color:"#0f172a",border:"none",borderRadius:10,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:"pointer"}}>✈️ + Vuelo</button>
         </div>
         {dayF.length===0?<div style={{textAlign:"center",color:"#475569",padding:"24px 0"}}>✈️ Sin vuelos este día</div>
         :dayF.map(function(f){var a=AC[f.ac],s=STS[f.st]||STS.prog,px=(f.pm||0)+(f.pw||0)+(f.pc||0),rt=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);return(

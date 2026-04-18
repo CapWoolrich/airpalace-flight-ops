@@ -61,18 +61,20 @@ select option{
 
 .ops-bg-map{
   z-index:0;
-  opacity:.52;
+  opacity:.64;
   background-position:center top;
   background-repeat:no-repeat;
   background-size:1500px auto;
-  filter:blur(.2px) saturate(1.06);
+  filter:blur(.12px) saturate(1.14) contrast(1.08);
   transition:transform .35s ease-out;
   will-change:transform;
 }
 
 .ops-bg-glow{
   z-index:0;
-  background:radial-gradient(45% 36% at 52% 13%, rgba(97,173,235,.17), transparent 74%);
+  background:
+    radial-gradient(45% 36% at 52% 13%, rgba(97,173,235,.21), transparent 72%),
+    radial-gradient(35% 26% at 30% 28%, rgba(125,211,252,.11), transparent 76%);
   transition:transform .35s ease-out;
   will-change:transform;
 }
