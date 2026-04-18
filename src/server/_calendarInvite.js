@@ -1,3 +1,5 @@
+import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "../lib/timezones.js";
+
 function esc(v) {
   return String(v || "")
     .replace(/\\/g, "\\\\")
@@ -6,73 +8,10 @@ function esc(v) {
     .replace(/;/g, "\\;");
 }
 
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-
-function parseLocalParts(dateStr, timeStr) {
-  const date = String(dateStr || "").split("-");
-  const time = String(timeStr && timeStr !== "STBY" ? timeStr : "12:00").split(":");
-  const y = Number(date[0] || 1970);
-  const m = Number(date[1] || 1);
-  const d = Number(date[2] || 1);
-  const hh = Number(time[0] || 12);
-  const mm = Number(time[1] || 0);
-  return { y, m, d, hh, mm, ss: 0 };
-}
-
-function localIcsDateTime(parts) {
-  return `${parts.y}${pad(parts.m)}${pad(parts.d)}T${pad(parts.hh)}${pad(parts.mm)}${pad(parts.ss || 0)}`;
-}
-
-function addMinutesLocal(parts, mins) {
-  const dt = new Date(Date.UTC(parts.y, parts.m - 1, parts.d, parts.hh, parts.mm, parts.ss || 0));
-  dt.setUTCMinutes(dt.getUTCMinutes() + mins);
-  return {
-    y: dt.getUTCFullYear(),
-    m: dt.getUTCMonth() + 1,
-    d: dt.getUTCDate(),
-    hh: dt.getUTCHours(),
-    mm: dt.getUTCMinutes(),
-    ss: dt.getUTCSeconds(),
-  };
-}
-
-function timezoneForDeparture(orig) {
-  const key = String(orig || "").toLowerCase();
-  if (key.includes("merida") || key.includes("mérida") || key.includes("mmmd") || key.includes("mid")) return "America/Merida";
-  if (key.includes("cancun") || key.includes("cancún") || key.includes("mmun") || key.includes("cun")) return "America/Cancun";
-  if (key.includes("cozumel") || key.includes("mmcz") || key.includes("czm")) return "America/Cancun";
-  return "America/Merida";
-}
-
-function vtimezoneBlock(tzid) {
-  if (tzid === "America/Cancun") {
-    return [
-      "BEGIN:VTIMEZONE",
-      "TZID:America/Cancun",
-      "X-LIC-LOCATION:America/Cancun",
-      "BEGIN:STANDARD",
-      "TZOFFSETFROM:-0500",
-      "TZOFFSETTO:-0500",
-      "TZNAME:EST",
-      "DTSTART:19700101T000000",
-      "END:STANDARD",
-      "END:VTIMEZONE",
-    ];
-  }
-  return [
-    "BEGIN:VTIMEZONE",
-    "TZID:America/Merida",
-    "X-LIC-LOCATION:America/Merida",
-    "BEGIN:STANDARD",
-    "TZOFFSETFROM:-0600",
-    "TZOFFSETTO:-0600",
-    "TZNAME:CST",
-    "DTSTART:19700101T000000",
-    "END:STANDARD",
-    "END:VTIMEZONE",
-  ];
+function toUtcIcsStamp(value) {
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }
 
 function buildUid(payload = {}) {
@@ -85,13 +24,18 @@ export function buildFlightIcs(eventType, payload = {}) {
   if (!payload?.date) return null;
 
   const uid = buildUid(payload);
-  const dtStamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const tzid = timezoneForDeparture(payload.orig);
-  const startParts = parseLocalParts(payload.date, payload.time);
-  const dtStart = localIcsDateTime(startParts);
+  const dtStamp = toUtcIcsStamp(new Date()) || "19700101T000000Z";
+  const depDate = normalizeDateIso(payload.date);
+  const depMinutes = parseTimeToMinutes(payload.time || "12:00");
+  const depTz = resolveAirportTimezone(payload.orig, { fallbackTimeZone: "America/Merida" }).timeZone;
+  if (!depDate || !Number.isFinite(depMinutes) || !depTz) return null;
+
+  const startUtcMs = localDateTimeToUtcMs(depDate, depMinutes, depTz);
   const blockMins = Math.max(30, Number(payload.block_minutes || 60));
-  const endParts = addMinutesLocal(startParts, blockMins);
-  const dtEnd = localIcsDateTime(endParts);
+  const endUtcMs = startUtcMs + blockMins * 60 * 1000;
+  const dtStart = toUtcIcsStamp(startUtcMs);
+  const dtEnd = toUtcIcsStamp(endUtcMs);
+  if (!dtStart || !dtEnd) return null;
 
   const sequence = Number(payload.sequence || (eventType === "flight_created" ? 0 : 1));
   const method = eventType === "flight_cancelled" ? "CANCEL" : "REQUEST";
@@ -113,14 +57,13 @@ export function buildFlightIcs(eventType, payload = {}) {
     "VERSION:2.0",
     "CALSCALE:GREGORIAN",
     `METHOD:${method}`,
-    ...vtimezoneBlock(tzid),
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${dtStamp}`,
     `SEQUENCE:${sequence}`,
     `STATUS:${status}`,
-    `DTSTART;TZID=${tzid}:${dtStart}`,
-    `DTEND;TZID=${tzid}:${dtEnd}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
     `SUMMARY:${esc(summary)}`,
     `DESCRIPTION:${esc(description)}`,
     `LOCATION:${esc(`${payload.orig || "-"} -> ${payload.dest || "-"}`)}`,

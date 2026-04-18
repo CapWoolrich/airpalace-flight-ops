@@ -1,147 +1,20 @@
-import { apTz, calcR, findAP } from "../app/helpers.js";
+import { calcR } from "../app/helpers.js";
+import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone, utcMsToLocalTime } from "../lib/timezones.js";
 
 const DEFAULT_ACTIVE_STATUSES = new Set(["prog", "enc"]);
 const DEFAULT_OCCUPANCY_MINUTES = 90;
 const DEFAULT_MIN_TURNAROUND_MINUTES = 30;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function normalizeDateIso(value) {
-  var raw = String(value || "").trim();
-  if (!raw) return null;
-  if (DATE_RE.test(raw)) return raw;
-  var dashYmd = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
-  if (dashYmd) {
-    var y1 = Number(dashYmd[1]);
-    var m1 = Number(dashYmd[2]);
-    var d1 = Number(dashYmd[3]);
-    var isoYmd = `${y1}-${String(m1).padStart(2, "0")}-${String(d1).padStart(2, "0")}`;
-    return DATE_RE.test(isoYmd) ? isoYmd : null;
-  }
-  var dmy = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
-  if (!dmy) return null;
-  var d = Number(dmy[1]);
-  var m = Number(dmy[2]);
-  var y = Number(dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3]);
-  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
-  var dt = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
-  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-}
-
-function parseFlexibleTime(value) {
-  var raw = String(value || "").trim().replace(/\u00A0/g, " ");
-  if (!raw) return null;
-  var compact = raw.toLowerCase().replace(/\./g, "").replace(/\s+/g, "");
-  var compactMeridiem = compact.match(/^(\d{1,2}):(\d{2})([ap])m?$/);
-  if (compactMeridiem) {
-    var hhCompact12 = Number(compactMeridiem[1]);
-    var mmCompact12 = Number(compactMeridiem[2]);
-    if (!Number.isInteger(hhCompact12) || !Number.isInteger(mmCompact12) || hhCompact12 < 1 || hhCompact12 > 12 || mmCompact12 < 0 || mmCompact12 > 59) return null;
-    var compactIsPm = compactMeridiem[3] === "p";
-    var compactHh = hhCompact12 % 12;
-    if (compactIsPm) compactHh += 12;
-    return compactHh * 60 + mmCompact12;
-  }
-  var hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
-  if (hhmm) {
-    var hh24 = Number(hhmm[1]);
-    var mm24 = Number(hhmm[2]);
-    if (Number.isInteger(hh24) && Number.isInteger(mm24) && hh24 >= 0 && hh24 <= 23 && mm24 >= 0 && mm24 <= 59) return hh24 * 60 + mm24;
-  }
-  var twelve = raw.match(/(\d{1,2}):(\d{2})\s*([ap])\.?\s*m?\.?/i);
-  if (twelve) {
-    var hh12 = Number(twelve[1]);
-    var mm12 = Number(twelve[2]);
-    if (!Number.isInteger(hh12) || !Number.isInteger(mm12) || hh12 < 1 || hh12 > 12 || mm12 < 0 || mm12 > 59) return null;
-    var isPm = String(twelve[3] || "").toLowerCase() === "p";
-    var hh = hh12 % 12;
-    if (isPm) hh += 12;
-    return hh * 60 + mm12;
-  }
-  return null;
-}
-
-function parseTimeToMinutes(value) {
-  return parseFlexibleTime(value);
-}
-
 function toUtcDayBaseMinutes(dateIso) {
   const normalized = normalizeDateIso(dateIso);
   if (!DATE_RE.test(String(normalized || ""))) return null;
   const [y, m, d] = String(normalized).split("-").map(Number);
-  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
   return Math.floor(Date.UTC(y, m - 1, d, 0, 0, 0, 0) / 60000);
 }
 
-function parseIsoDateParts(dateIso) {
-  const normalized = normalizeDateIso(dateIso);
-  if (!DATE_RE.test(String(normalized || ""))) return null;
-  const [y, m, d] = String(normalized).split("-").map(Number);
-  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
-  return { y, m, d };
-}
-
-function timezoneOffsetMsAtUtc(utcMs, timeZone) {
-  if (!Number.isFinite(utcMs) || !timeZone) return null;
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      hourCycle: "h23",
-    });
-    const parts = formatter.formatToParts(new Date(utcMs));
-    const values = {};
-    parts.forEach((part) => {
-      if (part.type !== "literal") values[part.type] = part.value;
-    });
-    const y = Number(values.year);
-    const m = Number(values.month);
-    const d = Number(values.day);
-    const hh = Number(values.hour);
-    const mm = Number(values.minute);
-    const ss = Number(values.second);
-    if (![y, m, d, hh, mm, ss].every(Number.isFinite)) return null;
-    const asUtcMs = Date.UTC(y, m - 1, d, hh, mm, ss, 0);
-    return asUtcMs - utcMs;
-  } catch {
-    return null;
-  }
-}
-
-function zonedDateTimeToUtcMs(dateIso, minutesOfDay, timeZone) {
-  const parts = parseIsoDateParts(dateIso);
-  if (!parts || !Number.isFinite(minutesOfDay)) return null;
-  const hh = Math.floor(minutesOfDay / 60);
-  const mm = minutesOfDay % 60;
-  let utcGuess = Date.UTC(parts.y, parts.m - 1, parts.d, hh, mm, 0, 0);
-  const offset1 = timezoneOffsetMsAtUtc(utcGuess, timeZone);
-  if (!Number.isFinite(offset1)) return utcGuess;
-  utcGuess -= offset1;
-  const offset2 = timezoneOffsetMsAtUtc(utcGuess, timeZone);
-  if (Number.isFinite(offset2) && offset2 !== offset1) utcGuess += (offset1 - offset2);
-  return utcGuess;
-}
-
-function airportTimezone(code) {
-  var c = String(code || "").toUpperCase().trim();
-  if (["MMMD", "MID", "MERIDA", "MÉRIDA"].includes(c)) return "America/Merida";
-  if (["MMUN", "CUN", "CANCUN", "CANCÚN", "MMCZ", "CZM"].includes(c)) return "America/Cancun";
-  if (["MDPC", "PUJ", "PUNTA CANA", "PUNTA_CANA"].includes(c)) return "America/Santo_Domingo";
-  if (["MMTO", "TLC", "MMMX", "MEX"].includes(c)) return "America/Mexico_City";
-  if (["KOPF", "OPF", "KFLL", "FLL", "KMIA", "MIA", "KMCO", "MCO"].includes(c)) return "America/New_York";
-  var ap = findAP(c) || findAP(String(code || ""));
-  if (ap) return apTz(ap);
-  if (c.includes("PUNTA") && c.includes("CANA")) return "America/Santo_Domingo";
-  if (c.includes("MERIDA") || c.includes("MÉRIDA")) return "America/Merida";
-  if (c.includes("CANCUN") || c.includes("CANCÚN") || c.includes("COZUMEL")) return "America/Cancun";
-  if (c.includes("MIAMI")) return "America/New_York";
-  return null;
+function airportTimezone(code, fallbackTimeZone = null) {
+  return resolveAirportTimezone(code, { fallbackTimeZone }).timeZone;
 }
 
 function findRawUtc(value) {
@@ -163,19 +36,8 @@ function parseDisplayedArrivalDate(value) {
 
 function localIso(utcIso, timeZone) {
   if (!utcIso || !timeZone) return null;
-  try {
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(new Date(utcIso));
-  } catch {
-    return null;
-  }
+  const local = utcMsToLocalTime(new Date(utcIso).getTime(), timeZone, "en-GB");
+  return local || null;
 }
 
 function resolveFlightWindowUtc(flight, occupancyMinutes) {
@@ -185,13 +47,13 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
   var depClockMinutes = parseTimeToMinutes(flight?.time);
   var arrRawDisplay = flight?.arrival_time || flight?.arr_time || flight?.eta_time || flight?.eta || "";
   var arrClockMinutes = parseTimeToMinutes(arrRawDisplay);
-  var originTz = airportTimezone(flight?.orig);
-  var destTz = airportTimezone(flight?.dest) || originTz;
+  var originTz = airportTimezone(flight?.orig, "America/Merida");
+  var destTz = airportTimezone(flight?.dest, originTz || "America/Merida") || originTz;
   var dayBase = toUtcDayBaseMinutes(flight?.date);
   var fallbackStartMs = null;
   if (DATE_RE.test(String(normalizedFlightDate || "")) && Number.isFinite(depClockMinutes)) {
     fallbackStartMs = originTz
-      ? zonedDateTimeToUtcMs(normalizedFlightDate, depClockMinutes, originTz)
+      ? localDateTimeToUtcMs(normalizedFlightDate, depClockMinutes, originTz)
       : (dayBase !== null ? (dayBase + depClockMinutes) * 60000 : null);
   }
   var startUtcMs = startRawUtc ? new Date(startRawUtc).getTime() : fallbackStartMs;
@@ -216,7 +78,7 @@ function resolveFlightWindowUtc(flight, occupancyMinutes) {
     var arrBase = toUtcDayBaseMinutes(arrivalDateIso);
     var fallbackEndMs = DATE_RE.test(String(arrivalDateIso || ""))
       ? (destTz
-        ? zonedDateTimeToUtcMs(arrivalDateIso, arrClockMinutes, destTz)
+        ? localDateTimeToUtcMs(arrivalDateIso, arrClockMinutes, destTz)
         : (arrBase !== null ? (arrBase + arrClockMinutes) * 60000 : null))
       : null;
     endUtcMs = fallbackEndMs;

@@ -11,6 +11,7 @@ import { detectFlightConflicts, uniqueFlightsFromConflicts } from "./ai/conflict
 import { getOperationalDateOffsetISO, getOperationalTodayISO, getOperationalTomorrowISO } from "./ai/operationalDate";
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
+import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "./lib/timezones.js";
 
 /*
   AIRPALACE FLIGHT OPS v5.1 — REALTIME SHARED OPS
@@ -142,6 +143,15 @@ export default function App(){
     if (!ts) return "No disponible";
     var d=new Date(ts);if(isNaN(d.getTime()))return"No disponible";
     return d.toLocaleDateString("es-MX")+" "+d.toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+  }
+
+  function flightDepartureUtcLabel(f) {
+    var dateIso = normalizeDateIso(f?.date);
+    var depMins = parseTimeToMinutes(f?.time);
+    var tz = resolveAirportTimezone(f?.orig, { fallbackTimeZone: "America/Merida" }).timeZone;
+    if (!dateIso || !Number.isFinite(depMins) || !tz) return "UTC --:--";
+    var utcMs = localDateTimeToUtcMs(dateIso, depMins, tz);
+    return formatUtcLabel(utcMs);
   }
 
   useEffect(function () {
@@ -1025,6 +1035,7 @@ export default function App(){
             </div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:17}}>{f.orig} <span style={{color:"#94a3b8"}}>→</span> {f.dest}</div>
             <div style={{color:"#64748b",fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
+            <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
             {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:3}}>🕓 ETA local destino: {etaText(f)}</div>}
             {rt&&<div style={{marginTop:6,fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:8,padding:"6px 8px"}}>
               {"~"+rt.aw+" NM | "}<strong>{Math.floor(rt.bm/60)+"h"+("0"+(rt.bm%60)).slice(-2)+"m block"}</strong>
@@ -1098,6 +1109,7 @@ export default function App(){
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
                 <div style={{fontWeight:700,color:"#0f172a",fontSize:14}}>{f.orig+" → "+f.dest}</div>
                 <div style={{fontSize:12,color:"#64748b"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
+                <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
                 <div style={{fontSize:11,color:"#475569"}}>Última edición: {getCreatorLabel(f)}</div>
                 {etaText(f)&&<div style={{fontSize:11,color:"#334155",marginTop:2}}>ETA destino: {etaText(f)}</div>}
               </div>
@@ -1131,6 +1143,7 @@ export default function App(){
               <div style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>{f.date} · {ftm(f.time)}</div>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
             </div>
+            <div style={{fontSize:11,color:"#475569"}}>{flightDepartureUtcLabel(f)}</div>
             <div style={{fontWeight:800,color:"#0f172a",fontSize:15}}>{f.ac} · {f.orig} → {f.dest}</div>
             <div style={{fontSize:12,color:"#64748b"}}>Solicitó: {f.rb||"-"}</div>
             <div style={{fontSize:11,color:"#475569",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
