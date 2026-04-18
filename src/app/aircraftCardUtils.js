@@ -52,9 +52,19 @@ export function buildRouteStatusLine(input){
 export function buildNextFlightLine(flight){
   if(!flight)return "No programado";
   var localTime=String(flight?.time||"") && flight.time!=="STBY" ? String(flight.time) : "STBY";
-  var eta=etaLocalUtc(flight);
-  var etaUtc=eta?.utc || "UTC --:--";
-  if(flight?.orig && flight?.dest)return "Próximo: "+localTime+" "+flight.orig+" → "+flight.dest+" · "+etaUtc;
+  var compactDate="";
+  if(flight?.date){
+    var parsed=new Date(String(flight.date)+"T12:00:00");
+    if(!isNaN(parsed.getTime())){
+      compactDate=parsed.toLocaleDateString("es-MX",{weekday:"short",day:"2-digit",month:"short"})
+        .replace(/\./g,"")
+        .replace(",", "")
+        .replace(/\s+/g," ")
+        .trim();
+      compactDate=compactDate.charAt(0).toUpperCase()+compactDate.slice(1);
+    }
+  }
+  if(flight?.orig && flight?.dest)return "Próximo: "+(compactDate?compactDate+" · ":"")+localTime+" "+flight.orig+" → "+flight.dest;
   return "Próximo tramo pendiente de definir";
 }
 
