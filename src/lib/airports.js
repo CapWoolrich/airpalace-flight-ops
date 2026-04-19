@@ -131,17 +131,28 @@ export async function hydrateAirportCacheForValues(values) {
   for (var i = 0; i < uniqueRaw.length; i += 1) {
     var rawValue = uniqueRaw[i];
     var upperValue = keyParts(rawValue);
+
     if (isIataCode(upperValue) || isIcaoCode(upperValue)) continue;
     if (findAirportByAny(rawValue)) continue;
 
-    var options = await searchAirports(rawValue, 5);
-    var selected = pickBestSearchMatch(rawValue, options);
-    if (!selected) continue;
+    try {
+      var options = await searchAirports(rawValue, 5);
+      var selected = pickBestSearchMatch(rawValue, options);
+      if (!selected) continue;
 
-    var before = findAirportByAny(rawValue);
-    registerAirport(selected);
-    var after = findAirportByAny(rawValue);
-    if (!before && after) resolvedCount += 1;
+      var normalized = registerAirport(selected);
+      if (!normalized) continue;
+
+      var rawKey = keyParts(rawValue);
+      var current = airportCache.get(rawKey);
+
+      if (!current || current.source_priority <= normalized.source_priority) {
+        airportCache.set(rawKey, normalized);
+      }
+
+      var after = findAirportByAny(rawValue);
+      if (after) resolvedCount += 1;
+    } catch (_) {}
   }
 
   return resolvedCount;
