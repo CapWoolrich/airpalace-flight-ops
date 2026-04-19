@@ -105,7 +105,7 @@ export default function App(){
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
   var[scrollY,setScrollY]=useState(0);
   var[reducedMotion,setReducedMotion]=useState(false);
-  var[airportHydrationTick,setAirportHydrationTick]=useState(0);
+  const [airportHydrationTick, setAirportHydrationTick] = useState(0);
   var today=getOperationalTodayISO();
 
   function toErrorMessage(e) {

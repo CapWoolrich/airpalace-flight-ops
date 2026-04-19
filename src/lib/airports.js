@@ -139,12 +139,7 @@ export async function hydrateAirportCacheForValues(values) {
     if (!selected) continue;
 
     var before = findAirportByAny(rawValue);
-    registerAirport(
-      Object.assign({}, selected, {
-        c: selected.c || rawValue,
-        source_priority: Number(selected.source_priority || 10),
-      })
-    );
+    registerAirport(selected);
     var after = findAirportByAny(rawValue);
     if (!before && after) resolvedCount += 1;
   }
