@@ -65,6 +65,24 @@ export function toIataLabel(value){
   return raw;
 }
 
+function isUsefulMunicipality(value){
+  var city=String(value||"").trim();
+  if(!city)return false;
+  if(city.length<3)return false;
+  if(/^[A-Z]{3,4}$/.test(city.toUpperCase()))return false;
+  return true;
+}
+
+export function toAirportNameLabel(value){
+  var raw=String(value||"").trim();
+  if(!raw)return "--";
+  var match=findAirportByAny(raw)||findAirportByAny(raw.toUpperCase());
+  if(!match)return raw;
+  if(isUsefulMunicipality(match.municipality))return String(match.municipality).trim();
+  if(String(match.c||"").trim())return String(match.c).trim();
+  return raw;
+}
+
 export function getCompactAircraftTypeLabel(type){
   var raw=String(type||"").trim();
   if(!raw)return "";

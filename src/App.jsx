@@ -4,7 +4,7 @@ import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
 import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
-import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl, toIataLabel } from "./app/aircraftCardUtils";
+import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl, toAirportNameLabel } from "./app/aircraftCardUtils";
 import { analyzeOpsInstruction } from "./ai/agentClient";
 import { validateAgentResult } from "./ai/agentValidator";
 import { executeAgentAction } from "./ai/agentExecutor";
@@ -931,7 +931,7 @@ export default function App(){
       }
       if (execRes && execRes.message) {
         const rendered = execRes.data?.flights && execRes.data.flights.length
-          ? `${execRes.message}\n${execRes.data.flights.map(function(f){return `• ${f.date} ${f.time||"STBY"} · ${f.ac} · ${toIataLabel(f.orig)} → ${toIataLabel(f.dest)} (${f.rb||"-"})`;}).join("\n")}`
+          ? `${execRes.message}\n${execRes.data.flights.map(function(f){return `• ${f.date} ${f.time||"STBY"} · ${f.ac} · ${toAirportNameLabel(f.orig)} → ${toAirportNameLabel(f.dest)} (${f.rb||"-"})`;}).join("\n")}`
           : execRes.message;
         setAgentMessages(function(prev){return prev.concat([{role:"assistant",text:rendered,ts:new Date().toISOString()}]);});
         speakAssistant(execRes.message);
@@ -1200,7 +1200,7 @@ export default function App(){
               <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#cbd5e1"}}>✏️</button>
               <button onClick={function(){delFlight(f.id);}} style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#94a3b8"}}>×</button>
             </div>
-            <div style={{fontWeight:700,color:"#f1f5f9",fontSize:17}}>{toIataLabel(f.orig)} <span style={{color:"#94a3b8"}}>→</span> {toIataLabel(f.dest)}</div>
+            <div style={{fontWeight:700,color:"#f1f5f9",fontSize:17}}>{toAirportNameLabel(f.orig)} <span style={{color:"#94a3b8"}}>→</span> {toAirportNameLabel(f.dest)}</div>
             <div style={{color:subtleText,fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
             <div style={{fontSize:11,color:"#9fb0cd"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#bfdbfe",marginTop:3}}>🕓 ETA local destino: {etaLocalUtc(f).local}</div>}
@@ -1247,8 +1247,8 @@ export default function App(){
               </div>
               <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",marginTop:4}}>{c.message}</div>
               <div style={{fontSize:11,color:"#cbd5e1",marginTop:5}}>
-                Vuelo A: {flightA?(String(flightA.id||"-")+" · "+String(flightA.ac||"-")+" · "+toIataLabel(String(flightA.orig||"-"))+" → "+toIataLabel(String(flightA.dest||"-"))):"-"}
-                {flightB&&<span> | Vuelo B: {String(flightB.id||"-")} · {String(flightB.ac||"-")} · {toIataLabel(String(flightB.orig||"-"))} → {toIataLabel(String(flightB.dest||"-"))}</span>}
+                Vuelo A: {flightA?(String(flightA.id||"-")+" · "+String(flightA.ac||"-")+" · "+toAirportNameLabel(String(flightA.orig||"-"))+" → "+toAirportNameLabel(String(flightA.dest||"-"))):"-"}
+                {flightB&&<span> | Vuelo B: {String(flightB.id||"-")} · {String(flightB.ac||"-")} · {toAirportNameLabel(String(flightB.orig||"-"))} → {toAirportNameLabel(String(flightB.dest||"-"))}</span>}
               </div>
               {isOpen&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px dashed "+borderColor+"AA"}}>
                 <div style={{fontSize:11,color:"#dbeafe"}}><strong>Tipo:</strong> {conflictTypeLabel(c.type)}</div>
@@ -1282,7 +1282,7 @@ export default function App(){
             <div key={f.id} style={{marginBottom:6}}>
               <div style={Object.assign({},flightCardSurface,{borderLeft:"3px solid "+a.clr,padding:"8px 12px"})}>
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,fontWeight:800,color:a.clr}}>{f.ac}</span><span style={{fontSize:10,background:s.b,color:s.c,padding:"1px 6px",borderRadius:8,fontWeight:700}}>{s.i} {s.l}</span><div style={{flex:1}}/><a href={makeCalUrl(f)} target="_blank" rel="noreferrer" style={{fontSize:11,textDecoration:"none"}}>📅</a><button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"3px 7px",fontSize:11,cursor:"pointer"}}>✏️</button></div>
-                <div style={{fontWeight:700,color:"#f1f5f9",fontSize:14}}>{toIataLabel(f.orig)+" → "+toIataLabel(f.dest)}</div>
+                <div style={{fontWeight:700,color:"#f1f5f9",fontSize:14}}>{toAirportNameLabel(f.orig)+" → "+toAirportNameLabel(f.dest)}</div>
                 <div style={{fontSize:12,color:"#9fb0cd"}}>{ftm(f.time)+" · "+(f.rb||"-")}</div>
                 <div style={{fontSize:11,color:"#9fb0cd"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
                 {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#9fb0cd"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
@@ -1323,7 +1323,7 @@ export default function App(){
             </div>
             <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
-            <div style={{fontWeight:800,color:"#f8fafc",fontSize:15}}>{f.ac} · {toIataLabel(f.orig)} → {toIataLabel(f.dest)}</div>
+            <div style={{fontWeight:800,color:"#f8fafc",fontSize:15}}>{f.ac} · {toAirportNameLabel(f.orig)} → {toAirportNameLabel(f.dest)}</div>
             <div style={{fontSize:12,color:"#9fb0cd"}}>Solicitó: {f.rb||"-"}</div>
             <div style={{fontSize:11,color:"#9fb0cd",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
             <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
@@ -1347,7 +1347,7 @@ export default function App(){
           <button onClick={function(){if(rc.orig&&rc.dest)setRc(function(p){return Object.assign({},p,{res:calcR(rc.orig,rc.dest,rc.ac,{m:rc.pm,w:rc.pw,c:rc.pc},rc.bg)});});}} disabled={!rc.orig||!rc.dest} style={{width:"100%",padding:14,background:rc.orig&&rc.dest?"linear-gradient(140deg,#1d4ed8,#1e3a8a)":"rgba(71,85,105,.7)",color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:14}}>🧭 Calcular</button>
           {rc.res&&<div style={{marginTop:14}}>
             <div style={{background:"rgba(15,23,42,.7)",borderRadius:14,padding:14,border:"1px solid rgba(148,163,184,.24)"}}>
-              <div style={{fontWeight:800,fontSize:17}}>{toIataLabel(rc.orig)+" → "+toIataLabel(rc.dest)}</div>
+              <div style={{fontWeight:800,fontSize:17}}>{toAirportNameLabel(rc.orig)+" → "+toAirportNameLabel(rc.dest)}</div>
               <div style={{fontSize:12,color:"#64748b",lineHeight:1.9,marginTop:4}}>GC: {rc.res.gc} NM | Vía aérea: ~{rc.res.aw} NM<br/>En ruta: {Math.floor(rc.res.em/60)}h{("0"+(rc.res.em%60)).slice(-2)}m | <strong>Block: {Math.floor(rc.res.bm/60)}h{("0"+(rc.res.bm%60)).slice(-2)}m</strong></div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:10}}>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:rc.res.dir?"#dcfce7":"#fef3c7"}}><div style={{fontSize:22}}>{rc.res.dir?"✅":"⚠️"}</div><div style={{fontSize:10,fontWeight:700,color:rc.res.dir?"#166534":"#92400e"}}>{rc.res.dir?"DIRECTO":"ESCALA"}</div></div>
@@ -1477,7 +1477,7 @@ export default function App(){
             <div style={{width:34,height:34,borderRadius:"50%",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
             <div style={{fontWeight:900,fontSize:18,color:"#e2e8f0",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
           </div>
-          <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{toIataLabel(ntf.fl.orig)} <span style={{color:"#94a3b8"}}>→</span> {toIataLabel(ntf.fl.dest)}</div>
+          <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{toAirportNameLabel(ntf.fl.orig)} <span style={{color:"#94a3b8"}}>→</span> {toAirportNameLabel(ntf.fl.dest)}</div>
           <div style={{fontSize:12,color:"#9fb0cd",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
           <div style={{background:"rgba(15,23,42,.72)",borderRadius:14,padding:"12px 13px",border:"1px solid rgba(148,163,184,.25)",fontSize:13,color:"#cbd5e1",lineHeight:1.7}}>
             <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
