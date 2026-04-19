@@ -40,7 +40,7 @@ export function AirportInput({ value, onChange, label }) {
       />
       {open && <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, background: "linear-gradient(170deg,rgba(8,15,29,.98),rgba(16,25,43,.95))", border: "1px solid rgba(148,163,184,.3)", borderRadius: 10, maxHeight: 220, overflowY: "auto", boxShadow: "0 14px 28px rgba(2,6,23,.45)" }}>
         {fl.map(function (a) {
-          return <div key={(a.i4 || "") + a.c + (a.i3 || "")} onClick={function () { onChange(a.c); setQ(""); setOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid rgba(148,163,184,.15)", display: "flex", justifyContent: "space-between", color: "#dbeafe" }}><div><strong>{a.c}</strong> <span style={{ color: "#8ea2c8", fontSize: 11 }}>{a.municipality || a.co}</span></div><span style={{ fontSize: 11, color: "#9fb0cd", fontFamily: "monospace" }}>{[a.i3, a.i4].filter(Boolean).join("/")}</span></div>;
+          return <div key={(a.i4 || "") + a.c + (a.i3 || "")} onClick={function () { onChange(a.i3 || a.i4 || a.c); setQ(""); setOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid rgba(148,163,184,.15)", display: "flex", justifyContent: "space-between", color: "#dbeafe" }}><div><strong>{a.c}</strong> <span style={{ color: "#8ea2c8", fontSize: 11 }}>{a.municipality || a.co}</span></div><span style={{ fontSize: 11, color: "#9fb0cd", fontFamily: "monospace" }}>{[a.i3, a.i4].filter(Boolean).join("/")}</span></div>;
         })}
       </div>}
     </div>
