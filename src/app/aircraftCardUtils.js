@@ -58,9 +58,28 @@ export function toIataLabel(value){
   if(/^[A-Z]{4}$/.test(upper)){
     var matchIcao=findAirportByAny(upper);
     if(matchIcao?.i3)return String(matchIcao.i3).toUpperCase();
+    if(matchIcao?.i4)return String(matchIcao.i4).toUpperCase();
   }
-  var matchCity=findAirportByAny(raw);
+  var matchCity=findAirportByAny(raw)||findAirportByAny(upper);
   if(matchCity?.i3)return String(matchCity.i3).toUpperCase();
+  return raw;
+}
+
+function isUsefulMunicipality(value){
+  var city=String(value||"").trim();
+  if(!city)return false;
+  if(city.length<3)return false;
+  if(/^[A-Z]{3,4}$/.test(city.toUpperCase()))return false;
+  return true;
+}
+
+export function toAirportNameLabel(value){
+  var raw=String(value||"").trim();
+  if(!raw)return "--";
+  var match=findAirportByAny(raw)||findAirportByAny(raw.toUpperCase());
+  if(!match)return raw;
+  if(isUsefulMunicipality(match.municipality))return String(match.municipality).trim();
+  if(String(match.c||"").trim())return String(match.c).trim();
   return raw;
 }
 
