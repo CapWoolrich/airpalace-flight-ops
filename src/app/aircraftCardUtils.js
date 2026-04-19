@@ -58,8 +58,9 @@ export function toIataLabel(value){
   if(/^[A-Z]{4}$/.test(upper)){
     var matchIcao=findAirportByAny(upper);
     if(matchIcao?.i3)return String(matchIcao.i3).toUpperCase();
+    if(matchIcao?.i4)return String(matchIcao.i4).toUpperCase();
   }
-  var matchCity=findAirportByAny(raw);
+  var matchCity=findAirportByAny(raw)||findAirportByAny(upper);
   if(matchCity?.i3)return String(matchCity.i3).toUpperCase();
   return raw;
 }

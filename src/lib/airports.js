@@ -92,3 +92,62 @@ export async function searchAirports(query, limit = 12) {
 
   return rows.filter(Boolean).slice(0, limit);
 }
+
+function isIataCode(value) {
+  return /^[A-Z]{3}$/.test(keyParts(value));
+}
+
+function isIcaoCode(value) {
+  return /^[A-Z]{4}$/.test(keyParts(value));
+}
+
+function pickBestSearchMatch(value, results) {
+  var target = String(value || "").trim().toLowerCase();
+  if (!target) return null;
+  if (!Array.isArray(results) || !results.length) return null;
+
+  var exactName = results.find(function (airport) {
+    return String(airport?.c || "").trim().toLowerCase() === target;
+  });
+  if (exactName) return exactName;
+
+  var exactMunicipality = results.find(function (airport) {
+    return String(airport?.municipality || "").trim().toLowerCase() === target;
+  });
+  if (exactMunicipality) return exactMunicipality;
+
+  return results.find(function (airport) {
+    return Boolean(String(airport?.i3 || "").trim() || String(airport?.i4 || "").trim());
+  }) || null;
+}
+
+export async function hydrateAirportCacheForValues(values) {
+  var list = Array.isArray(values) ? values : [];
+  var uniqueRaw = Array.from(new Set(list.map(function (value) {
+    return String(value || "").trim();
+  }).filter(Boolean)));
+  var resolvedCount = 0;
+
+  for (var i = 0; i < uniqueRaw.length; i += 1) {
+    var rawValue = uniqueRaw[i];
+    var upperValue = keyParts(rawValue);
+    if (isIataCode(upperValue) || isIcaoCode(upperValue)) continue;
+    if (findAirportByAny(rawValue)) continue;
+
+    var options = await searchAirports(rawValue, 5);
+    var selected = pickBestSearchMatch(rawValue, options);
+    if (!selected) continue;
+
+    var before = findAirportByAny(rawValue);
+    registerAirport(
+      Object.assign({}, selected, {
+        c: selected.c || rawValue,
+        source_priority: Number(selected.source_priority || 10),
+      })
+    );
+    var after = findAirportByAny(rawValue);
+    if (!before && after) resolvedCount += 1;
+  }
+
+  return resolvedCount;
+}
