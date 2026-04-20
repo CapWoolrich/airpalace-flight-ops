@@ -85,7 +85,7 @@ export function calcR(orig,dest,id,px,bg){
     stops:primary?primary.stops:[],
     recommendations:recommendations,
     isInternational:!!stopPlan.isInternational,
-    meta:{adjustedMaxNm:adjustedMaxNm,baselineMaxNm:baselineMaxNm,payloadLbs:Math.round(payloadLbs)}
+    meta:{adjustedMaxNm:adjustedMaxNm,baselineMaxNm:baselineMaxNm,payloadLbs:Math.round(payloadLbs),routeDebug:stopPlan.debug||null}
   };
 }
 

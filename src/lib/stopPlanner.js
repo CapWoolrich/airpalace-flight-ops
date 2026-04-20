@@ -1,4 +1,5 @@
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+function markKnown(v){return typeof v==="boolean"?v:null;}
 
 const HANDLING_SCORES={basic:0.45,good:0.72,premium:1};
 const AIRPORT_META_OVERRIDES={
@@ -40,14 +41,14 @@ function normalizeMeta(stop){
   var quality=String(merged.handling_quality||"basic").toLowerCase();
   if(!HANDLING_SCORES[quality])quality="basic";
   return {
-    has_customs:Boolean(merged.has_customs),
-    has_handling:Boolean(merged.has_handling),
-    handling_quality:quality,
-    has_jet_a:Boolean(merged.has_jet_a),
-    is_exec_friendly:Boolean(merged.is_exec_friendly),
+    has_customs:markKnown(merged.has_customs),
+    has_handling:markKnown(merged.has_handling),
+    handling_quality:merged.handling_quality==null?"unknown":quality,
+    has_jet_a:markKnown(merged.has_jet_a),
+    is_exec_friendly:markKnown(merged.is_exec_friendly),
     runway_length_ft:Number(merged.runway_length_ft||0),
     country_code:String(merged.country_code||stop?.co||"").toUpperCase(),
-    is_international_entry:Boolean(merged.is_international_entry),
+    is_international_entry:markKnown(merged.is_international_entry),
     operational_notes:String(merged.operational_notes||"")
   };
 }
@@ -77,6 +78,7 @@ function scoreRoute(route,context){
 }
 
 function getTopNodes(nodes,limit){return nodes.sort(function(a,b){return b.seedScore-a.seedScore;}).slice(0,limit);}
+function inc(map,key){map[key]=(map[key]||0)+1;}
 
 export function computeLegFuel(legNm,aircraft,options){
   var routeFactor=Number(options?.routeFactor||1.18);
@@ -158,7 +160,7 @@ export function recommendStops(options){
   var adjustedMaxNm=Number(options?.adjustedMaxNm||0);
   var routeFactor=Number(options?.routeFactor||1.18);
   var blockMinutes=Number(options?.blockMinutes||20);
-  var minLegNm=Number(options?.minLegNm||220);
+  var minLegNm=Number(options?.minLegNm||180);
   var maxStops=Number(options?.maxStops||3);
   var fuelWeightPerGal=Number(options?.fuelWeightPerGal||6.7);
   var distanceNm=typeof options?.distanceNm==="function"?options.distanceNm:function(){return Number.POSITIVE_INFINITY;};
@@ -171,7 +173,15 @@ export function recommendStops(options){
   var airportByCode={};
   airports.forEach(function(ap){if(ap&&ap.c)airportByCode[ap.c]=ap;});
 
-  var maxDetourByStops={1:0.45,2:0.72,3:0.95};
+  var maxDetourByStops={1:0.62,2:0.95,3:1.25};
+  var debug={
+    generatedCandidates:0,
+    discardedByHardFilter:{},
+    routeDiscarded:{},
+    survivorsByDepth:{},
+    rankedCandidates:0,
+    metadataUnknownScored:0,
+  };
   var allCandidates=[];
   for(var stopCount=1;stopCount<=maxStops;stopCount++){
     var beam=[{stops:[],countries:[originCountry],nm:0,seedScore:1,currentCode:origin}];
@@ -183,12 +193,14 @@ export function recommendStops(options){
         if(!currentAp)continue;
         for(var i=0;i<airports.length;i++){
           var cand=airports[i];
+          debug.generatedCandidates++;
           if(!cand||!cand.c)continue;
-          if(cand.c===origin||cand.c===destination)continue;
-          if(state.stops.some(function(s){return s.c===cand.c;}))continue;
+          if(cand.c===origin||cand.c===destination){inc(debug.discardedByHardFilter,"origin_or_destination");continue;}
+          if(state.stops.some(function(s){return s.c===cand.c;})){inc(debug.discardedByHardFilter,"duplicate_stop");continue;}
 
           var legNm=distanceNm(currentAp,cand);
-          if(!Number.isFinite(legNm)||legNm<minLegNm)continue;
+          if(!Number.isFinite(legNm)){inc(debug.discardedByHardFilter,"distance_nan");continue;}
+          if(legNm<minLegNm){inc(debug.discardedByHardFilter,"leg_too_short");continue;}
           var legPreCheck=validateLeg(legNm,aircraft,{
             payloadLbs:Number(options?.payloadLbs||0),
             maxLegNm:adjustedMaxNm,
@@ -199,18 +211,24 @@ export function recommendStops(options){
             contingencyRate:Number(options?.contingencyRate||0.05),
             alternateFuelGal:Number(options?.alternateFuelGal||0),
           });
-          if(!legPreCheck.valid)continue;
+          if(!legPreCheck.valid){inc(debug.discardedByHardFilter,"leg_not_viable");continue;}
 
           var remainNm=distanceNm(cand,options.destinationAirport);
-          if(!Number.isFinite(remainNm))continue;
-          if(remainNm>(adjustedMaxNm*(stopCount-depth)))continue;
+          if(!Number.isFinite(remainNm)){inc(debug.discardedByHardFilter,"remaining_distance_nan");continue;}
+          if(remainNm>(adjustedMaxNm*(stopCount-depth+0.75))){inc(debug.discardedByHardFilter,"cannot_reach_destination_in_remaining_legs");continue;}
+
+          var currentRemainNm=distanceNm(currentAp,options.destinationAirport);
+          if(Number.isFinite(currentRemainNm)&&state.stops.length>0&&remainNm>(currentRemainNm*1.55)){inc(debug.discardedByHardFilter,"zig_zag_backtracking");continue;}
 
           var rawDetour=((state.nm+legNm+remainNm)/greatCircleNm)-1;
-          if(rawDetour>maxDetourByStops[stopCount])continue;
+          if(rawDetour>maxDetourByStops[stopCount]){inc(debug.discardedByHardFilter,"detour_excessive");continue;}
 
           var meta=normalizeMeta(cand);
-          var handlingBase=(meta.has_handling?0.45:0.15)+(HANDLING_SCORES[meta.handling_quality]*0.35)+(meta.is_exec_friendly?0.12:0)+(meta.has_jet_a?0.08:0)+(meta.runway_length_ft>=5200?0.1:0);
-          var customsBase=(meta.has_customs?0.6:0)+(meta.is_international_entry?0.25:0)+(meta.country_code&&meta.country_code!==originCountry?0.15:0);
+          if(meta.runway_length_ft>0&&meta.runway_length_ft<4200){inc(debug.discardedByHardFilter,"runway_clearly_insufficient");continue;}
+          var handlingQualityScore=meta.handling_quality==="unknown"?0.38:HANDLING_SCORES[meta.handling_quality];
+          if(meta.handling_quality==="unknown"||meta.has_customs===null||meta.has_handling===null)debug.metadataUnknownScored++;
+          var handlingBase=((meta.has_handling===true)?0.45:(meta.has_handling===false?0.22:0.3))+(handlingQualityScore*0.32)+((meta.is_exec_friendly===true)?0.12:(meta.is_exec_friendly===null?0.06:0))+((meta.has_jet_a===true)?0.08:(meta.has_jet_a===null?0.04:0))+((meta.runway_length_ft>=5200||meta.runway_length_ft===0)?0.08:0.04);
+          var customsBase=((meta.has_customs===true)?0.6:(meta.has_customs===null?0.28:0.12))+((meta.is_international_entry===true)?0.25:(meta.is_international_entry===null?0.1:0))+((meta.country_code&&meta.country_code!==originCountry)?0.15:0);
           var seed=(isInternational?(customsBase*0.55+handlingBase*0.45):(handlingBase*0.8+customsBase*0.2));
           next.push({
             stops:state.stops.concat([Object.assign({},cand,{meta:meta})]),
@@ -222,7 +240,8 @@ export function recommendStops(options){
         }
       }
       if(!next.length){beam=[];break;}
-      beam=getTopNodes(next,28);
+      beam=getTopNodes(next,64);
+      debug.survivorsByDepth[stopCount+"_"+depth]=beam.length;
     }
 
     if(!beam.length)continue;
@@ -243,7 +262,7 @@ export function recommendStops(options){
         contingencyRate:Number(options?.contingencyRate||0.05),
         alternateFuelGal:Number(options?.alternateFuelGal||0),
       });
-      if(!routeValidation.valid)continue;
+      if(!routeValidation.valid){inc(debug.routeDiscarded,routeValidation.reason||"unknown");continue;}
       var legs=routeValidation.legs;
       var totalNm=legs.reduce(function(sum,leg){return sum+leg.nm;},0);
       var tightCount=legs.filter(function(leg){return leg.nm>adjustedMaxNm*0.92;}).length;
@@ -254,12 +273,13 @@ export function recommendStops(options){
       var stopMeta=state.stops.map(function(s){return s.meta;});
       var firstBorderStop=state.stops.find(function(s){return s.meta.country_code&&s.meta.country_code!==originCountry;});
       var customsScore=isInternational
-        ?avg(stopMeta.map(function(m){return (m.has_customs?0.7:0)+(m.is_international_entry?0.3:0);}))+((firstBorderStop&&firstBorderStop.meta.has_customs)?0.12:0)
-        :avg(stopMeta.map(function(m){return (m.has_customs?0.55:0.4)+(m.is_international_entry?0.1:0);}));
+        ?avg(stopMeta.map(function(m){return ((m.has_customs===true)?0.7:(m.has_customs===null?0.4:0.1))+((m.is_international_entry===true)?0.3:(m.is_international_entry===null?0.12:0));}))+((firstBorderStop&&firstBorderStop.meta.has_customs===true)?0.12:0)
+        :avg(stopMeta.map(function(m){return ((m.has_customs===true)?0.55:(m.has_customs===null?0.42:0.3))+((m.is_international_entry===true)?0.1:(m.is_international_entry===null?0.04:0));}));
       customsScore=clamp(customsScore,0,1);
 
       var handlingScore=avg(stopMeta.map(function(m){
-        return (m.has_handling?0.4:0.15)+(HANDLING_SCORES[m.handling_quality]*0.32)+(m.is_exec_friendly?0.16:0)+(m.has_jet_a?0.07:0)+(m.runway_length_ft>=5200?0.05:0);
+        var q=m.handling_quality==="unknown"?0.38:HANDLING_SCORES[m.handling_quality];
+        return ((m.has_handling===true)?0.4:(m.has_handling===null?0.25:0.15))+(q*0.32)+((m.is_exec_friendly===true)?0.16:(m.is_exec_friendly===null?0.06:0))+((m.has_jet_a===true)?0.07:(m.has_jet_a===null?0.03:0))+((m.runway_length_ft>=5200||m.runway_length_ft===0)?0.05:0.02);
       }));
       handlingScore=clamp(handlingScore,0,1);
 
@@ -343,6 +363,6 @@ export function recommendStops(options){
   }
 
   if(picked.length===2&&picked[0].reason===picked[1].reason)picked[1].reason="Alternativa balanceada";
-
-  return{recommendations:picked,isInternational:isInternational};
+  debug.rankedCandidates=allCandidates.length;
+  return{recommendations:picked,isInternational:isInternational,debug:debug};
 }

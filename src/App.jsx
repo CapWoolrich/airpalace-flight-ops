@@ -1459,7 +1459,14 @@ export default function App(){
                   {(route.legs||[]).map(function(leg,lidx){return <div key={leg.fromI4+"-"+leg.toI4+"-"+lidx} style={{fontSize:11,marginTop:3}}>Tramo {lidx+1}: {leg.fromCode} → {leg.toCode} · {leg.nm} NM · block ~{leg.blockMinutes} min · fuel ~{leg.plannedFuelGal} gal · {leg.valid?"✅":"⚠️"}</div>;})}
                 </div>;})}
               </div>}
-              {!rc.res.dir&&(!Array.isArray(rc.res.recommendations)||rc.res.recommendations.length===0)&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>No se encontró una ruta realista con esta carga incluso considerando hasta tres escalas. Reduce payload o revisa esta misión manualmente.</div>}
+              {!rc.res.dir&&(!Array.isArray(rc.res.recommendations)||rc.res.recommendations.length===0)&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>
+                No se encontró una ruta realista con esta carga incluso considerando hasta tres escalas. Reduce payload o revisa esta misión manualmente.
+                {rc.res.meta?.routeDebug&&<div style={{marginTop:6,fontSize:10.5,color:"#7c2d12",lineHeight:1.35}}>
+                  <div><strong>Debug planner:</strong> candidatos {Number(rc.res.meta.routeDebug.generatedCandidates||0)} · rankeados {Number(rc.res.meta.routeDebug.rankedCandidates||0)}</div>
+                  <div>Hard filters: {JSON.stringify(rc.res.meta.routeDebug.discardedByHardFilter||{})}</div>
+                  <div>Descartes de ruta: {JSON.stringify(rc.res.meta.routeDebug.routeDiscarded||{})}</div>
+                </div>}
+              </div>}
             </div>
             {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
