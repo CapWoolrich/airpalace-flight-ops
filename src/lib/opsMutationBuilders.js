@@ -5,10 +5,34 @@ function clean(v) {
   return String(v).trim();
 }
 
-const FLIGHT_MUTATION_FIELDS = ["date", "ac", "orig", "dest", "time", "rb", "nt", "pm", "pw", "pc", "bg", "st"];
+const FLIGHT_MUTATION_FIELDS = [
+  "date",
+  "ac",
+  "orig",
+  "dest",
+  "time",
+  "rb",
+  "nt",
+  "pm",
+  "pw",
+  "pc",
+  "bg",
+  "st",
+  "estimated_fixed_cost_usd",
+  "estimated_variable_cost_usd",
+  "estimated_total_cost_usd",
+  "estimated_cost_note",
+  "estimated_cost_hours",
+  "estimated_cost_profile",
+];
 
 function normalizeFlightMutationValue(field, value) {
   if (["pm", "pw", "pc", "bg"].includes(field)) return Number(value || 0);
+  if (["estimated_fixed_cost_usd", "estimated_variable_cost_usd", "estimated_total_cost_usd", "estimated_cost_hours"].includes(field)) {
+    if (value === null || value === undefined || value === "") return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
   if (field === "time") {
     const raw = String(value || "").trim();
     if (!raw) return "";

@@ -13,6 +13,7 @@ import { getOperationalDateOffsetISO, getOperationalTodayISO, getOperationalTomo
 import { subscribeToPush } from "./lib/push";
 import { buildOpsPush } from "./lib/opsNotifications";
 import { hydrateAirportCacheForValues } from "./lib/airports.js";
+import { calcFlightHours, estimateFlightCost, formatUsd } from "./lib/flightCosting.js";
 import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "./lib/timezones.js";
 
 const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
@@ -67,6 +68,7 @@ export default function App(){
   var EF={ac:"N35EA",orig:"",dest:"",date:initialOpsDate,time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
   var[nf,setNf]=useState(EF);
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
+  var[costProfiles,setCostProfiles]=useState([]);
   var[agentInstruction,setAgentInstruction]=useState("");
   var[agentResult,setAgentResult]=useState(null);
   var[agentValidation,setAgentValidation]=useState(null);
@@ -101,6 +103,9 @@ export default function App(){
   var[anMonth,setAnMonth]=useState("all");
   var[anYear,setAnYear]=useState(String(initialOpsDateParts[0]||Number(getOperationalTodayISO().slice(0,4))));
   var[listAlertFilter,setListAlertFilter]=useState("all");
+  var[mgmtSearchText,setMgmtSearchText]=useState("");
+  var[mgmtDateFrom,setMgmtDateFrom]=useState("");
+  var[mgmtDateTo,setMgmtDateTo]=useState("");
   var[expandedConflictKeys,setExpandedConflictKeys]=useState({});
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
   var[scrollY,setScrollY]=useState(0);
@@ -192,6 +197,37 @@ export default function App(){
     return eta?.utc || "UTC --:--";
   }
 
+  function buildFlightEstimatedCost(flightLike) {
+    var route = calcR(
+      flightLike?.orig,
+      flightLike?.dest,
+      flightLike?.ac,
+      { m: flightLike?.pm, w: flightLike?.pw, c: flightLike?.pc },
+      flightLike?.bg
+    );
+    var fallbackHours = (route?.bm || 0) / 60;
+    var hours = calcFlightHours({
+      departureDate: flightLike?.date,
+      departureTime: flightLike?.time,
+      arrivalDate: flightLike?.date,
+      arrivalTime: flightLike?.time,
+      fallbackHours,
+    });
+    var estimate = estimateFlightCost({
+      aircraftCode: flightLike?.ac,
+      hours,
+      profileRows: costProfiles,
+    });
+    return {
+      estimated_fixed_cost_usd: estimate.fixedTotalUsd,
+      estimated_variable_cost_usd: estimate.variableTotalUsd,
+      estimated_total_cost_usd: estimate.totalUsd,
+      estimated_cost_note: estimate.note,
+      estimated_cost_hours: estimate.hours,
+      estimated_cost_profile: estimate.profileKey,
+    };
+  }
+
   function formatFlightListDateHeader(dateStr) {
     if (!dateStr) return { day: "-", label: "Fecha no disponible" };
     try {
@@ -216,6 +252,24 @@ export default function App(){
       if (r?.data?.user?.email) setActorName(r.data.user.email);
     });
   }, []);
+
+  useEffect(function(){
+    var alive=true;
+    (async function(){
+      try{
+        const { data, error } = await supabase
+          .from("aircraft_cost_profiles")
+          .select("*")
+          .eq("is_active", true)
+          .order("effective_date", { ascending: false });
+        if(error)throw error;
+        if(alive)setCostProfiles(data||[]);
+      }catch{
+        if(alive)setCostProfiles([]);
+      }
+    })();
+    return function(){alive=false;};
+  },[]);
 
   async function callOpsWrite(action, payload) {
     const { data: authData } = await supabase.auth.getSession();
@@ -395,21 +449,24 @@ export default function App(){
     );
 
     try {
+      const estimatedCostSnapshot = buildFlightEstimatedCost(flight);
       if (rt && !rt.dir && rt.stops.length > 0) {
         const stop = rt.stops[0];
         await callOpsWrite("create_flight", {
           ...flight,
           dest: stop.c,
+          ...buildFlightEstimatedCost(Object.assign({},flight,{dest:stop.c})),
           nt: noteWithActor((flight.nt ? flight.nt + " | " : "") + "Escala -> " + flight.dest, actorName),
         });
         await callOpsWrite("create_flight", {
           ...flight,
           orig: stop.c,
+          ...buildFlightEstimatedCost(Object.assign({},flight,{orig:stop.c,time:"STBY"})),
           time: "STBY",
           nt: noteWithActor("Tras recarga", actorName),
         });
       } else {
-        await callOpsWrite("create_flight", { ...flight, nt: noteWithActor(flight.nt, actorName) });
+        await callOpsWrite("create_flight", { ...flight, ...estimatedCostSnapshot, nt: noteWithActor(flight.nt, actorName) });
       }
 
       setNtf({ fl: flight, lbl: "PROGRAMADO" });
@@ -447,6 +504,7 @@ export default function App(){
         pc: flight.pc,
         bg: flight.bg,
         st: flight.st,
+        ...buildFlightEstimatedCost(flight),
       });
 
       setNtf({ fl: mutation.flight || flight, lbl: "MODIFICADO" });
@@ -1033,6 +1091,22 @@ export default function App(){
     if(lbl==="Mantenimiento"){setVw("gest");}
   }
   var formR=useMemo(function(){return nf.orig&&nf.dest?calcR(nf.orig,nf.dest,nf.ac,{m:nf.pm,w:nf.pw,c:nf.pc},nf.bg):null;},[nf.orig,nf.dest,nf.ac,nf.pm,nf.pw,nf.pc,nf.bg]);
+  var planEstimatedCost=useMemo(function(){
+    if(!rc.ac||!rc.orig||!rc.dest||!rc.res)return null;
+    var hours=Number((rc.res.bm||0)/60);
+    return estimateFlightCost({aircraftCode:rc.ac,hours:hours,profileRows:costProfiles});
+  },[rc.ac,rc.orig,rc.dest,rc.res,costProfiles]);
+  var nfEstimatedCost=useMemo(function(){
+    if(!nf.ac||!nf.orig||!nf.dest)return null;
+    var snapshot=buildFlightEstimatedCost(nf);
+    return {
+      fixedTotalUsd:Number(snapshot.estimated_fixed_cost_usd||0),
+      variableTotalUsd:Number(snapshot.estimated_variable_cost_usd||0),
+      totalUsd:Number(snapshot.estimated_total_cost_usd||0),
+      hours:Number(snapshot.estimated_cost_hours||0),
+      note:String(snapshot.estimated_cost_note||""),
+    };
+  },[nf,costProfiles]);
   var todayFs=fs.filter(function(f){return f.date===today&&f.st!=="canc";});
   var creators=useMemo(function(){
     var s=new Set();fs.forEach(function(f){s.add(getCreatorLabel(f));});return["all"].concat(Array.from(s).sort());
@@ -1053,6 +1127,18 @@ export default function App(){
       .sort(function(a,b){return String(b.created_at||"").localeCompare(String(a.created_at||""))||String(b.date||"").localeCompare(String(a.date||""));});
   },[fs,recentAc,recentCreator,recentDate,recentSource,today]);
   var activeForMgmt=useMemo(function(){return fs.filter(function(f){return f.st!=="canc"&&f.st!=="comp";});},[fs]);
+  var managementCostFlights=useMemo(function(){
+    return fs.filter(function(f){
+      var dateOk=true;
+      if(mgmtDateFrom&&String(f.date||"")<mgmtDateFrom)dateOk=false;
+      if(mgmtDateTo&&String(f.date||"")>mgmtDateTo)dateOk=false;
+      if(!dateOk)return false;
+      var needle=String(mgmtSearchText||"").trim().toLowerCase();
+      if(!needle)return true;
+      var hay=[f.rb,f.ac,f.orig,f.dest,(f.orig&&f.dest)?(f.orig+"-"+f.dest):"",f.nt].map(function(v){return String(v||"").toLowerCase();}).join(" ");
+      return hay.includes(needle);
+    }).sort(function(a,b){return String(b.date||"").localeCompare(String(a.date||""))||String(b.time||"").localeCompare(String(a.time||""));});
+  },[fs,mgmtDateFrom,mgmtDateTo,mgmtSearchText]);
   var flightsByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){o[f.ac]=(o[f.ac]||0)+1;});return o;},[activeForMgmt]);
   var hoursByAc=useMemo(function(){var o={N35EA:0,N540JL:0};activeForMgmt.forEach(function(f){var r=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);o[f.ac]+=(r?r.bm:60)/60;});return o;},[activeForMgmt]);
   var requestsByPerson=useMemo(function(){var o={};fs.filter(function(f){return f.st!=="canc";}).forEach(function(f){var k=f.rb||"No disponible";o[k]=(o[k]||0)+1;});return Object.entries(o).sort(function(a,b){return b[1]-a[1];});},[fs]);
@@ -1210,6 +1296,9 @@ export default function App(){
               {rt.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
               {rt.wt.ov&&<div style={{color:"#dc2626",fontWeight:700}}>❌ SOBREPESO +{Math.abs(rt.wt.mg).toLocaleString()} lbs</div>}
             </div>}
+            <div style={{marginTop:6,fontSize:11,color:"#9fb0cd"}}>
+              💵 Costo estimado: <strong style={{color:"#dbeafe"}}>{formatUsd(Number(f.estimated_total_cost_usd||0))}</strong>
+            </div>
             <div style={{display:"flex",gap:4,marginTop:8,flexWrap:"wrap"}}>
               {Object.entries(STS).filter(function(e){return e[0]!==f.st;}).map(function(e){return <button key={e[0]} onClick={function(){chgStatus(f.id,e[0]);}} style={{fontSize:10,padding:"4px 10px",borderRadius:8,border:"1px solid "+e[1].c,background:e[1].b,color:e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].i} {e[1].l}</button>;})}
             </div>
@@ -1355,6 +1444,24 @@ export default function App(){
               </div>
               {rc.res.stops.length>0&&<div style={{marginTop:10,background:"#fef3c7",borderRadius:10,padding:10,border:"1px solid #fcd34d",fontSize:12,color:"#92400e"}}><strong>🛬 Escala: {rc.res.stops[0].c} ({rc.res.stops[0].i4})</strong><br/>Tramo 1: ~{rc.res.stops[0].bm1}min | Tramo 2: ~{rc.res.stops[0].bm2}min</div>}
             </div>
+            {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div style={{padding:8,borderRadius:10,background:"rgba(15,23,42,.72)",border:"1px solid rgba(148,163,184,.2)"}}>
+                  <div style={{fontSize:10,color:"#93c5fd",fontWeight:700}}>Costo fijo total</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{formatUsd(planEstimatedCost.fixedTotalUsd)}</div>
+                </div>
+                <div style={{padding:8,borderRadius:10,background:"rgba(15,23,42,.72)",border:"1px solid rgba(148,163,184,.2)"}}>
+                  <div style={{fontSize:10,color:"#93c5fd",fontWeight:700}}>Costo variable total</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{formatUsd(planEstimatedCost.variableTotalUsd)}</div>
+                </div>
+              </div>
+              <div style={{marginTop:8,padding:9,borderRadius:10,background:"rgba(30,58,138,.34)",border:"1px solid rgba(125,211,252,.3)"}}>
+                <div style={{fontSize:10,color:"#bfdbfe",fontWeight:700}}>Total general</div>
+                <div style={{fontSize:17,fontWeight:900,color:"#f8fafc"}}>{formatUsd(planEstimatedCost.totalUsd)}</div>
+              </div>
+              <div style={{fontSize:10.5,color:"#cbd5e1",marginTop:8,lineHeight:1.4}}>Promedio estimado con base histórica. No representa costo contable final.</div>
+            </div>}
             <div style={{background:rc.res.wt.ov?"#fef2f2":"#f0fdf4",borderRadius:12,padding:14,marginTop:10,border:"1.5px solid "+(rc.res.wt.ov?"#fca5a5":"#86efac")}}>
               <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>⚖️ Peso de despegue</div>
               {[["BOW + Crew",AC[rc.ac].bow+AC[rc.ac].crew],["Combustible",rc.res.fl],["Pasajeros ("+rc.res.wt.tp+")",rc.res.wt.pW],["Equipaje",rc.bg]].map(function(r,i){return <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#475569",lineHeight:2}}><span>{r[0]}</span><strong>{r[1].toLocaleString()} lbs</strong></div>;})}
@@ -1397,6 +1504,31 @@ export default function App(){
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
               </div>
             </div>);})}
+        </div>
+        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+            <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+            <input type="date" value={mgmtDateFrom} onChange={function(e){setMgmtDateFrom(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <input type="date" value={mgmtDateTo} onChange={function(e){setMgmtDateTo(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+          </div>
+          {managementCostFlights.length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin resultados para los filtros seleccionados.</div>
+          :managementCostFlights.slice(0,25).map(function(f){
+            var estTotal=Number(f.estimated_total_cost_usd||0);
+            var estFixed=Number(f.estimated_fixed_cost_usd||0);
+            var estVariable=Number(f.estimated_variable_cost_usd||0);
+            return <div key={"mgmt-cost-"+f.id} style={{padding:"9px 10px",borderRadius:10,marginBottom:7,background:"rgba(15,23,42,.72)",border:"1px solid rgba(148,163,184,.22)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                <div style={{fontSize:11,fontWeight:800,color:"#e2e8f0"}}>{f.date} · {f.ac}</div>
+                <div style={{fontSize:11,fontWeight:800,color:"#93c5fd"}}>{formatUsd(estTotal)}</div>
+              </div>
+              <div style={{fontSize:11,color:"#cbd5e1"}}>{toAirportNameLabel(f.orig)} → {toAirportNameLabel(f.dest)} · {f.rb||"-"}</div>
+              <div style={{fontSize:10,color:"#9fb0cd",marginTop:2}}>Fijo: {formatUsd(estFixed)} · Variable: {formatUsd(estVariable)} · Hrs: {Number(f.estimated_cost_hours||0).toFixed(2)}</div>
+            </div>;
+          })}
         </div>
         <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
           <div style={{fontWeight:800,fontSize:16,marginBottom:10,color:"#eaf2ff"}}>📊 Analítica operativa</div>
@@ -1447,6 +1579,12 @@ export default function App(){
             {formR.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Auto-escala: {formR.stops[0].c}</div>}
             {formR.dir&&<div style={{color:"#166534",fontWeight:600}}>✅ Directo</div>}
             <div style={{color:formR.wt.ov?"#dc2626":"#166534",fontWeight:600}}>⚖️ {formR.wt.tw.toLocaleString()}/{formR.wt.mt.toLocaleString()} lbs {formR.wt.ov?"❌ SOBREPESO":""}</div>
+          </div>}
+          {nfEstimatedCost&&<div style={{marginBottom:8,background:"rgba(15,23,42,.74)",borderRadius:10,padding:10,fontSize:11,border:"1px solid rgba(148,163,184,.22)",color:"#dbeafe"}}>
+            <div style={{fontWeight:800,fontSize:12,color:"#e2e8f0",marginBottom:4}}>Costo promedio estimado</div>
+            <div>Fijo: <strong>{formatUsd(nfEstimatedCost.fixedTotalUsd)}</strong> · Variable: <strong>{formatUsd(nfEstimatedCost.variableTotalUsd)}</strong></div>
+            <div>Total: <strong>{formatUsd(nfEstimatedCost.totalUsd)}</strong> · Horas: {nfEstimatedCost.hours.toFixed(2)}</div>
+            <div style={{fontSize:10,color:"#9fb0cd",marginTop:3}}>Promedio estimado con base histórica. No representa costo contable final.</div>
           </div>}
           <div style={{background:"rgba(15,23,42,.66)",borderRadius:12,padding:12,border:"1px solid rgba(148,163,184,.24)"}}>
             <Stp label="Hombres" value={nf.pm} onChange={function(v){setNf(function(p){return Object.assign({},p,{pm:v});});}} icon="M" wl="190"/>
