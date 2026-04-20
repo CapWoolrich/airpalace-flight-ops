@@ -451,7 +451,7 @@ export default function App(){
 
     try {
       const estimatedCostSnapshot = buildFlightEstimatedCost(flight);
-      if (rt && !rt.dir && rt.stops.length > 0) {
+      if (rt && !rt.dir && rt.stops.length === 1) {
         const stop = rt.stops[0];
         await callOpsWrite("create_flight", {
           ...flight,
@@ -1294,7 +1294,8 @@ export default function App(){
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#9fb0cd"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
             {rt&&<div style={{marginTop:6,fontSize:12,color:"#cbd5e1",background:"rgba(15,23,42,.72)",borderRadius:8,padding:"6px 8px",border:"1px solid rgba(148,163,184,.2)"}}>
               {"~"+rt.aw+" NM | "}<strong>{Math.floor(rt.bm/60)+"h"+("0"+(rt.bm%60)).slice(-2)+"m block"}</strong>
-              {rt.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
+              {rt.stops.length===1&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Escala: {rt.stops[0].c} ({rt.stops[0].i4})</div>}
+              {rt.stops.length>1&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Ruta sugerida: {[f.orig].concat(rt.stops.map(function(s){return s.c;})).concat([f.dest]).join(" → ")}</div>}
               {rt.wt.ov&&<div style={{color:"#dc2626",fontWeight:700}}>❌ SOBREPESO +{Math.abs(rt.wt.mg).toLocaleString()} lbs</div>}
             </div>}
             <div style={{marginTop:6,fontSize:11,color:"#9fb0cd"}}>
@@ -1443,15 +1444,22 @@ export default function App(){
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:rc.res.dir?"#dcfce7":"#fef3c7"}}><div style={{fontSize:22}}>{rc.res.dir?"✅":"⚠️"}</div><div style={{fontSize:10,fontWeight:700,color:rc.res.dir?"#166534":"#92400e"}}>{rc.res.dir?"DIRECTO":"ESCALA"}</div></div>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:!rc.res.wt.ov?"#dcfce7":"#fee2e2"}}><div style={{fontSize:22}}>{!rc.res.wt.ov?"⚖️":"❌"}</div><div style={{fontSize:10,fontWeight:700,color:!rc.res.wt.ov?"#166534":"#991b1b"}}>{!rc.res.wt.ov?"PESO OK":"SOBREPESO"}</div></div>
               </div>
-              {rc.res.stops.length>0&&<div style={{marginTop:10,background:"#fef3c7",borderRadius:10,padding:10,border:"1px solid #fcd34d",fontSize:12,color:"#92400e"}}>
+              {Array.isArray(rc.res.recommendations)&&rc.res.recommendations.length>0&&<div style={{marginTop:10,background:"#fef3c7",borderRadius:10,padding:10,border:"1px solid #fcd34d",fontSize:12,color:"#92400e"}}>
                 <div style={{fontWeight:800,marginBottom:7}}>🛬 Escalas recomendadas</div>
-                {rc.res.stops.slice(0,2).map(function(stop,idx){return <div key={stop.i4+"-"+idx} style={{marginBottom:idx===1?0:7,paddingBottom:idx===1?0:7,borderBottom:idx===1?"none":"1px dashed #f59e0b"}}>
-                  <strong>Opción {idx+1}: {stop.c} ({stop.i4}{stop.i3?(" / "+stop.i3):""})</strong>
-                  <div>Tramo 1: ~{stop.bm1}min ({stop.leg1Nm} NM) · Tramo 2: ~{stop.bm2}min ({stop.leg2Nm} NM)</div>
-                  <div style={{fontSize:11,color:"#78350f"}}>{stop.recommendationReason||"Más eficiente"}</div>
+                {rc.res.recommendations.slice(0,2).map(function(route,idx){return <div key={route.routeCodes.join("-")+"-"+idx} style={{marginBottom:idx===1?0:10,paddingBottom:idx===1?0:10,borderBottom:idx===1?"none":"1px dashed #f59e0b"}}>
+                  <strong>Opción {idx+1} — {idx===0?"Recomendación principal":"Alternativa"}</strong>
+                  <div style={{marginTop:2,fontWeight:700,color:"#78350f"}}>{route.routeCodes.join(" → ")}</div>
+                  <div style={{fontSize:11,color:"#78350f",marginTop:2}}>Motivo: {route.reason||"Alternativa balanceada"}</div>
+                  <div style={{fontSize:11,marginTop:4}}>Total estimado: En ruta ~{Math.floor(route.enrouteMinutes/60)}h{("0"+(route.enrouteMinutes%60)).slice(-2)}m · Block ~{Math.floor(route.blockMinutes/60)}h{("0"+(route.blockMinutes%60)).slice(-2)}m</div>
+                  <div style={{fontSize:11,marginTop:4,color:"#78350f"}}>Desvío: {Math.round(Number(route.detourRatio||0)*100)}% · Score: {Math.round(Number(route.score||0)*100)}%</div>
+                  {(route.stops||[]).map(function(stop,sidx){return <div key={stop.i4+"-"+sidx} style={{marginTop:5,fontSize:11,background:"rgba(255,255,255,.5)",borderRadius:8,padding:"4px 6px"}}>
+                    <div><strong>Escala {sidx+1}:</strong> {stop.c} ({stop.i4}{stop.i3?(" / "+stop.i3):""})</div>
+                    <div>Aduana: {stop.customs?"Sí":"No"} · Handling: {stop.handlingQuality==="premium"?"premium":stop.handlingQuality==="good"?"bueno":"básico"}</div>
+                  </div>;})}
+                  {(route.legs||[]).map(function(leg,lidx){return <div key={leg.fromI4+"-"+leg.toI4+"-"+lidx} style={{fontSize:11,marginTop:3}}>Tramo {lidx+1}: {leg.fromCode} → {leg.toCode} · {leg.nm} NM · block ~{leg.blockMinutes} min</div>;})}
                 </div>;})}
               </div>}
-              {!rc.res.dir&&rc.res.stops.length===0&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>No se encontró una escala única realista con esta carga. Reduce payload o evalúa ruta con dos escalas.</div>}
+              {!rc.res.dir&&(!Array.isArray(rc.res.recommendations)||rc.res.recommendations.length===0)&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>No se encontró una ruta realista con esta carga incluso considerando hasta tres escalas. Reduce payload o revisa esta misión manualmente.</div>}
             </div>
             {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
@@ -1589,7 +1597,8 @@ export default function App(){
           <ApIn value={nf.dest} onChange={function(v){setNf(function(p){return Object.assign({},p,{dest:v});});}} label="Destino"/>
           {formR&&<div style={{marginBottom:8,background:formR.dir&&!formR.wt.ov?"rgba(20,83,45,.36)":"rgba(127,29,29,.35)",borderRadius:10,padding:10,fontSize:12,border:"1px solid "+(formR.dir&&!formR.wt.ov?"#86efac":"#fca5a5"),color:"#e2e8f0"}}>
             📏 ~{formR.aw} NM | ⏱ {Math.floor(formR.bm/60)}h{("0"+(formR.bm%60)).slice(-2)}m block
-            {formR.stops.length>0&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Auto-escala: {formR.stops[0].c}</div>}
+            {formR.stops.length===1&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Auto-escala: {formR.stops[0].c}</div>}
+            {formR.stops.length>1&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Recomendación: {formR.stops.map(function(s){return s.c;}).join(" → ")}</div>}
             {formR.dir&&<div style={{color:"#166534",fontWeight:600}}>✅ Directo</div>}
             <div style={{color:formR.wt.ov?"#dc2626":"#166534",fontWeight:600}}>⚖️ {formR.wt.tw.toLocaleString()}/{formR.wt.mt.toLocaleString()} lbs {formR.wt.ov?"❌ SOBREPESO":""}</div>
           </div>}

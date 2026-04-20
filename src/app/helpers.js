@@ -34,7 +34,7 @@ export function calcR(orig,dest,id,px,bg){
   var payloadRatio=Math.max(0,payloadLbs/usefulLoad);
   var rangeFactor=Math.max(0.72,1-(Math.max(0,payloadRatio-0.55)*0.35));
   var adjustedMaxNm=Math.round(baselineMaxNm*rangeFactor);
-  if(gc<=adjustedMaxNm&&ok)return{dir:true,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:[],meta:{adjustedMaxNm:adjustedMaxNm,baselineMaxNm:baselineMaxNm,payloadLbs:Math.round(payloadLbs)}};
+  if(gc<=adjustedMaxNm&&ok)return{dir:true,gc:Math.round(gc),aw:aw,em:em,bm:bm,fl:Math.round(fl),wt:wt,stops:[],recommendations:[],isInternational:oa.co!==da.co,meta:{adjustedMaxNm:adjustedMaxNm,baselineMaxNm:baselineMaxNm,payloadLbs:Math.round(payloadLbs)}};
 
   function isLegFuelViable(legNm){
     var legTrip=legNm*RF/a.kts*a.gph;
@@ -42,15 +42,19 @@ export function calcR(orig,dest,id,px,bg){
     return legFuel<=a.maxGal;
   }
 
-  var stops=recommendStops({
+  var stopPlan=recommendStops({
     origin:orig,
     destination:dest,
+    originAirport:oa,
+    destinationAirport:da,
+    originCountry:oa.co,
+    destinationCountry:da.co,
     aircraft:a,
     candidateAirports:FSTOPS,
     greatCircleNm:gc,
     adjustedMaxNm:adjustedMaxNm,
-    minLeg1Nm:250,
-    maxDetourRatio:0.45,
+    minLegNm:220,
+    maxStops:3,
     routeFactor:RF,
     blockMinutes:BLK,
     distanceNm:function(from,to){
@@ -61,6 +65,8 @@ export function calcR(orig,dest,id,px,bg){
     },
     isFuelViableForLeg:isLegFuelViable,
   });
+  var recommendations=stopPlan.recommendations||[];
+  var primary=recommendations[0]||null;
 
   return{
     dir:false,
@@ -70,7 +76,9 @@ export function calcR(orig,dest,id,px,bg){
     bm:bm,
     fl:Math.round(fl),
     wt:wt,
-    stops:stops,
+    stops:primary?primary.stops:[],
+    recommendations:recommendations,
+    isInternational:!!stopPlan.isInternational,
     meta:{adjustedMaxNm:adjustedMaxNm,baselineMaxNm:baselineMaxNm,payloadLbs:Math.round(payloadLbs)}
   };
 }
