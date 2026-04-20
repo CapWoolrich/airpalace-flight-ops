@@ -106,6 +106,7 @@ export default function App(){
   var[mgmtSearchText,setMgmtSearchText]=useState("");
   var[mgmtDateFrom,setMgmtDateFrom]=useState("");
   var[mgmtDateTo,setMgmtDateTo]=useState("");
+  var[hasSearchedCosts,setHasSearchedCosts]=useState(false);
   var[expandedConflictKeys,setExpandedConflictKeys]=useState({});
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
   var[scrollY,setScrollY]=useState(0);
@@ -1407,12 +1408,12 @@ export default function App(){
         :recentFlights.slice(0,60).map(function(f){var s=STS[f.st]||STS.prog;return(
           <div key={f.id} style={Object.assign({},flightCardSurface,{padding:12,marginBottom:8,borderLeft:"3px solid "+(AC[f.ac]?.clr||"#64748b")})}>
             <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
-            <div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{f.date} · {ftm(f.time)}</div>
+              <div style={{fontWeight:800,color:"#f8fafc",fontSize:16,lineHeight:1.25}}>{f.ac} · {toAirportNameLabel(f.orig)} → {toAirportNameLabel(f.dest)}</div>
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
             </div>
+            <div style={{fontSize:13,color:"#cbd5e1",fontWeight:600,marginTop:2}}>{f.date} · {ftm(f.time)}</div>
             <div style={{fontSize:11,color:"#475569"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#475569"}}>UTC llegada: {flightArrivalUtcLabel(f)}</div>}
-            <div style={{fontWeight:800,color:"#f8fafc",fontSize:15}}>{f.ac} · {toAirportNameLabel(f.orig)} → {toAirportNameLabel(f.dest)}</div>
             <div style={{fontSize:12,color:"#9fb0cd"}}>Solicitó: {f.rb||"-"}</div>
             <div style={{fontSize:11,color:"#9fb0cd",marginTop:4}}>{f.updated_at?"Actualizado":"Creado"}: {formatCreatedAt(f.updated_at||f.created_at)} · Tipo: {(f.creation_source||"manual").toUpperCase()}</div>
             <button onClick={function(){setNf(Object.assign({},f));setEditId(f.id);setSf(true);}} style={{marginTop:7,fontSize:11,padding:"6px 10px",borderRadius:8,border:"1px solid #1d4ed8",background:"#dbeafe",color:"#1d4ed8",fontWeight:700,cursor:"pointer"}}>✏️ Editar</button>
@@ -1442,7 +1443,15 @@ export default function App(){
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:rc.res.dir?"#dcfce7":"#fef3c7"}}><div style={{fontSize:22}}>{rc.res.dir?"✅":"⚠️"}</div><div style={{fontSize:10,fontWeight:700,color:rc.res.dir?"#166534":"#92400e"}}>{rc.res.dir?"DIRECTO":"ESCALA"}</div></div>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:!rc.res.wt.ov?"#dcfce7":"#fee2e2"}}><div style={{fontSize:22}}>{!rc.res.wt.ov?"⚖️":"❌"}</div><div style={{fontSize:10,fontWeight:700,color:!rc.res.wt.ov?"#166534":"#991b1b"}}>{!rc.res.wt.ov?"PESO OK":"SOBREPESO"}</div></div>
               </div>
-              {rc.res.stops.length>0&&<div style={{marginTop:10,background:"#fef3c7",borderRadius:10,padding:10,border:"1px solid #fcd34d",fontSize:12,color:"#92400e"}}><strong>🛬 Escala: {rc.res.stops[0].c} ({rc.res.stops[0].i4})</strong><br/>Tramo 1: ~{rc.res.stops[0].bm1}min | Tramo 2: ~{rc.res.stops[0].bm2}min</div>}
+              {rc.res.stops.length>0&&<div style={{marginTop:10,background:"#fef3c7",borderRadius:10,padding:10,border:"1px solid #fcd34d",fontSize:12,color:"#92400e"}}>
+                <div style={{fontWeight:800,marginBottom:7}}>🛬 Escalas recomendadas</div>
+                {rc.res.stops.slice(0,2).map(function(stop,idx){return <div key={stop.i4+"-"+idx} style={{marginBottom:idx===1?0:7,paddingBottom:idx===1?0:7,borderBottom:idx===1?"none":"1px dashed #f59e0b"}}>
+                  <strong>Opción {idx+1}: {stop.c} ({stop.i4}{stop.i3?(" / "+stop.i3):""})</strong>
+                  <div>Tramo 1: ~{stop.bm1}min ({stop.leg1Nm} NM) · Tramo 2: ~{stop.bm2}min ({stop.leg2Nm} NM)</div>
+                  <div style={{fontSize:11,color:"#78350f"}}>{stop.recommendationReason||"Más eficiente"}</div>
+                </div>;})}
+              </div>}
+              {!rc.res.dir&&rc.res.stops.length===0&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>No se encontró una escala única realista con esta carga. Reduce payload o evalúa ruta con dos escalas.</div>}
             </div>
             {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
@@ -1508,14 +1517,18 @@ export default function App(){
         <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
-            <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
+            <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);setHasSearchedCosts(true);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              <button onClick={function(){setHasSearchedCosts(true);}} style={{border:"1px solid rgba(59,130,246,.5)",borderRadius:10,background:"rgba(30,58,138,.65)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Buscar</button>
+              <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");setHasSearchedCosts(false);}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
-            <input type="date" value={mgmtDateFrom} onChange={function(e){setMgmtDateFrom(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <input type="date" value={mgmtDateTo} onChange={function(e){setMgmtDateTo(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <input type="date" value={mgmtDateFrom} onChange={function(e){setMgmtDateFrom(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <input type="date" value={mgmtDateTo} onChange={function(e){setMgmtDateTo(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
           </div>
-          {managementCostFlights.length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin resultados para los filtros seleccionados.</div>
+          {!hasSearchedCosts?<div style={{fontSize:11,color:"#9fb0cd"}}>Usa nombre, solicitante, matrícula o rango de fechas para buscar vuelos.</div>
+          :managementCostFlights.length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>No se encontraron vuelos con esos filtros.</div>
           :managementCostFlights.slice(0,25).map(function(f){
             var estTotal=Number(f.estimated_total_cost_usd||0);
             var estFixed=Number(f.estimated_fixed_cost_usd||0);
