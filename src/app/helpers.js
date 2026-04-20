@@ -83,7 +83,17 @@ export function etaLocalUtc(f){
 export async function loadFlightsFromDb() {
   const { data, error } = await supabase.from("flights").select("*").order("date", { ascending: true }).order("time", { ascending: true });
   if (error) throw error;
-  return (data || []).map((f) => ({ ...f, pm: Number(f.pm || 0), pw: Number(f.pw || 0), pc: Number(f.pc || 0), bg: Number(f.bg || 0) }));
+  return (data || []).map((f) => ({
+    ...f,
+    pm: Number(f.pm || 0),
+    pw: Number(f.pw || 0),
+    pc: Number(f.pc || 0),
+    bg: Number(f.bg || 0),
+    estimated_fixed_cost_usd: Number(f.estimated_fixed_cost_usd || 0),
+    estimated_variable_cost_usd: Number(f.estimated_variable_cost_usd || 0),
+    estimated_total_cost_usd: Number(f.estimated_total_cost_usd || 0),
+    estimated_cost_hours: Number(f.estimated_cost_hours || 0),
+  }));
 }
 
 export async function loadMaintFromDb() {
