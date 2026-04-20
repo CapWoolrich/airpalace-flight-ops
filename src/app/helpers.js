@@ -55,6 +55,9 @@ export function calcR(orig,dest,id,px,bg){
     adjustedMaxNm:adjustedMaxNm,
     minLegNm:220,
     maxStops:3,
+    payloadLbs:payloadLbs,
+    fuelWeightPerGal:JA,
+    contingencyRate:0.05,
     routeFactor:RF,
     blockMinutes:BLK,
     distanceNm:function(from,to){
@@ -67,6 +70,9 @@ export function calcR(orig,dest,id,px,bg){
   });
   var recommendations=stopPlan.recommendations||[];
   var primary=recommendations[0]||null;
+  var firstLeg=primary&&Array.isArray(primary.legs)&&primary.legs.length>0?primary.legs[0]:null;
+  var firstLegFuelLbs=firstLeg?Number(firstLeg.plannedFuelLbs||0):Math.round(fl);
+  var wtByFirstLeg={tw:Math.round(a.bow+a.crew+pxW+bg+firstLegFuelLbs),mt:a.mtow,mg:Math.round(a.mtow-(a.bow+a.crew+pxW+bg+firstLegFuelLbs)),ov:Math.round(a.bow+a.crew+pxW+bg+firstLegFuelLbs)>a.mtow,tp:(px.m||0)+(px.w||0)+(px.c||0),pW:Math.round(pxW)};
 
   return{
     dir:false,
@@ -74,8 +80,8 @@ export function calcR(orig,dest,id,px,bg){
     aw:aw,
     em:em,
     bm:bm,
-    fl:Math.round(fl),
-    wt:wt,
+    fl:firstLegFuelLbs,
+    wt:wtByFirstLeg,
     stops:primary?primary.stops:[],
     recommendations:recommendations,
     isInternational:!!stopPlan.isInternational,

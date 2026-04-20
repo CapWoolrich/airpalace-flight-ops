@@ -78,6 +78,78 @@ function scoreRoute(route,context){
 
 function getTopNodes(nodes,limit){return nodes.sort(function(a,b){return b.seedScore-a.seedScore;}).slice(0,limit);}
 
+export function computeLegFuel(legNm,aircraft,options){
+  var routeFactor=Number(options?.routeFactor||1.18);
+  var tripFuelGal=(legNm*routeFactor/aircraft.kts)*aircraft.gph;
+  var taxiFuelGal=Number(options?.taxiFuelGal||0);
+  var reserveFuelGal=Number.isFinite(options?.reserveFuelGal)
+    ?Number(options.reserveFuelGal)
+    :((100/aircraft.kts)*aircraft.gph)+((45/60)*aircraft.gph);
+  var contingencyFuelGal=tripFuelGal*Number(options?.contingencyRate||0.05);
+  var alternateFuelGal=Number(options?.alternateFuelGal||0);
+  var plannedFuelGal=tripFuelGal+taxiFuelGal+reserveFuelGal+contingencyFuelGal+alternateFuelGal;
+  return {
+    tripFuelGal:tripFuelGal,
+    taxiFuelGal:taxiFuelGal,
+    reserveFuelGal:reserveFuelGal,
+    contingencyFuelGal:contingencyFuelGal,
+    alternateFuelGal:alternateFuelGal,
+    plannedFuelGal:plannedFuelGal,
+  };
+}
+
+export function validateLeg(legNm,aircraft,options){
+  var fuel=computeLegFuel(legNm,aircraft,options);
+  var payloadLbs=Number(options?.payloadLbs||0);
+  var takeoffWeight=aircraft.bow+aircraft.crew+payloadLbs+(fuel.plannedFuelGal*Number(options?.fuelWeightPerGal||6.7));
+  var maxLegNm=Number(options?.maxLegNm||Number.POSITIVE_INFINITY);
+  var validFuel=fuel.plannedFuelGal<=aircraft.maxGal;
+  var validWeight=takeoffWeight<=aircraft.mtow;
+  var validRange=legNm<=maxLegNm;
+  return {
+    valid:validFuel&&validWeight&&validRange,
+    validFuel:validFuel,
+    validWeight:validWeight,
+    validRange:validRange,
+    takeoffWeight:takeoffWeight,
+    fuel:fuel,
+  };
+}
+
+export function validateRouteByLegs(routePoints,aircraft,options){
+  var legs=[];
+  for(var i=0;i<routePoints.length-1;i++){
+    var from=routePoints[i],to=routePoints[i+1];
+    var legNm=options.distanceNm(from,to);
+    if(!Number.isFinite(legNm)||legNm<Number(options?.minLegNm||220)){
+      return { valid:false, legs:[], reason:"leg_distance_invalid" };
+    }
+    var legCheck=validateLeg(legNm,aircraft,options);
+    legs.push({
+      fromCode:from.c,
+      fromI4:from.i4,
+      toCode:to.c,
+      toI4:to.i4,
+      nm:Math.round(legNm),
+      enrouteMinutes:Math.round((legNm*options.routeFactor/aircraft.kts)*60),
+      blockMinutes:Math.round((legNm*options.routeFactor/aircraft.kts)*60)+options.blockMinutes,
+      plannedFuelGal:Math.round(legCheck.fuel.plannedFuelGal),
+      tripFuelGal:Math.round(legCheck.fuel.tripFuelGal),
+      reserveFuelGal:Math.round(legCheck.fuel.reserveFuelGal),
+      contingencyFuelGal:Math.round(legCheck.fuel.contingencyFuelGal),
+      taxiFuelGal:Math.round(legCheck.fuel.taxiFuelGal),
+      alternateFuelGal:Math.round(legCheck.fuel.alternateFuelGal),
+      plannedFuelLbs:Math.round(legCheck.fuel.plannedFuelGal*Number(options.fuelWeightPerGal||6.7)),
+      takeoffWeight:Math.round(legCheck.takeoffWeight),
+      valid:legCheck.valid,
+    });
+    if(!legCheck.valid){
+      return { valid:false, legs:legs, reason:"leg_not_viable", failedLegIndex:i };
+    }
+  }
+  return { valid:true, legs:legs, reason:"ok" };
+}
+
 export function recommendStops(options){
   var airports=Array.isArray(options?.candidateAirports)?options.candidateAirports:[];
   var origin=options?.origin;
@@ -88,8 +160,8 @@ export function recommendStops(options){
   var blockMinutes=Number(options?.blockMinutes||20);
   var minLegNm=Number(options?.minLegNm||220);
   var maxStops=Number(options?.maxStops||3);
+  var fuelWeightPerGal=Number(options?.fuelWeightPerGal||6.7);
   var distanceNm=typeof options?.distanceNm==="function"?options.distanceNm:function(){return Number.POSITIVE_INFINITY;};
-  var isFuelViableForLeg=typeof options?.isFuelViableForLeg==="function"?options.isFuelViableForLeg:function(){return false;};
   var aircraft=options?.aircraft;
   if(!origin||!destination||!aircraft||!Number.isFinite(greatCircleNm)||greatCircleNm<=0)return{recommendations:[],isInternational:false};
 
@@ -117,7 +189,17 @@ export function recommendStops(options){
 
           var legNm=distanceNm(currentAp,cand);
           if(!Number.isFinite(legNm)||legNm<minLegNm)continue;
-          if(legNm>adjustedMaxNm||!isFuelViableForLeg(legNm))continue;
+          var legPreCheck=validateLeg(legNm,aircraft,{
+            payloadLbs:Number(options?.payloadLbs||0),
+            maxLegNm:adjustedMaxNm,
+            routeFactor:routeFactor,
+            fuelWeightPerGal:fuelWeightPerGal,
+            taxiFuelGal:Number(options?.taxiFuelGal||0),
+            reserveFuelGal:options?.reserveFuelGal,
+            contingencyRate:Number(options?.contingencyRate||0.05),
+            alternateFuelGal:Number(options?.alternateFuelGal||0),
+          });
+          if(!legPreCheck.valid)continue;
 
           var remainNm=distanceNm(cand,options.destinationAirport);
           if(!Number.isFinite(remainNm))continue;
@@ -148,27 +230,23 @@ export function recommendStops(options){
     for(var k=0;k<beam.length;k++){
       var state=beam[k];
       var routePoints=[options.originAirport].concat(state.stops).concat([options.destinationAirport]);
-      var legs=[];
-      var viable=true;
-      var totalNm=0;
-      var tightCount=0;
-      for(var l=0;l<routePoints.length-1;l++){
-        var from=routePoints[l],to=routePoints[l+1];
-        var leg=distanceNm(from,to);
-        if(!Number.isFinite(leg)||leg<minLegNm||leg>adjustedMaxNm||!isFuelViableForLeg(leg)){viable=false;break;}
-        totalNm+=leg;
-        if(leg>adjustedMaxNm*0.92)tightCount++;
-        legs.push({
-          fromCode:from.c,
-          fromI4:from.i4,
-          toCode:to.c,
-          toI4:to.i4,
-          nm:Math.round(leg),
-          enrouteMinutes:Math.round((leg*routeFactor/aircraft.kts)*60),
-          blockMinutes:Math.round((leg*routeFactor/aircraft.kts)*60)+blockMinutes,
-        });
-      }
-      if(!viable)continue;
+      var routeValidation=validateRouteByLegs(routePoints,aircraft,{
+        distanceNm:distanceNm,
+        minLegNm:minLegNm,
+        maxLegNm:adjustedMaxNm,
+        payloadLbs:Number(options?.payloadLbs||0),
+        routeFactor:routeFactor,
+        blockMinutes:blockMinutes,
+        fuelWeightPerGal:fuelWeightPerGal,
+        taxiFuelGal:Number(options?.taxiFuelGal||0),
+        reserveFuelGal:options?.reserveFuelGal,
+        contingencyRate:Number(options?.contingencyRate||0.05),
+        alternateFuelGal:Number(options?.alternateFuelGal||0),
+      });
+      if(!routeValidation.valid)continue;
+      var legs=routeValidation.legs;
+      var totalNm=legs.reduce(function(sum,leg){return sum+leg.nm;},0);
+      var tightCount=legs.filter(function(leg){return leg.nm>adjustedMaxNm*0.92;}).length;
 
       var detourRatio=(totalNm/greatCircleNm)-1;
       if(detourRatio>maxDetourByStops[stopCount])continue;
@@ -229,6 +307,12 @@ export function recommendStops(options){
         stopPenalty:stopPenalty,
         countryPenalty:countryPenalty,
         tightLegPenalty:tightLegPenalty,
+        legValidation:routeValidation,
+        debug:{
+          legCount:legs.length,
+          allLegsValid:routeValidation.valid,
+          validationReason:routeValidation.reason,
+        },
       };
       route.score=scoreRoute(route,{isInternational:isInternational});
       route.reason=buildReason(route,isInternational);

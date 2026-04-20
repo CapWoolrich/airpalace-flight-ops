@@ -1456,7 +1456,7 @@ export default function App(){
                     <div><strong>Escala {sidx+1}:</strong> {stop.c} ({stop.i4}{stop.i3?(" / "+stop.i3):""})</div>
                     <div>Aduana: {stop.customs?"Sí":"No"} · Handling: {stop.handlingQuality==="premium"?"premium":stop.handlingQuality==="good"?"bueno":"básico"}</div>
                   </div>;})}
-                  {(route.legs||[]).map(function(leg,lidx){return <div key={leg.fromI4+"-"+leg.toI4+"-"+lidx} style={{fontSize:11,marginTop:3}}>Tramo {lidx+1}: {leg.fromCode} → {leg.toCode} · {leg.nm} NM · block ~{leg.blockMinutes} min</div>;})}
+                  {(route.legs||[]).map(function(leg,lidx){return <div key={leg.fromI4+"-"+leg.toI4+"-"+lidx} style={{fontSize:11,marginTop:3}}>Tramo {lidx+1}: {leg.fromCode} → {leg.toCode} · {leg.nm} NM · block ~{leg.blockMinutes} min · fuel ~{leg.plannedFuelGal} gal · {leg.valid?"✅":"⚠️"}</div>;})}
                 </div>;})}
               </div>}
               {!rc.res.dir&&(!Array.isArray(rc.res.recommendations)||rc.res.recommendations.length===0)&&<div style={{marginTop:10,background:"#fff7ed",borderRadius:10,padding:10,border:"1px solid #fdba74",fontSize:12,color:"#9a3412"}}>No se encontró una ruta realista con esta carga incluso considerando hasta tres escalas. Reduce payload o revisa esta misión manualmente.</div>}
