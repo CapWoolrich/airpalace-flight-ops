@@ -3,6 +3,18 @@ import { APR } from "../app/data.js";
 
 let airportCache = buildInitialCache(APR);
 
+const EXCLUDED_AIRPORT_TYPES = new Set(["heliport", "seaplane_base", "balloonport", "closed"]);
+
+function normalizeAirportType(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function isOperationalAirportType(value) {
+  const normalized = normalizeAirportType(value);
+  if (!normalized) return true;
+  return !EXCLUDED_AIRPORT_TYPES.has(normalized);
+}
+
 function buildInitialCache(rows) {
   const map = new Map();
   rows.forEach((row) => registerAirport(row, map));
@@ -15,6 +27,7 @@ function keyParts(value) {
 
 export function registerAirport(raw, targetMap = airportCache) {
   if (!raw) return null;
+  if (!isOperationalAirportType(raw.airport_type || raw.type)) return null;
   const normalized = {
     c: raw.c || raw.name || "",
     i4: keyParts(raw.i4 || raw.icao_code),
@@ -26,6 +39,7 @@ export function registerAirport(raw, targetMap = airportCache) {
     region: raw.region || null,
     tz: raw.tz || raw.timezone || null,
     source_priority: Number(raw.source_priority || 0),
+    airport_type: normalizeAirportType(raw.airport_type || raw.type),
   };
   if (!normalized.c) return null;
 
@@ -77,7 +91,9 @@ export async function searchAirports(query, limit = 12) {
       .slice(0, limit);
   }
 
-  const rows = data.map((row) => registerAirport({
+  const rows = data
+    .filter((row) => isOperationalAirportType(row?.airport_type))
+    .map((row) => registerAirport({
     c: row.name,
     i4: row.icao_code,
     i3: row.iata_code,
@@ -88,6 +104,7 @@ export async function searchAirports(query, limit = 12) {
     region: row.region,
     tz: row.timezone,
     source_priority: row.source_priority,
+    airport_type: row.airport_type,
   }));
 
   return rows.filter(Boolean).slice(0, limit);

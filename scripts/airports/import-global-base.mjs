@@ -4,6 +4,12 @@ const OURAIRPORTS_AIRPORTS_URL = process.env.OURAIRPORTS_AIRPORTS_URL || "https:
 const OURAIRPORTS_RUNWAYS_URL = process.env.OURAIRPORTS_RUNWAYS_URL || "https://ourairports.com/data/runways.csv";
 const OURAIRPORTS_FREQ_URL = process.env.OURAIRPORTS_FREQ_URL || "https://ourairports.com/data/airport-frequencies.csv";
 
+const EXCLUDED_AIRPORT_TYPES = new Set(["heliport", "seaplane_base", "balloonport", "closed"]);
+
+function normalizeAirportType(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 async function fetchCsv(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Failed to download ${url}: ${response.status}`);
@@ -23,6 +29,14 @@ async function main() {
     const airportMap = new Map();
     for (const raw of airports) {
       const parsed = normalizeAirportRow(raw);
+      const airportType = normalizeAirportType(parsed.airport_type);
+      if (EXCLUDED_AIRPORT_TYPES.has(airportType)) {
+        counters.notes = counters.notes || {};
+        counters.notes.skipped_excluded_airport_types = Number(counters.notes.skipped_excluded_airport_types || 0) + 1;
+        counters.notes.skipped_by_airport_type = counters.notes.skipped_by_airport_type || {};
+        counters.notes.skipped_by_airport_type[airportType] = Number(counters.notes.skipped_by_airport_type[airportType] || 0) + 1;
+        continue;
+      }
       if (!parsed.name || !parsed.country_code) continue;
       parsed.data = { ourairports_id: raw.id, continent: raw.continent, raw };
       const result = await upsertAirport(supabase, SOURCES.OUR_AIRPORTS.name, SOURCES.OUR_AIRPORTS.priority, parsed, counters);
@@ -77,7 +91,12 @@ async function main() {
     const { data: longest } = await supabase.rpc("refresh_airport_longest_runway");
     const { data: keywords } = await supabase.rpc("refresh_airport_keywords");
     const { data: aliases } = await supabase.rpc("rebuild_airport_aliases");
-    counters.notes = { longest_runway_rows: longest ?? null, keyword_rows: keywords ?? null, aliases_rebuilt: aliases ?? null };
+    counters.notes = {
+      ...(counters.notes || {}),
+      longest_runway_rows: longest ?? null,
+      keyword_rows: keywords ?? null,
+      aliases_rebuilt: aliases ?? null,
+    };
     await finishImportRun(supabase, runId, counters);
     console.log("Done", counters);
   } catch (error) {

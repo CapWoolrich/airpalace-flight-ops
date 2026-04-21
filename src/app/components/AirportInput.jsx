@@ -7,6 +7,7 @@ export function AirportInput({ value, onChange, label }) {
   var [open, setOpen] = useState(false);
   var [results, setResults] = useState([]);
   var ref = useRef(null);
+  var searchTokenRef = useRef(0);
 
   var sel = useMemo(function () { return findAirportByAny(value); }, [value]);
 
@@ -17,13 +18,21 @@ export function AirportInput({ value, onChange, label }) {
   }, []);
 
   useEffect(function () {
-    var active = true;
-    searchAirports(q || value || "", 12).then(function (rows) {
-      if (active) setResults(rows || []);
-    }).catch(function () {
-      if (active) setResults([]);
-    });
-    return function () { active = false; };
+    if (!open) return;
+    var cancelled = false;
+    var token = searchTokenRef.current + 1;
+    searchTokenRef.current = token;
+    var t = setTimeout(function () {
+      searchAirports(q || value || "", 12).then(function (rows) {
+        if (!cancelled && searchTokenRef.current === token) setResults(rows || []);
+      }).catch(function () {
+        if (!cancelled && searchTokenRef.current === token) setResults([]);
+      });
+    }, 275);
+    return function () {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [q, value, open]);
 
   var fl = useMemo(function () { return results.slice(0, 12); }, [results]);

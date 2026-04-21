@@ -375,16 +375,39 @@ export default function App(){
   }, [reducedMotion]);
 
   useEffect(() => {
+    var flightsRefreshTimer = null;
+    var maintRefreshTimer = null;
+
+    var scheduleFlightsRefresh = function () {
+      if (flightsRefreshTimer) return;
+      flightsRefreshTimer = setTimeout(async function () {
+        flightsRefreshTimer = null;
+        try {
+          const freshFlights = await loadFlightsFromDb();
+          setFsRaw(freshFlights);
+        } catch {}
+      }, 400);
+    };
+
+    var scheduleMaintRefresh = function () {
+      if (maintRefreshTimer) return;
+      maintRefreshTimer = setTimeout(async function () {
+        maintRefreshTimer = null;
+        try {
+          const freshMaint = await loadMaintFromDb();
+          setMtRaw(freshMaint.statusByAc);
+          saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
+        } catch {}
+      }, 400);
+    };
+
     const flightsChannel = supabase
       .channel("flights-live")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "flights" },
-        async () => {
-          try {
-            const freshFlights = await loadFlightsFromDb();
-            setFsRaw(freshFlights);
-          } catch {}
+        function () {
+          scheduleFlightsRefresh();
         }
       )
       .subscribe();
@@ -394,17 +417,15 @@ export default function App(){
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "aircraft_status" },
-        async () => {
-          try {
-            const freshMaint = await loadMaintFromDb();
-            setMtRaw(freshMaint.statusByAc);
-            saveMaintPlan(Object.assign({},freshMaint.planByAc||{}));
-          } catch {}
+        function () {
+          scheduleMaintRefresh();
         }
       )
       .subscribe();
 
     return () => {
+      if (flightsRefreshTimer) clearTimeout(flightsRefreshTimer);
+      if (maintRefreshTimer) clearTimeout(maintRefreshTimer);
       supabase.removeChannel(flightsChannel);
       supabase.removeChannel(maintChannel);
     };
