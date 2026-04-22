@@ -1,4 +1,5 @@
 import { requireRouteAccess } from "../src/server/_routeProtection.js";
+import { validateRealtimeSessionPayload } from "../src/server/_validation.js";
 
 function send(res, status, payload) {
   return res.status(status).json(payload);
@@ -6,16 +7,19 @@ function send(res, status, payload) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
-  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowSeconds: 60 } });
   if (!access.ok) return send(res, access.status, { error: access.error });
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return send(res, 500, { error: "OPENAI_API_KEY is not configured." });
 
+  const bodyValidation = validateRealtimeSessionPayload(req.body || {});
+  if (!bodyValidation.ok) return send(res, 400, { error: bodyValidation.error });
+
   const model = String(process.env.OPENAI_REALTIME_MODEL || "gpt-4o-realtime-preview");
   const voice = String(process.env.OPENAI_REALTIME_VOICE || "alloy");
   const instructions = String(
-    req.body?.instructions ||
+    bodyValidation.value.instructions ||
       "Eres AI Pilot interno de AirPalace Flight Ops. Prioriza operación y agenda con datos internos de la app; no uses fuentes externas salvo solicitud explícita. Responde en español claro, conciso y profesional."
   );
 
