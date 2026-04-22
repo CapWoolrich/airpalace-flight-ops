@@ -7,6 +7,8 @@ import { buildWhatsAppFlightMessage } from "./_whatsappMessage.js";
 import { sendOperationalEmail } from "./_emailSender.js";
 import { getWebPushClient, sendPushBatch } from "./_push.js";
 
+const WHATSAPP_TIMEOUT_MS = 10_000;
+
 async function sendPushToSubscribers(supabase, payload) {
   const pushClient = await getWebPushClient();
   if (!pushClient.ok) return { ok: false, warning: pushClient.error };
@@ -21,6 +23,15 @@ async function sendPushToSubscribers(supabase, payload) {
   return { ok: true, sent: pushResult.sent, failed: pushResult.failed };
 }
 
+function summarizeProviderBody(raw) {
+  const clean = String(raw || "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "empty_response";
+  return clean.slice(0, 160);
+}
+
 async function sendWhatsApp(flight, label) {
   const phone = String(process.env.CALLMEBOT_PHONE || "").trim();
   const apikey = String(process.env.CALLMEBOT_APIKEY || "").trim();
@@ -29,17 +40,32 @@ async function sendWhatsApp(flight, label) {
 
   const text = buildWhatsAppFlightMessage(flight, label);
   const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(apikey)}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WHATSAPP_TIMEOUT_MS);
+
   try {
-    const r = await fetch(url);
-    if (!r.ok) return { ok: false, warning: "whatsapp_provider_rejected" };
+    const r = await fetch(url, { signal: controller.signal });
+    const providerBody = summarizeProviderBody(await r.text().catch(() => ""));
+    if (!r.ok) return { ok: false, warning: `whatsapp_provider_rejected:${providerBody}` };
     return { ok: true };
-  } catch {
-    return { ok: false, warning: "whatsapp_network_failure" };
+  } catch (error) {
+    return { ok: false, warning: `whatsapp_network_failure:${String(error?.message || "unknown_error").slice(0, 120)}` };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-export function shouldEmitCancellationNotifications(eventType) {
-  return String(eventType || "").toLowerCase() === "cancel";
+export function shouldEmitFlightWhatsApp(eventType) {
+  const normalized = String(eventType || "").toLowerCase();
+  return ["create", "duplicate", "cancel"].includes(normalized);
+}
+
+export function mapFlightWhatsAppLabel(eventType) {
+  const normalized = String(eventType || "").toLowerCase();
+  if (normalized === "create" || normalized === "duplicate") return "PROGRAMADO";
+  if (normalized === "cancel") return "CANCELADO";
+  return null;
 }
 
 export function mapFlightEmailEventType(eventType) {
@@ -59,7 +85,6 @@ export async function emitFlightSideEffects({
   eventType,
   flight,
   actorName,
-  sendWhatsapp = false,
 } = {}) {
   const warnings = [];
   if (!supabase || !flight) return { warnings: ["side_effects_missing_context"] };
@@ -99,9 +124,14 @@ export async function emitFlightSideEffects({
     }
   }
 
-  if (sendWhatsapp && shouldEmitCancellationNotifications(eventType)) {
-    const wa = await sendWhatsApp(flight, "CANCELADO");
-    if (!wa.ok && wa.warning && wa.warning !== "whatsapp_env_missing") warnings.push(`whatsapp:${wa.warning}`);
+  if (shouldEmitFlightWhatsApp(eventType)) {
+    const whatsappLabel = mapFlightWhatsAppLabel(eventType);
+    if (!whatsappLabel) {
+      warnings.push("whatsapp:unsupported_event_type");
+    } else {
+      const wa = await sendWhatsApp(flight, whatsappLabel);
+      if (!wa.ok && wa.warning) warnings.push(`whatsapp:${wa.warning}`);
+    }
   }
 
   return { warnings };

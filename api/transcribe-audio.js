@@ -1,15 +1,19 @@
 import OpenAI from "openai";
 import { toFile } from "openai/uploads";
 import { requireRouteAccess } from "../src/server/_routeProtection.js";
+import { validateTranscribeAudioPayload } from "../src/server/_validation.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowSeconds: 60 } });
   if (!access.ok) return res.status(access.status).json({ error: access.error });
   if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "OPENAI_API_KEY missing" });
 
-  const base64 = req.body?.audio_base64;
-  const mimeType = req.body?.mime_type || "audio/webm";
+  const bodyValidation = validateTranscribeAudioPayload(req.body || {});
+  if (!bodyValidation.ok) return res.status(400).json({ error: bodyValidation.error });
+
+  const base64 = bodyValidation.value.audio_base64;
+  const mimeType = bodyValidation.value.mime_type || "audio/webm";
   const extMap = {
     "audio/webm": "webm",
     "audio/webm;codecs=opus": "webm",

@@ -4,11 +4,9 @@ import { buildAuditMeta } from "../src/lib/opsMutationBuilders.js";
 import { applyOpsMutation } from "../src/lib/opsWriteEngine.js";
 import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
 import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../src/server/_opsSideEffects.js";
+import { validateOpsWritePayload } from "../src/server/_validation.js";
 
 const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo"];
-const VALID_AIRCRAFT = new Set(["N35EA", "N540JL"]);
-const VALID_AIRCRAFT_STATUSES = new Set(["disponible", "mantenimiento", "aog"]);
-const VALID_FLIGHT_STATUSES = new Set(["prog", "enc", "comp", "canc"]);
 
 const SEED_FLIGHTS = [
   { date: "2026-04-02", ac: "N35EA", orig: "Cozumel", dest: "Merida", time: "08:30", rb: "Jabib C", nt: "", pm: 0, pw: 0, pc: 0, bg: 0, st: "comp" },
@@ -39,26 +37,6 @@ function ensureSupabase() {
   return createClient(url, key);
 }
 
-function validatePayload(action, payload = {}) {
-  if (action === "restore_demo") return null;
-  if (!payload || typeof payload !== "object") return "payload inválido";
-  if (payload.ac && !VALID_AIRCRAFT.has(String(payload.ac))) return "Aeronave inválida";
-  if (payload.st && !VALID_FLIGHT_STATUSES.has(String(payload.st))) return "Estatus de vuelo inválido";
-
-  if (action === "create_flight") {
-    for (const f of ["date", "ac", "orig", "dest", "time", "rb"]) {
-      if (!payload[f]) return `${f} es requerido`;
-    }
-  }
-  if (action === "change_aircraft_status") {
-    if (!payload.ac) return "ac es requerido";
-    if (!payload.status_change || !VALID_AIRCRAFT_STATUSES.has(String(payload.status_change))) {
-      return "status_change inválido";
-    }
-  }
-  return null;
-}
-
 async function restoreDemoData(supabase, audit) {
   await supabase.from("flights").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   const flightRows = SEED_FLIGHTS.map((f) => ({ ...f, ...audit, creation_source: "restore_demo" }));
@@ -85,13 +63,13 @@ export default async function handler(req, res) {
   const access = await requireRouteAccess(req, {
     requireAuth: true,
     minimumRole: action === "restore_demo" ? "admin" : "ops",
-    rateLimit: { max: 25, windowMs: 60_000 },
+    rateLimit: { max: 25, windowSeconds: 60 },
   });
   if (!access.ok) return bad(res, access.status, access.error);
 
   const payload = req.body?.payload || {};
-  const validationError = validatePayload(action, payload);
-  if (validationError) return bad(res, 400, validationError);
+  const payloadValidation = validateOpsWritePayload(action, payload);
+  if (!payloadValidation.ok) return bad(res, 400, payloadValidation.error);
 
   const supabase = ensureSupabase();
   if (!supabase) return bad(res, 500, "Supabase server env missing");
@@ -143,7 +121,6 @@ export default async function handler(req, res) {
         eventType: eventTypeMap[action],
         flight: mutation.flight,
         actorName,
-        sendWhatsapp: action === "cancel_flight",
       });
       sideEffectWarnings.push(...(sideEffects.warnings || []));
       const messageMap = {

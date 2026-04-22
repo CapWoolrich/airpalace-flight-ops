@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { signAiConfirmation } from "../src/server/_aiConfirmation.js";
 import { requireRouteAccess } from "../src/server/_routeProtection.js";
 import { normalizeAgentWithAliases } from "../src/ai/agentUtils.js";
+import { validateOpsAgentPayload } from "../src/server/_validation.js";
 
 const MODEL = "gpt-4.1-mini";
 const OPS_AGENT_JSON_SCHEMA = {
@@ -225,7 +226,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return sendJsonError(res, 405, "Method not allowed. Use POST /api/ops-agent.");
   }
-  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowMs: 60_000 } });
+  const access = await requireRouteAccess(req, { requireAuth: true, rateLimit: { max: 20, windowSeconds: 60 } });
   if (!access.ok) return sendJsonError(res, access.status, access.error);
 
   if (!process.env.OPENAI_API_KEY) {
@@ -234,8 +235,9 @@ export default async function handler(req, res) {
 
   const instruction = await readInstruction(req);
   const context = readContext(req);
-  if (!instruction) {
-    return sendJsonError(res, 400, "instruction is required");
+  const payloadValidation = validateOpsAgentPayload({ instruction, context });
+  if (!payloadValidation.ok) {
+    return sendJsonError(res, 400, payloadValidation.error);
   }
 
   try {
