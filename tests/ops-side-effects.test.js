@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   emitFlightSideEffects,
   mapFlightEmailEventType,
+  mapFlightWhatsAppLabel,
   shouldEmitFlightEmail,
+  shouldEmitFlightWhatsApp,
 } from "../src/server/_opsSideEffects.js";
 
 test("mapFlightEmailEventType maps operational flight actions correctly", () => {
@@ -22,6 +24,20 @@ test("shouldEmitFlightEmail only enables create/edit/cancel/duplicate", () => {
   assert.equal(shouldEmitFlightEmail("duplicate"), true);
   assert.equal(shouldEmitFlightEmail("in_progress"), false);
   assert.equal(shouldEmitFlightEmail("completed"), false);
+});
+
+test("shouldEmitFlightWhatsApp only enables create/duplicate/cancel", () => {
+  assert.equal(shouldEmitFlightWhatsApp("create"), true);
+  assert.equal(shouldEmitFlightWhatsApp("duplicate"), true);
+  assert.equal(shouldEmitFlightWhatsApp("cancel"), true);
+  assert.equal(shouldEmitFlightWhatsApp("edit"), false);
+});
+
+test("mapFlightWhatsAppLabel returns expected values", () => {
+  assert.equal(mapFlightWhatsAppLabel("create"), "PROGRAMADO");
+  assert.equal(mapFlightWhatsAppLabel("duplicate"), "PROGRAMADO");
+  assert.equal(mapFlightWhatsAppLabel("cancel"), "CANCELADO");
+  assert.equal(mapFlightWhatsAppLabel("edit"), null);
 });
 
 test("emitFlightSideEffects triggers email warning for edit when email env is missing", async () => {
@@ -51,4 +67,15 @@ test("emitFlightSideEffects triggers email warning for edit when email env is mi
   else delete process.env.RESEND_API_KEY;
   if (beforeFrom) process.env.EMAIL_FROM = beforeFrom;
   else delete process.env.EMAIL_FROM;
+});
+
+test("ops/ai write flows do not hardcode WhatsApp only for cancel_flight", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const [opsWrite, aiWrite] = await Promise.all([
+    readFile(new URL("../api/ops-write.js", import.meta.url), "utf8"),
+    readFile(new URL("../api/ai-write.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.equal(opsWrite.includes('sendWhatsapp: action === "cancel_flight"'), false);
+  assert.equal(aiWrite.includes('sendWhatsapp: action === "cancel_flight"'), false);
 });
