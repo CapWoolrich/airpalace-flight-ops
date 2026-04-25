@@ -1205,10 +1205,10 @@ export default function App(){
 
   if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{fontSize:34,marginBottom:12}}>✈</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
+  var TABS=[{k:"cal",l:"Agenda",i:"🗓️"},{k:"list",l:"Vuelos",i:"✈️"},{k:"recent",l:"Recientes",i:"🕒"},{k:"plan",l:"Planificar",i:"📐"},{k:"gest",l:"Gestión",i:"🛠️"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
   var glowOffset = reducedMotion ? 0 : Math.min(54, scrollY * 0.05);
-  var panelPrimary={background:"linear-gradient(165deg,rgba(9,17,31,.94),rgba(16,28,45,.9))",border:"1px solid rgba(148,163,184,.25)",borderRadius:16,boxShadow:"0 14px 28px rgba(2,6,23,.26)"};
+  var panelPrimary={background:"linear-gradient(165deg,rgba(9,17,31,.85),rgba(16,28,45,.76))",border:"1px solid rgba(212,185,140,.2)",borderRadius:16,boxShadow:"0 14px 28px rgba(2,6,23,.3)",backdropFilter:"blur(8px)"};
   var panelSecondary={background:"linear-gradient(165deg,rgba(12,21,37,.9),rgba(16,28,45,.82))",border:"1px solid rgba(148,163,184,.2)",borderRadius:12};
   var flightCardSurface={background:"linear-gradient(168deg,rgba(12,21,37,.92),rgba(18,31,48,.84))",border:"1px solid rgba(196,168,120,.42)",borderRadius:12,boxShadow:"0 10px 20px rgba(2,6,23,.24)"};
   var subtleText="#9fb0cd";
@@ -1220,7 +1220,7 @@ export default function App(){
       <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
       <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
       <div className="ops-bg-noise" />
-      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:10}}>
+      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"170px"}}>
 
       <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1236,7 +1236,7 @@ export default function App(){
                 key={card.id}
                 onMouseEnter={function(){setHoveredCommandCard(card.id);}}
                 onMouseLeave={function(){setHoveredCommandCard("");}}
-                style={{borderRadius:15,padding:"10px 10px 9px",border:"1px solid "+card.opStatus.tone+"52",background:"linear-gradient(168deg,rgba(7,15,30,.9),rgba(15,25,42,.76))",boxShadow:hoveredCommandCard===card.id?"0 14px 22px rgba(2,6,23,.45)":"0 8px 14px rgba(2,6,23,.3)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease",minHeight:146}}
+                style={{borderRadius:16,padding:"11px 11px 10px",border:"1px solid rgba(212,185,140,.22)",background:"linear-gradient(168deg,rgba(7,15,30,.76),rgba(15,25,42,.62))",boxShadow:hoveredCommandCard===card.id?"0 16px 28px rgba(2,6,23,.5)":"0 10px 18px rgba(2,6,23,.35)",transform:hoveredCommandCard===card.id?"translateY(-2px)":"none",transition:"transform .22s ease, box-shadow .22s ease, border-color .22s ease",minHeight:146,backdropFilter:"blur(10px)"}}
               >
                 <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
                   <div>
@@ -1266,9 +1266,6 @@ export default function App(){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat("+TABS.length+",1fr)",gap:5,padding:"10px 14px 0"}}>
-        {TABS.map(function(t){return <button key={t.k} onClick={function(){setVw(t.k);}} style={{padding:"10px 6px",border:"1px solid "+(vw===t.k?"rgba(212,185,140,.54)":"rgba(184,150,104,.38)"),borderRadius:11,fontSize:12,fontWeight:600,cursor:"pointer",background:vw===t.k?"linear-gradient(140deg,rgba(244,231,214,.95),rgba(214,191,160,.88))":"rgba(15,23,42,.52)",color:vw===t.k?"#0f172a":"#c7b08a",boxShadow:vw===t.k?"0 6px 16px rgba(212,185,140,.18)":"inset 0 0 0 1px rgba(212,185,140,.06)",transition:"all .2s ease"}}>{t.l}</button>;})}
-      </div>
       {vw!=="gest"&&vw!=="plan"&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"8px 14px",flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[{k:"all",l:"Ambas",tone:"#b8c6db"},{k:"N35EA",l:"N35EA",tone:"#7fb0ff"},{k:"N540JL",l:"N540JL",tone:"#f6be86"}].map(function(f){
@@ -1276,21 +1273,20 @@ export default function App(){
             return <button key={f.k} onClick={function(){setFa(f.k);}} style={{padding:"6px 12px",border:"1px solid "+(isActive?"rgba(212,185,140,.52)":"rgba(148,163,184,.3)"),borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",background:isActive?"linear-gradient(145deg,rgba(25,36,57,.95),rgba(17,26,44,.9))":"rgba(15,23,42,.56)",color:isActive?"#f3dfbf":f.tone,letterSpacing:0.2,boxShadow:isActive?"0 8px 16px rgba(2,6,23,.28)":"none",transition:"all .18s ease"} }>{f.l}</button>;
           })}
         </div>
-        {vw==="cal"&&<button onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}} style={{marginLeft:"auto",background:"linear-gradient(145deg,rgba(15,23,42,.88),rgba(30,41,59,.9))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.44)",borderRadius:10,padding:"7px 13px",fontSize:11.5,fontWeight:700,cursor:"pointer",boxShadow:"0 8px 16px rgba(2,6,23,.28)",letterSpacing:0.2,whiteSpace:"nowrap"}}>✦ Vuelo nuevo</button>}
       </div>}
       {vw==="cal"&&<div style={{padding:"0 14px"}}>
-        <div style={Object.assign({},panelPrimary,{borderRadius:18,padding:14,marginBottom:14})}>
+        <div style={Object.assign({},panelPrimary,{borderRadius:20,padding:16,marginBottom:14})}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <button onClick={function(){var m=cM-1,y=cY;if(m<0){m=11;y--;}setCM(m);setCY(y);}} style={NB}>◀</button>
+            <button onClick={function(){var m=cM-1,y=cY;if(m<0){m=11;y--;}setCM(m);setCY(y);}} style={Object.assign({},NB,{border:"1px solid rgba(212,185,140,.4)",background:"rgba(15,23,42,.75)",color:"#e8d6b7"})}>◀</button>
             <span style={{fontSize:21,fontWeight:700,color:strongText}}>{MN[cM]+" "+cY}</span>
-            <button onClick={function(){var m=cM+1,y=cY;if(m>11){m=0;y++;}setCM(m);setCY(y);}} style={NB}>▶</button>
+            <button onClick={function(){var m=cM+1,y=cY;if(m>11){m=0;y++;}setCM(m);setCY(y);}} style={Object.assign({},NB,{border:"1px solid rgba(212,185,140,.4)",background:"rgba(15,23,42,.75)",color:"#e8d6b7"})}>▶</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,textAlign:"center"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,textAlign:"center"}}>
             {["L","M","X","J","V","S","D"].map(function(d){return <div key={d} style={{fontSize:11,color:"#8ea2c8",fontWeight:700,padding:"4px 0"}}>{d}</div>;})}
             {gmd(cY,cM).map(function(d,i){var ds=tds(d.d),df=fs.filter(function(f){return f.date===ds&&(fa==="all"||f.ac===fa);}),iS=ds===sel,iT=ds===today;return(
-              <div key={i} onClick={function(){if(!d.o)setSel(ds);}} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:10,cursor:d.o?"default":"pointer",background:iS?"#1e3a5f":iT?"rgba(30,41,59,.68)":"transparent",opacity:d.o?.25:1}}>
+              <div key={i} onClick={function(){if(!d.o)setSel(ds);}} style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:12,cursor:d.o?"default":"pointer",border:iS?"1px solid rgba(212,185,140,.75)":"1px solid transparent",boxShadow:iS?"0 0 0 1px rgba(212,185,140,.3),0 0 18px rgba(212,185,140,.26)":"none",background:iS?"rgba(22,36,58,.95)":iT?"rgba(30,41,59,.68)":"transparent",opacity:d.o?.25:1}}>
                 <span style={{fontSize:13,fontWeight:iT||iS?700:400,color:iS?"#f8fafc":"#dbeafe"}}>{d.d.getDate()}</span>
-                {df.length>0&&<div style={{display:"flex",gap:2,marginTop:1}}>{df.some(function(f){return f.ac==="N35EA";})&&<div style={{width:5,height:5,borderRadius:"50%",background:AC.N35EA.clr}}/>}{df.some(function(f){return f.ac==="N540JL";})&&<div style={{width:5,height:5,borderRadius:"50%",background:AC.N540JL.clr}}/>}</div>}
+                {df.length>0&&<div style={{display:"flex",gap:3,marginTop:2}}>{df.some(function(f){return f.ac==="N35EA";})&&<div style={{width:6,height:6,borderRadius:"50%",background:AC.N35EA.clr}}/>}{df.some(function(f){return f.ac==="N540JL";})&&<div style={{width:6,height:6,borderRadius:"50%",background:AC.N540JL.clr}}/>}</div>}
               </div>);})}
           </div>
         </div>
@@ -1679,7 +1675,27 @@ export default function App(){
         </div>
       </div>}
 
-      <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:900}}>
+      {vw==="cal"&&<div className="ops-floating-cta">
+        <button
+          onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}}
+          aria-label="Vuelo nuevo"
+          style={{display:"inline-flex",alignItems:"center",gap:8,background:"linear-gradient(145deg,rgba(12,20,34,.92),rgba(30,41,59,.84))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.58)",borderRadius:999,padding:"10px 18px",fontSize:12.5,fontWeight:800,cursor:"pointer",boxShadow:"0 12px 26px rgba(2,6,23,.44),0 0 22px rgba(212,185,140,.22)",letterSpacing:0.2,backdropFilter:"blur(10px)"}}
+        >
+          ✦ Vuelo nuevo
+        </button>
+      </div>}
+
+      <div className="ops-bottom-nav">
+        {TABS.map(function(t){
+          var active=vw===t.k;
+          return <button key={t.k} onClick={function(){setVw(t.k);}} aria-label={t.l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,minHeight:54,padding:"7px 4px",border:"1px solid "+(active?"rgba(212,185,140,.55)":"rgba(148,163,184,.2)"),borderRadius:12,fontSize:10.5,fontWeight:700,cursor:"pointer",background:active?"linear-gradient(155deg,rgba(244,231,214,.94),rgba(214,191,160,.86))":"rgba(15,23,42,.38)",color:active?"#0f172a":"#c7b08a",boxShadow:active?"0 10px 18px rgba(212,185,140,.22)":"none",transition:"all .2s ease"}}>
+            <span style={{fontSize:14,lineHeight:1}}>{t.i}</span>
+            <span>{t.l}</span>
+          </button>;
+        })}
+      </div>
+
+      <div style={{position:"fixed",bottom:"calc(88px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:900}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
         {phase==="warn"&&<div style={{background:"#f59e0b",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(245,158,11,.45)",textAlign:"center",maxWidth:340}}>⚠️ {errMsg}</div>}
@@ -1688,13 +1704,13 @@ export default function App(){
 
       <button
         onClick={function(){setAgentOpen(function(v){return !v;});}}
-        style={{position:"fixed",right:16,bottom:88,zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(148,163,184,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
+        style={{position:"fixed",right:16,bottom:"calc(148px + env(safe-area-inset-bottom))",zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(212,185,140,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
         aria-label="AI Pilot"
       >
         👨🏼‍✈️
       </button>
 
-      {agentOpen&&<div style={{position:"fixed",right:12,bottom:144,width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:"calc(208px + env(safe-area-inset-bottom))",width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
             <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(30,64,175,.24)",border:"1px solid rgba(96,165,250,.34)",fontSize:11}}>🧠</span>
