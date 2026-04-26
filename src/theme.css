@@ -65,10 +65,10 @@ select option{
   gap:6px;
   padding:10px 8px;
   background:
-    linear-gradient(165deg,rgba(8,14,28,.96),rgba(15,24,41,.94)),
-    linear-gradient(180deg,rgba(212,185,140,.12),transparent 40%);
-  backdrop-filter:blur(18px) saturate(1.08);
-  -webkit-backdrop-filter:blur(18px) saturate(1.08);
+    linear-gradient(165deg,rgba(5,10,22,.985),rgba(10,18,33,.97)),
+    linear-gradient(180deg,rgba(212,185,140,.14),transparent 38%);
+  backdrop-filter:blur(22px) saturate(1.1);
+  -webkit-backdrop-filter:blur(22px) saturate(1.1);
   border:1px solid rgba(226,232,240,.2);
   border-radius:24px;
   box-shadow:0 12px 34px rgba(2,6,23,.62),0 2px 10px rgba(148,163,184,.14),inset 0 1px 0 rgba(255,255,255,.05);
@@ -81,8 +81,22 @@ select option{
   content:"";
   position:absolute;
   inset:0;
-  background:rgba(6,11,23,.38);
-  z-index:-1;
+  background:linear-gradient(180deg,rgba(9,16,30,.92),rgba(7,13,24,.94));
+  z-index:0;
+}
+
+.ops-bottom-nav::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:radial-gradient(80% 120% at 50% 0%, rgba(255,255,255,.05), transparent 48%);
+  z-index:0;
+  pointer-events:none;
+}
+
+.ops-bottom-nav > *{
+  position:relative;
+  z-index:1;
 }
 
 .ops-floating-cta{

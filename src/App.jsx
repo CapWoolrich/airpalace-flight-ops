@@ -15,7 +15,6 @@ import { buildOpsPush } from "./lib/opsNotifications";
 import { hydrateAirportCacheForValues } from "./lib/airports.js";
 import { calcFlightHours, estimateFlightCost, formatUsd } from "./lib/flightCosting.js";
 import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "./lib/timezones.js";
-import companyLogo from "./assets/branding/company-logo.svg";
 
 const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' fill='none'>
@@ -112,26 +111,25 @@ export default function App(){
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
   var[scrollY,setScrollY]=useState(0);
   var[reducedMotion,setReducedMotion]=useState(false);
-  var[loaderLogoFailed,setLoaderLogoFailed]=useState(false);
   const [airportHydrationTick, setAirportHydrationTick] = useState(0);
   var today=getOperationalTodayISO();
 
   function renderTabIcon(tabKey, active) {
     var stroke = active ? "#111827" : "#d7deea";
-    var common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: stroke, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+    var common = { width: 26, height: 26, viewBox: "0 0 24 24", fill: "none", stroke: stroke, strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
     if (tabKey === "cal") {
       return <svg {...common}><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M8 2v4M16 2v4M3 10h18" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" /></svg>;
     }
     if (tabKey === "list") {
-      return <svg {...common}><path d="M2 16 22 8" /><path d="m2 16 6 2 3 4 2-4 9-10" /><path d="M22 8 13 18" /></svg>;
+      return <svg {...common}><path d="m4 18 7.1-4.1 2.6.8 6.3-6.2" /><path d="m11.1 13.9-1.5-2.7 1.3-1.8 2.8 1.2" /><path d="m3.5 18.2 2.4 1.4 2.1-.8 1.6 1.7 1.2-2 2.7-3.7" /><path d="m14.8 8.7 3.7-3.7 1.5 1.5-3.7 3.7" /></svg>;
     }
     if (tabKey === "recent") {
       return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
     }
     if (tabKey === "plan") {
-      return <svg {...common}><path d="M4 19c3-7 7-11 16-14" /><circle cx="5" cy="19" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="20" cy="5" r="2" /><path d="M6.8 17.5 10.2 13.8M13.8 10.2 18.2 6.8" /></svg>;
+      return <svg {...common}><path d="M8 7.9a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6S8 6.46 8 7.9Z" /><path d="M21.2 16.1a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6s2.6 1.16 2.6 2.6Z" /><path d="M5.4 10.9c1.3 1.7 2.8 2.9 4.7 3.6 1.7.6 3.2.6 4.6.4" strokeDasharray="2.2 2.4" /><path d="M15.2 14.8c.9-.3 1.8-.8 2.6-1.6" /></svg>;
     }
-    return <svg {...common}><path d="m14.2 5.2-8.4 8.4" /><path d="m16 7 1.8-1.8a1.8 1.8 0 1 1 2.5 2.5L18.5 9.5" /><path d="m7.2 12.2 4.6 4.6" /><path d="m5.8 18.2-2.1 2.1" /><path d="m11.3 12.8 6.9 6.9" /></svg>;
+    return <svg {...common}><path d="m6.2 18.5 4.7-4.7" /><path d="m5.6 12.1 6.3 6.3" /><path d="m16.1 6.2-1.8 1.8" /><path d="m12.9 9.4 4-4a2.2 2.2 0 0 1 3.1 3.1l-4 4" /><path d="m13.3 12 4.5 4.5" /><path d="m16.8 15.5 1.5-1.5" /><path d="m6 18.7-2 2" /></svg>;
   }
 
   function toErrorMessage(e) {
@@ -1223,7 +1221,7 @@ export default function App(){
     }
   },[fs,tomorrow]);
 
-  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{marginBottom:14}}>{!loaderLogoFailed?<img src={companyLogo} onError={function(){setLoaderLogoFailed(true);}} alt="AirPalace" style={{width:92,height:92,objectFit:"contain",filter:"drop-shadow(0 10px 24px rgba(212,185,140,.25))"}}/>:<img src="/logo-192.png" alt="AirPalace" style={{width:88,height:88,objectFit:"contain",filter:"drop-shadow(0 10px 24px rgba(212,185,140,.25))"}}/>}</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
+  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{marginBottom:14}}><img src="/logo-512.png" alt="AirPalace" style={{width:94,height:94,objectFit:"contain",filter:"drop-shadow(0 12px 24px rgba(212,185,140,.28))"}}/></div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
   var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
@@ -1240,7 +1238,7 @@ export default function App(){
       <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
       <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
       <div className="ops-bg-noise" />
-      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"216px"}}>
+      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"228px"}}>
 
       <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1699,7 +1697,7 @@ export default function App(){
         <button
           onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}}
           aria-label="Vuelo nuevo"
-          style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:62,height:62,background:"radial-gradient(circle at 30% 30%,rgba(246,234,214,.2),transparent 48%),linear-gradient(155deg,rgba(8,15,29,.95),rgba(24,36,56,.9))",color:"#f7e8cd",border:"1.5px solid rgba(221,193,150,.72)",borderRadius:"50%",fontSize:36,fontWeight:300,lineHeight:1,cursor:"pointer",boxShadow:"0 12px 30px rgba(2,6,23,.5),0 0 0 4px rgba(212,185,140,.14),0 0 20px rgba(212,185,140,.2)",letterSpacing:0.2,backdropFilter:"blur(11px)",transition:reducedMotion?"none":"transform .22s ease, box-shadow .22s ease"}}
+          style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:64,height:64,background:"radial-gradient(circle at 30% 28%,rgba(246,234,214,.24),transparent 52%),linear-gradient(160deg,rgba(6,14,28,.96),rgba(20,32,52,.92))",color:"#f7e8cd",border:"1.5px solid rgba(221,193,150,.74)",borderRadius:"50%",fontSize:36,fontWeight:300,lineHeight:1,cursor:"pointer",boxShadow:"0 14px 32px rgba(2,6,23,.55),0 0 0 4px rgba(212,185,140,.15),0 0 22px rgba(212,185,140,.24)",letterSpacing:0.2,backdropFilter:"blur(11px)",transition:reducedMotion?"none":"transform .22s ease, box-shadow .22s ease"}}
         >
           +
         </button>
