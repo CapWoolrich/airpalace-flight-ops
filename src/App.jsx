@@ -121,7 +121,7 @@ export default function App(){
       return <svg {...common}><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M8 2v4M16 2v4M3 10h18" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" /></svg>;
     }
     if (tabKey === "list") {
-      return <svg {...common}><path d="M4.2 14.9 11.7 12 19.8 4.2" /><path d="m17.5 4.2 2.3-.1-.1 2.3" /><path d="M10.4 12.5 9 15.8l-2.8.9 1.8-2.6" /><path d="M11.8 12l2.7 1.3 3.4 5.4-5.6-3.4-1.3-2.8" /><path d="m13.1 10.6 1.6 1.6" /></svg>;
+      return <svg {...common}><path d="M2.5 13.2h5.1l3.5 5.1h2.1l-1.6-5.1h5.4c2.6 0 4.5-1 4.5-2.4s-1.9-2.4-4.5-2.4h-5.4l1.6-5.1h-2.1L7.6 8.4H4.2L2.5 6.2H1.3l1.2 4.6-1.2 4.6h1.2z" /></svg>;
     }
     if (tabKey === "recent") {
       return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
@@ -129,7 +129,7 @@ export default function App(){
     if (tabKey === "plan") {
       return <svg {...common}><path d="M8 7.9a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6S8 6.46 8 7.9Z" /><path d="M21.2 16.1a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6s2.6 1.16 2.6 2.6Z" /><path d="M5.4 10.9c1.3 1.7 2.8 2.9 4.7 3.6 1.7.6 3.2.6 4.6.4" strokeDasharray="2.2 2.4" /><path d="M15.2 14.8c.9-.3 1.8-.8 2.6-1.6" /></svg>;
     }
-    return <svg {...common}><path d="m5.6 18.4 6.1-6.1" /><path d="m4.2 13.9 5.9 5.9" /><path d="m13.2 10.1 5.2-5.2a2.1 2.1 0 1 1 3 3l-5.2 5.2" /><path d="m15 8.3 2.9 2.9" /><path d="m10.4 12.6 5.4 5.4" /><path d="m14.5 16.7 1.9-1.9" /></svg>;
+    return <svg {...common}><path d="M14.7 5.2a3.9 3.9 0 0 0 4.6 4.9l-8.8 8.8a2 2 0 0 1-2.8-2.8l8.8-8.8a3.9 3.9 0 0 0-1.8-2.1z" /><path d="M4.2 4.4l5.2 5.2" /><path d="M3.1 3.3l2.1-1.1 1.9 1.9L6 6.2z" /><path d="M11.3 12.4l8.2 8.2" /><path d="M18.2 21.7l3.1-3.1" /></svg>;
   }
 
   function toErrorMessage(e) {
