@@ -15,6 +15,7 @@ import { buildOpsPush } from "./lib/opsNotifications";
 import { hydrateAirportCacheForValues } from "./lib/airports.js";
 import { calcFlightHours, estimateFlightCost, formatUsd } from "./lib/flightCosting.js";
 import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "./lib/timezones.js";
+import companyLogo from "./assets/branding/company-logo.svg";
 
 const TECH_MAP_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 900' fill='none'>
@@ -111,6 +112,7 @@ export default function App(){
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
   var[scrollY,setScrollY]=useState(0);
   var[reducedMotion,setReducedMotion]=useState(false);
+  var[loaderLogoFailed,setLoaderLogoFailed]=useState(false);
   const [airportHydrationTick, setAirportHydrationTick] = useState(0);
   var today=getOperationalTodayISO();
 
@@ -121,15 +123,15 @@ export default function App(){
       return <svg {...common}><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M8 2v4M16 2v4M3 10h18" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" /></svg>;
     }
     if (tabKey === "list") {
-      return <svg {...common}><path d="M22 16.92V19a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 3.2 2 2 0 0 1 4.11 1h2.07a2 2 0 0 1 2 1.72c.12.9.34 1.77.65 2.61a2 2 0 0 1-.45 2.1L7.35 8.46a16 16 0 0 0 8.2 8.2l1.03-1.03a2 2 0 0 1 2.1-.45c.84.31 1.71.53 2.61.65A2 2 0 0 1 22 16.92z" /><path d="m14 10 7-7M15 3h6v6" /></svg>;
+      return <svg {...common}><path d="M2 16 22 8" /><path d="m2 16 6 2 3 4 2-4 9-10" /><path d="M22 8 13 18" /></svg>;
     }
     if (tabKey === "recent") {
       return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
     }
     if (tabKey === "plan") {
-      return <svg {...common}><path d="M6 20H4a1 1 0 0 1-1-1v-2" /><path d="M3 7V5a1 1 0 0 1 1-1h2" /><path d="M18 4h2a1 1 0 0 1 1 1v2" /><path d="M21 17v2a1 1 0 0 1-1 1h-2" /><path d="M8 16 16 8" /><circle cx="8" cy="8" r="2.5" /><circle cx="16" cy="16" r="2.5" /></svg>;
+      return <svg {...common}><path d="M4 19c3-7 7-11 16-14" /><circle cx="5" cy="19" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="20" cy="5" r="2" /><path d="M6.8 17.5 10.2 13.8M13.8 10.2 18.2 6.8" /></svg>;
     }
-    return <svg {...common}><path d="M4 20h16" /><path d="M6 20v-8l5-5 5 5v8" /><path d="M9 12h6" /><path d="M12 9v6" /></svg>;
+    return <svg {...common}><path d="m14.2 5.2-8.4 8.4" /><path d="m16 7 1.8-1.8a1.8 1.8 0 1 1 2.5 2.5L18.5 9.5" /><path d="m7.2 12.2 4.6 4.6" /><path d="m5.8 18.2-2.1 2.1" /><path d="m11.3 12.8 6.9 6.9" /></svg>;
   }
 
   function toErrorMessage(e) {
@@ -1221,7 +1223,7 @@ export default function App(){
     }
   },[fs,tomorrow]);
 
-  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{fontSize:34,marginBottom:12}}>✈</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
+  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{marginBottom:14}}>{!loaderLogoFailed?<img src={companyLogo} onError={function(){setLoaderLogoFailed(true);}} alt="AirPalace" style={{width:92,height:92,objectFit:"contain",filter:"drop-shadow(0 10px 24px rgba(212,185,140,.25))"}}/>:<img src="/logo-192.png" alt="AirPalace" style={{width:88,height:88,objectFit:"contain",filter:"drop-shadow(0 10px 24px rgba(212,185,140,.25))"}}/>}</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
   var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
@@ -1238,7 +1240,7 @@ export default function App(){
       <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
       <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
       <div className="ops-bg-noise" />
-      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"196px"}}>
+      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"216px"}}>
 
       <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1697,9 +1699,9 @@ export default function App(){
         <button
           onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}}
           aria-label="Vuelo nuevo"
-          style={{display:"inline-flex",alignItems:"center",gap:7,background:"linear-gradient(145deg,rgba(12,20,34,.92),rgba(30,41,59,.84))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.52)",borderRadius:999,padding:"8px 15px",fontSize:11.5,fontWeight:800,cursor:"pointer",boxShadow:"0 9px 20px rgba(2,6,23,.38),0 0 18px rgba(212,185,140,.18)",letterSpacing:0.2,backdropFilter:"blur(10px)",transition:reducedMotion?"none":"transform .22s ease, box-shadow .22s ease"}}
+          style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:62,height:62,background:"radial-gradient(circle at 30% 30%,rgba(246,234,214,.2),transparent 48%),linear-gradient(155deg,rgba(8,15,29,.95),rgba(24,36,56,.9))",color:"#f7e8cd",border:"1.5px solid rgba(221,193,150,.72)",borderRadius:"50%",fontSize:36,fontWeight:300,lineHeight:1,cursor:"pointer",boxShadow:"0 12px 30px rgba(2,6,23,.5),0 0 0 4px rgba(212,185,140,.14),0 0 20px rgba(212,185,140,.2)",letterSpacing:0.2,backdropFilter:"blur(11px)",transition:reducedMotion?"none":"transform .22s ease, box-shadow .22s ease"}}
         >
-          ✦ Vuelo nuevo
+          +
         </button>
       </div>
 
@@ -1713,7 +1715,7 @@ export default function App(){
         })}
       </div>
 
-      <div style={{position:"fixed",bottom:"calc(88px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:900}}>
+      <div style={{position:"fixed",bottom:"calc(98px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:900}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
         {phase==="warn"&&<div style={{background:"#f59e0b",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(245,158,11,.45)",textAlign:"center",maxWidth:340}}>⚠️ {errMsg}</div>}
@@ -1722,13 +1724,13 @@ export default function App(){
 
       <button
         onClick={function(){setAgentOpen(function(v){return !v;});}}
-        style={{position:"fixed",right:16,bottom:"calc(148px + env(safe-area-inset-bottom))",zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(212,185,140,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
+        style={{position:"fixed",right:16,bottom:"calc(162px + env(safe-area-inset-bottom))",zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(212,185,140,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
         aria-label="AI Pilot"
       >
         👨🏼‍✈️
       </button>
 
-      {agentOpen&&<div style={{position:"fixed",right:12,bottom:"calc(208px + env(safe-area-inset-bottom))",width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
+      {agentOpen&&<div style={{position:"fixed",right:12,bottom:"calc(224px + env(safe-area-inset-bottom))",width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
             <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(30,64,175,.24)",border:"1px solid rgba(96,165,250,.34)",fontSize:11}}>🧠</span>
