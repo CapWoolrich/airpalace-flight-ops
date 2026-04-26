@@ -114,6 +114,24 @@ export default function App(){
   const [airportHydrationTick, setAirportHydrationTick] = useState(0);
   var today=getOperationalTodayISO();
 
+  function renderTabIcon(tabKey, active) {
+    var stroke = active ? "#111827" : "#d7deea";
+    var common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: stroke, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+    if (tabKey === "cal") {
+      return <svg {...common}><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M8 2v4M16 2v4M3 10h18" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" /></svg>;
+    }
+    if (tabKey === "list") {
+      return <svg {...common}><path d="M22 16.92V19a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 3.2 2 2 0 0 1 4.11 1h2.07a2 2 0 0 1 2 1.72c.12.9.34 1.77.65 2.61a2 2 0 0 1-.45 2.1L7.35 8.46a16 16 0 0 0 8.2 8.2l1.03-1.03a2 2 0 0 1 2.1-.45c.84.31 1.71.53 2.61.65A2 2 0 0 1 22 16.92z" /><path d="m14 10 7-7M15 3h6v6" /></svg>;
+    }
+    if (tabKey === "recent") {
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+    }
+    if (tabKey === "plan") {
+      return <svg {...common}><path d="M6 20H4a1 1 0 0 1-1-1v-2" /><path d="M3 7V5a1 1 0 0 1 1-1h2" /><path d="M18 4h2a1 1 0 0 1 1 1v2" /><path d="M21 17v2a1 1 0 0 1-1 1h-2" /><path d="M8 16 16 8" /><circle cx="8" cy="8" r="2.5" /><circle cx="16" cy="16" r="2.5" /></svg>;
+    }
+    return <svg {...common}><path d="M4 20h16" /><path d="M6 20v-8l5-5 5 5v8" /><path d="M9 12h6" /><path d="M12 9v6" /></svg>;
+  }
+
   function toErrorMessage(e) {
     if (!e) return "Error desconocido";
     if (typeof e === "string") return e;
@@ -1205,7 +1223,7 @@ export default function App(){
 
   if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><div style={{fontSize:34,marginBottom:12}}>✈</div><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
-  var TABS=[{k:"cal",l:"Agenda",i:"🗓️"},{k:"list",l:"Vuelos",i:"✈️"},{k:"recent",l:"Recientes",i:"🕒"},{k:"plan",l:"Planificar",i:"📐"},{k:"gest",l:"Gestión",i:"🛠️"}];
+  var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
   var glowOffset = reducedMotion ? 0 : Math.min(54, scrollY * 0.05);
   var panelPrimary={background:"linear-gradient(165deg,rgba(9,17,31,.85),rgba(16,28,45,.76))",border:"1px solid rgba(212,185,140,.2)",borderRadius:16,boxShadow:"0 14px 28px rgba(2,6,23,.3)",backdropFilter:"blur(8px)"};
@@ -1220,7 +1238,7 @@ export default function App(){
       <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
       <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
       <div className="ops-bg-noise" />
-      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"170px"}}>
+      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"196px"}}>
 
       <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1675,21 +1693,21 @@ export default function App(){
         </div>
       </div>}
 
-      {vw==="cal"&&<div className="ops-floating-cta">
+      <div className="ops-floating-cta">
         <button
           onClick={function(){setNf(Object.assign({},EF,{date:sel}));setEditId(null);setSf(true);}}
           aria-label="Vuelo nuevo"
-          style={{display:"inline-flex",alignItems:"center",gap:8,background:"linear-gradient(145deg,rgba(12,20,34,.92),rgba(30,41,59,.84))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.58)",borderRadius:999,padding:"10px 18px",fontSize:12.5,fontWeight:800,cursor:"pointer",boxShadow:"0 12px 26px rgba(2,6,23,.44),0 0 22px rgba(212,185,140,.22)",letterSpacing:0.2,backdropFilter:"blur(10px)"}}
+          style={{display:"inline-flex",alignItems:"center",gap:7,background:"linear-gradient(145deg,rgba(12,20,34,.92),rgba(30,41,59,.84))",color:"#f5e7cf",border:"1px solid rgba(212,185,140,.52)",borderRadius:999,padding:"8px 15px",fontSize:11.5,fontWeight:800,cursor:"pointer",boxShadow:"0 9px 20px rgba(2,6,23,.38),0 0 18px rgba(212,185,140,.18)",letterSpacing:0.2,backdropFilter:"blur(10px)",transition:reducedMotion?"none":"transform .22s ease, box-shadow .22s ease"}}
         >
           ✦ Vuelo nuevo
         </button>
-      </div>}
+      </div>
 
       <div className="ops-bottom-nav">
         {TABS.map(function(t){
           var active=vw===t.k;
-          return <button key={t.k} onClick={function(){setVw(t.k);}} aria-label={t.l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,minHeight:54,padding:"7px 4px",border:"1px solid "+(active?"rgba(212,185,140,.55)":"rgba(148,163,184,.2)"),borderRadius:12,fontSize:10.5,fontWeight:700,cursor:"pointer",background:active?"linear-gradient(155deg,rgba(244,231,214,.94),rgba(214,191,160,.86))":"rgba(15,23,42,.38)",color:active?"#0f172a":"#c7b08a",boxShadow:active?"0 10px 18px rgba(212,185,140,.22)":"none",transition:"all .2s ease"}}>
-            <span style={{fontSize:14,lineHeight:1}}>{t.i}</span>
+          return <button key={t.k} onClick={function(){setVw(t.k);}} aria-label={t.l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,minHeight:56,padding:"8px 4px",border:"1px solid "+(active?"rgba(255,255,255,.56)":"rgba(203,213,225,.18)"),borderRadius:14,fontSize:10.5,fontWeight:700,cursor:"pointer",background:active?"linear-gradient(160deg,rgba(247,250,252,.96),rgba(226,232,240,.88))":"rgba(70,85,108,.12)",color:active?"#111827":"#d7deea",boxShadow:active?"0 8px 18px rgba(148,163,184,.25)":"none",transform:active?"translateY(-1px)":"translateY(0)",transition:reducedMotion?"none":"all .28s cubic-bezier(.2,.8,.2,1)"}}>
+            <span style={{lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{renderTabIcon(t.k,active)}</span>
             <span>{t.l}</span>
           </button>;
         })}
