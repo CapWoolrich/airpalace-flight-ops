@@ -129,7 +129,10 @@ export default function App(){
     if (tabKey === "plan") {
       return <svg {...common}><path d="M8 7.9a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6S8 6.46 8 7.9Z" /><path d="M21.2 16.1a2.6 2.6 0 1 1-5.2 0c0-1.44 1.18-2.6 2.6-2.6s2.6 1.16 2.6 2.6Z" /><path d="M5.4 10.9c1.3 1.7 2.8 2.9 4.7 3.6 1.7.6 3.2.6 4.6.4" strokeDasharray="2.2 2.4" /><path d="M15.2 14.8c.9-.3 1.8-.8 2.6-1.6" /></svg>;
     }
-    return <svg {...common}><path d="M14.7 5.2a3.9 3.9 0 0 0 4.6 4.9l-8.8 8.8a2 2 0 0 1-2.8-2.8l8.8-8.8a3.9 3.9 0 0 0-1.8-2.1z" /><path d="M4.2 4.4l5.2 5.2" /><path d="M3.1 3.3l2.1-1.1 1.9 1.9L6 6.2z" /><path d="M11.3 12.4l8.2 8.2" /><path d="M18.2 21.7l3.1-3.1" /></svg>;
+    if (tabKey === "gest") {
+      return <svg {...common}><rect x="3.5" y="4.5" width="17" height="11.5" rx="2.2" /><path d="M10 19.5h4" /><path d="M8 21h8" /><path d="M7.8 16h8.4" /></svg>;
+    }
+    return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M12 8.5v3.4l2.2 2.2" /></svg>;
   }
 
   function toErrorMessage(e) {
@@ -1221,7 +1224,7 @@ export default function App(){
     }
   },[fs,tomorrow]);
 
-  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><img src="/logo_login1.png" alt="AirPalace" style={{display:"block",width:196,height:"auto",maxWidth:"72vw",margin:"0 auto 18px",objectFit:"contain",filter:"drop-shadow(0 12px 30px rgba(212,185,140,.22))"}}/><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
+  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><img src="/logo_login1.png" alt="AirPalace" width="196" height="196" loading="eager" fetchPriority="high" decoding="async" style={{display:"block",width:196,height:196,maxWidth:"72vw",margin:"0 auto 18px",objectFit:"contain",filter:"drop-shadow(0 12px 30px rgba(212,185,140,.22))"}}/><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
   var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
@@ -1706,7 +1709,7 @@ export default function App(){
       <div className="ops-bottom-nav">
         {TABS.map(function(t){
           var active=vw===t.k;
-          return <button key={t.k} onClick={function(){setVw(t.k);}} aria-label={t.l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2.5,minHeight:50,padding:"6px 3px",border:"1px solid "+(active?"rgba(255,255,255,.56)":"rgba(203,213,225,.18)"),borderRadius:13,fontSize:10,fontWeight:700,cursor:"pointer",background:active?"linear-gradient(160deg,rgba(247,250,252,.96),rgba(226,232,240,.88))":"rgba(70,85,108,.12)",color:active?"#111827":"#d7deea",boxShadow:active?"0 8px 18px rgba(148,163,184,.25)":"none",transform:active?"translateY(-1px)":"translateY(0)",transition:reducedMotion?"none":"all .28s cubic-bezier(.2,.8,.2,1)"}}>
+          return <button key={t.k} onClick={function(){setVw(t.k);}} aria-label={t.l} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2.5,minHeight:50,padding:"6px 3px",border:"1px solid "+(active?"rgba(255,255,255,.56)":"rgba(203,213,225,.18)"),borderRadius:13,fontSize:10,fontWeight:700,cursor:"pointer",background:active?"linear-gradient(160deg,rgba(247,250,252,.96),rgba(226,232,240,.88))":"rgba(70,85,108,.12)",color:active?"#111827":"#d7deea",boxShadow:active?"0 8px 18px rgba(148,163,184,.25)":"none",transform:active?"translateY(-1px)":"translateY(0)",transition:reducedMotion?"none":"transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, border-color .22s ease, color .22s ease, background .22s ease"}}>
             <span style={{lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{renderTabIcon(t.k,active)}</span>
             <span>{t.l}</span>
           </button>;
