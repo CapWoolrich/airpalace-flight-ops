@@ -66,7 +66,7 @@ async function createItinerary({ supabase, payload, audit, actorName }) {
         date: item.date, ac: payload.aircraft || payload.ac || item.leg.aircraft, orig: item.orig, dest: item.dest,
         time: item.time, rb: payload.requestedBy || payload.rb || item.leg.requestedBy, nt: item.leg.notes || item.leg.nt || "",
         pm: Number(item.leg.pm ?? item.leg.pax ?? 0), pw: Number(item.leg.pw || 0), pc: Number(item.leg.pc || 0), bg: Number(item.leg.bg || 0),
-        st: item.leg.status || "prog", block_minutes: item.block, itinerary_group_id: itineraryGroupId, leg_sequence: i + 1,
+        st: item.leg.status || "prog", itinerary_group_id: itineraryGroupId, leg_sequence: i + 1,
         total_legs: totalLegs, route_summary: routeSummary, suppress_individual_notifications: true,
       }, audit);
       const { data, error } = await supabase.from("flights").insert([row]).select("*").single();

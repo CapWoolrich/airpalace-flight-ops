@@ -29,7 +29,6 @@ const FLIGHT_MUTATION_FIELDS = [
   "total_legs",
   "route_summary",
   "suppress_individual_notifications",
-  "block_minutes",
 ];
 
 function normalizeFlightMutationValue(field, value) {

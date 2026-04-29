@@ -1780,11 +1780,13 @@ export default function App(){
             <Stp label="Mujeres" value={nf.pw} onChange={function(v){setNf(function(p){return Object.assign({},p,{pw:v});});}} icon="F" wl="150"/>
             <Stp label="Niños" value={nf.pc} onChange={function(v){setNf(function(p){return Object.assign({},p,{pc:v});});}} icon="N" wl="80"/>
           </div>
-          <label style={LS}>Hora</label>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
-            {["STBY","07:00","08:00","09:00","12:00","15:00","16:00","18:00"].map(function(t){return <button key={t} onClick={function(){setNf(function(p){return Object.assign({},p,{time:t});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.time===t?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.time===t?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{t==="STBY"?t:ftm(t)}</button>;})}
-          </div>
-          <input type="time" value={nf.time!=="STBY"?nf.time:""} onChange={function(e){setNf(function(p){return Object.assign({},p,{time:e.target.value});});}} style={IS}/>
+          {(itineraryMode==="single" || editId!==null)&&<>
+            <label style={LS}>Hora</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+              {["STBY","07:00","08:00","09:00","12:00","15:00","16:00","18:00"].map(function(t){return <button key={t} onClick={function(){setNf(function(p){return Object.assign({},p,{time:t});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.time===t?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.time===t?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{t==="STBY"?t:ftm(t)}</button>;})}
+            </div>
+            <input type="time" value={nf.time!=="STBY"?nf.time:""} onChange={function(e){setNf(function(p){return Object.assign({},p,{time:e.target.value});});}} style={IS}/>
+          </>}
           <label style={LS}>Solicitado por</label>
           <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
             {REQBY.map(function(r){return <button key={r} onClick={function(){setNf(function(p){return Object.assign({},p,{rb:r});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.rb===r?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.rb===r?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{r}</button>;})}
