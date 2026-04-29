@@ -88,6 +88,7 @@ export async function emitFlightSideEffects({
 } = {}) {
   const warnings = [];
   if (!supabase || !flight) return { warnings: ["side_effects_missing_context"] };
+  const suppressIndividual = flight?.suppressIndividualNotifications || flight?.suppress_individual_notifications;
 
   try {
     const pushTypeMap = {
@@ -103,7 +104,7 @@ export async function emitFlightSideEffects({
     warnings.push("push:unexpected_error");
   }
 
-  if (shouldEmitFlightEmail(eventType)) {
+  if (!suppressIndividual && shouldEmitFlightEmail(eventType)) {
     try {
       const emailEventType = mapFlightEmailEventType(eventType);
       const emailLabelByType = {
@@ -124,7 +125,7 @@ export async function emitFlightSideEffects({
     }
   }
 
-  if (shouldEmitFlightWhatsApp(eventType)) {
+  if (!suppressIndividual && shouldEmitFlightWhatsApp(eventType)) {
     const whatsappLabel = mapFlightWhatsAppLabel(eventType);
     if (!whatsappLabel) {
       warnings.push("whatsapp:unsupported_event_type");
