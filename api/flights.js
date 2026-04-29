@@ -4,9 +4,15 @@ import { buildAuditMeta } from "../src/lib/opsMutationBuilders.js";
 import { applyOpsMutation } from "../src/lib/opsWriteEngine.js";
 import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
 import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../src/server/_opsSideEffects.js";
+import { sendOperationalEmail } from "../src/server/_emailSender.js";
+import { buildItineraryEmail } from "../src/server/_emailTemplate.js";
+import { buildItineraryCalendarInvite } from "../src/server/_calendarInvite.js";
+import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "../src/lib/timezones.js";
+import { buildCreateFlightMutation } from "../src/lib/opsMutationBuilders.js";
 import { validateOpsWritePayload } from "../src/server/_validation.js";
 
-const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo"];
+const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo", "create_itinerary", "create-itinerary"];
+const ACTION_ALIASES = { "create-itinerary": "create_itinerary" };
 
 const SEED_FLIGHTS = [
   { date: "2026-04-02", ac: "N35EA", orig: "Cozumel", dest: "Merida", time: "08:30", rb: "Jabib C", nt: "", pm: 0, pw: 0, pc: 0, bg: 0, st: "comp" },
@@ -26,6 +32,55 @@ const SEED_FLIGHTS = [
 
 const SEED_MAINT = { N35EA: "disponible", N540JL: "disponible" };
 
+
+async function createItinerary({ supabase, payload, audit, actorName }) {
+  const legs = Array.isArray(payload.legs) ? payload.legs : [];
+  if (legs.length < 2) throw new Error("El itinerario requiere al menos 2 tramos.");
+  const itineraryGroupId = crypto.randomUUID();
+  const totalLegs = legs.length;
+  const routeSummary = String(payload.routeSummary || "").trim() || legs.map((l, i) => (i === 0 ? `${l.origin || "-"} → ${l.destination || "-"}` : `${l.destination || "-"}`)).join(" → ");
+  const normalizedLegs = [];
+  for (let i = 0; i < legs.length; i += 1) {
+    const leg = legs[i] || {};
+    const orig = String(leg.origin || "").trim();
+    const dest = String(leg.destination || "").trim();
+    const date = normalizeDateIso(leg.departureDate || leg.date || payload.date);
+    const time = String(leg.departureTime || leg.time || "").trim();
+    if (!orig || !dest || !date || !time) throw new Error(`Tramo ${i + 1} incompleto.`);
+    const depMin = parseTimeToMinutes(time);
+    if (!Number.isFinite(depMin)) throw new Error(`Hora inválida en tramo ${i + 1}.`);
+    const tz = resolveAirportTimezone(orig, { fallbackTimeZone: "America/Merida" }).timeZone;
+    const depMs = localDateTimeToUtcMs(date, depMin, tz);
+    const block = Math.max(30, Number(leg.block_minutes || leg.blockMinutes || 60));
+    const arrMs = depMs + block * 60 * 1000;
+    if (i > 0 && depMs < normalizedLegs[i - 1].arrMs) throw new Error(`La salida del tramo ${i + 1} es anterior a la llegada estimada del tramo previo.`);
+    normalizedLegs.push({ leg, orig, dest, date, time, block, arrMs });
+  }
+
+  const insertedIds = [];
+  const insertedFlights = [];
+  try {
+    for (let i = 0; i < normalizedLegs.length; i += 1) {
+      const item = normalizedLegs[i];
+      const row = buildCreateFlightMutation({
+        date: item.date, ac: payload.aircraft || payload.ac || item.leg.aircraft, orig: item.orig, dest: item.dest,
+        time: item.time, rb: payload.requestedBy || payload.rb || item.leg.requestedBy, nt: item.leg.notes || item.leg.nt || "",
+        pm: Number(item.leg.pm ?? item.leg.pax ?? 0), pw: Number(item.leg.pw || 0), pc: Number(item.leg.pc || 0), bg: Number(item.leg.bg || 0),
+        st: item.leg.status || "prog", itinerary_group_id: itineraryGroupId, leg_sequence: i + 1,
+        total_legs: totalLegs, route_summary: routeSummary, suppress_individual_notifications: true,
+      }, audit);
+      const { data, error } = await supabase.from("flights").insert([row]).select("*").single();
+      if (error) throw error;
+      insertedIds.push(data.id); insertedFlights.push(data);
+    }
+    const itineraryPayload = { ac: payload.aircraft || payload.ac, rb: payload.requestedBy || payload.rb, routeSummary, itineraryGroupId, legs: insertedFlights };
+    await sendOperationalEmail({ eventType: "flight_created", payload: itineraryPayload, templateOverride: buildItineraryEmail(itineraryPayload), attachmentsOverride: [buildItineraryCalendarInvite(itineraryPayload)].filter(Boolean) });
+    return { itineraryGroupId, flightIds: insertedIds, flights: insertedFlights };
+  } catch (e) {
+    if (insertedIds.length) await supabase.from("flights").delete().in("id", insertedIds);
+    throw e;
+  }
+}
 function bad(res, status, error, extras = {}) {
   return res.status(status).json({ ok: false, error, ...extras });
 }
@@ -57,8 +112,11 @@ async function restoreDemoData(supabase, audit) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
-  const action = String(req.body?.action || "");
-  if (!OPS_WRITE_ACTIONS.includes(action)) return bad(res, 400, "Acción no permitida");
+  const rawAction = String(req.body?.action || "");
+  const action = ACTION_ALIASES[rawAction] || rawAction;
+  if (!OPS_WRITE_ACTIONS.includes(rawAction) && !OPS_WRITE_ACTIONS.includes(action)) {
+    return bad(res, 400, "Acción no permitida", { receivedAction: rawAction, allowedActions: OPS_WRITE_ACTIONS });
+  }
 
   const access = await requireRouteAccess(req, {
     requireAuth: true,
@@ -83,6 +141,11 @@ export default async function handler(req, res) {
   });
 
   try {
+    if (action === "create_itinerary") {
+      const itinerary = await createItinerary({ supabase, payload, audit, actorName });
+      return res.status(200).json({ ok: true, success: true, itineraryGroupId: itinerary.itineraryGroupId, flightIds: itinerary.flightIds, flights: itinerary.flights, message: "Itinerario creado correctamente." });
+    }
+
     if (action === "restore_demo") {
       if (String(process.env.VITE_ENABLE_DEMO_SEED || "").toLowerCase() !== "true") {
         return bad(res, 403, "La restauración demo está deshabilitada en este entorno");

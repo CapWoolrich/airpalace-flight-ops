@@ -45,7 +45,7 @@ Server API routes:
 Define per-user roles in `public.user_roles`:
 
 - `viewer`: read-only (`flights`, `aircraft_status`) from client.
-- `ops`: can execute operational writes through backend routes (`/api/ops-write`, `/api/ai-write`).
+- `ops`: can execute operational writes through backend routes (`/api/flights`, `/api/ai-write`).
 - `admin`: everything in `ops` + admin/internal notification routes and `restore_demo`.
 
 Optional (notifications):
