@@ -305,7 +305,17 @@ export default function App(){
       body: JSON.stringify({ action, payload }),
     });
     const body = await response.json().catch(function(){return{};});
-    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      if (String(action || "") === "create-itinerary" || String(action || "") === "create_itinerary") {
+        console.error("Create itinerary failed", {
+          action,
+          payload,
+          responseStatus: response.status,
+          responseBody: body,
+        });
+      }
+      throw new Error(body.error || (String(action || "") === "create-itinerary" ? "No se pudo guardar la ruta completa. Revisa permisos o intenta nuevamente." : `HTTP ${response.status}`));
+    }
     if (Array.isArray(body.side_effect_warnings) && body.side_effect_warnings.length) {
       setErrMsg(`Acción guardada con avisos operativos: ${body.side_effect_warnings.join("; ")}`);
       setPhase("warn");
@@ -552,7 +562,7 @@ export default function App(){
       var routeSummary = normalizedLegs.length
         ? [normalizedLegs[0].origin].concat(normalizedLegs.map(function(l){return l.destination;})).join(" → ")
         : "";
-      var result = await callOpsWrite("create_itinerary", {
+      var result = await callOpsWrite("create-itinerary", {
         routeSummary: routeSummary,
         aircraft: baseFlight.ac,
         requestedBy: baseFlight.rb,

@@ -11,7 +11,8 @@ import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirp
 import { buildCreateFlightMutation } from "../src/lib/opsMutationBuilders.js";
 import { validateOpsWritePayload } from "../src/server/_validation.js";
 
-const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo", "create_itinerary"];
+const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo", "create_itinerary", "create-itinerary"];
+const ACTION_ALIASES = { "create-itinerary": "create_itinerary" };
 
 const SEED_FLIGHTS = [
   { date: "2026-04-02", ac: "N35EA", orig: "Cozumel", dest: "Merida", time: "08:30", rb: "Jabib C", nt: "", pm: 0, pw: 0, pc: 0, bg: 0, st: "comp" },
@@ -111,8 +112,11 @@ async function restoreDemoData(supabase, audit) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
-  const action = String(req.body?.action || "");
-  if (!OPS_WRITE_ACTIONS.includes(action)) return bad(res, 400, "Acción no permitida");
+  const rawAction = String(req.body?.action || "");
+  const action = ACTION_ALIASES[rawAction] || rawAction;
+  if (!OPS_WRITE_ACTIONS.includes(rawAction) && !OPS_WRITE_ACTIONS.includes(action)) {
+    return bad(res, 400, "Acción no permitida", { receivedAction: rawAction, allowedActions: OPS_WRITE_ACTIONS });
+  }
 
   const access = await requireRouteAccess(req, {
     requireAuth: true,
