@@ -77,3 +77,29 @@ export function buildFlightIcs(eventType, payload = {}) {
     type: "text/calendar; charset=utf-8; method=" + method,
   };
 }
+
+export function buildItineraryCalendarInvite(payload = {}) {
+  const legs = Array.isArray(payload.legs) ? payload.legs : [];
+  if (!legs.length) return null;
+  const dtStamp = toUtcIcsStamp(new Date()) || "19700101T000000Z";
+  const events = legs.map((leg, idx) => {
+    const depDate = normalizeDateIso(leg.date);
+    const depMinutes = parseTimeToMinutes(leg.time || "12:00");
+    const depTz = resolveAirportTimezone(leg.orig, { fallbackTimeZone: "America/Merida" }).timeZone;
+    if (!depDate || !Number.isFinite(depMinutes) || !depTz) return null;
+    const startUtcMs = localDateTimeToUtcMs(depDate, depMinutes, depTz);
+    const blockMins = Math.max(30, Number(leg.block_minutes || 60));
+    const dtStart = toUtcIcsStamp(startUtcMs);
+    const dtEnd = toUtcIcsStamp(startUtcMs + blockMins * 60 * 1000);
+    const uid = `itinerary-${payload.itineraryGroupId || 'group'}-leg-${idx + 1}@airpalace.app`;
+    return [
+      'BEGIN:VEVENT',`UID:${uid}`,`DTSTAMP:${dtStamp}`,`SEQUENCE:0`,`STATUS:CONFIRMED`,
+      `DTSTART:${dtStart}`,`DTEND:${dtEnd}`,
+      `SUMMARY:${esc(`${payload.ac || '-'} | Leg ${idx + 1}/${legs.length} | ${leg.orig} → ${leg.dest}`)}`,
+      `DESCRIPTION:${esc(`Ruta completa: ${payload.routeSummary || '-'}\\nTramo: ${idx + 1}/${legs.length}\\nAeronave: ${payload.ac || '-'}\\nPAX: ${Number(leg.pm||0)+Number(leg.pw||0)+Number(leg.pc||0)}\\nSolicitó: ${payload.rb || '-'}\\nNotas: ${leg.nt || '-'}\\nApp: ${payload.appUrl || '-'}`)}`,
+      `LOCATION:${esc(`${leg.orig} -> ${leg.dest}`)}`,'END:VEVENT'
+    ].join('\r\n');
+  }).filter(Boolean);
+  const ics = ['BEGIN:VCALENDAR','PRODID:-//AirPalace//Flight Ops//ES','VERSION:2.0','CALSCALE:GREGORIAN','METHOD:REQUEST',...events,'END:VCALENDAR'].join('\r\n');
+  return { filename: `AirPalace-Itinerary-${(payload.routeSummary || 'route').replace(/\s+/g,'-')}.ics`, content: Buffer.from(ics, 'utf8').toString('base64'), type: 'text/calendar; charset=utf-8; method=REQUEST' };
+}
