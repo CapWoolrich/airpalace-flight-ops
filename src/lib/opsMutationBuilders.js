@@ -29,10 +29,14 @@ const FLIGHT_MUTATION_FIELDS = [
   "total_legs",
   "route_summary",
   "suppress_individual_notifications",
+  "updated_notification_sent_at",
+  "cancelled_at",
+  "cancellation_scope",
 ];
 
 function normalizeFlightMutationValue(field, value) {
   if (["pm", "pw", "pc", "bg"].includes(field)) return Number(value || 0);
+  if (field === "suppress_individual_notifications") return value === true;
   if (["estimated_fixed_cost_usd", "estimated_variable_cost_usd", "estimated_total_cost_usd", "estimated_cost_hours"].includes(field)) {
     if (value === null || value === undefined || value === "") return null;
     const num = Number(value);
@@ -50,8 +54,10 @@ function normalizeFlightMutationValue(field, value) {
 function pickFlightMutationFields(payload = {}, { includeMissing = false } = {}) {
   const out = {};
   FLIGHT_MUTATION_FIELDS.forEach((field) => {
-    if (!includeMissing && (payload[field] === undefined || payload[field] === null)) return;
-    out[field] = normalizeFlightMutationValue(field, payload[field]);
+    var rawValue = payload[field];
+    if (field === "suppress_individual_notifications" && rawValue === undefined) rawValue = payload.suppressIndividualNotifications;
+    if (!includeMissing && (rawValue === undefined || rawValue === null)) return;
+    out[field] = normalizeFlightMutationValue(field, rawValue);
   });
   return out;
 }
@@ -112,8 +118,12 @@ export function buildEditFlightMutation(payload = {}, audit = {}) {
   return withFlightUpdateMeta(base, audit);
 }
 
-export function buildCancelFlightMutation(audit = {}) {
-  return withFlightUpdateMeta({ st: "canc" }, audit);
+export function buildCancelFlightMutation(audit = {}, payload = {}) {
+  return withFlightUpdateMeta({
+    st: "canc",
+    cancelled_at: payload.cancelled_at || new Date().toISOString(),
+    cancellation_scope: payload.cancellation_scope || payload.cancellationScope || null,
+  }, audit);
 }
 
 export function buildDuplicateFlightMutation(sourceFlight = {}, overrides = {}, audit = {}) {
