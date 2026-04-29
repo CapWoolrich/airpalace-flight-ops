@@ -72,7 +72,7 @@ test("emitFlightSideEffects triggers email warning for edit when email env is mi
 test("ops/ai write flows do not hardcode WhatsApp only for cancel_flight", async () => {
   const { readFile } = await import("node:fs/promises");
   const [opsWrite, aiWrite] = await Promise.all([
-    readFile(new URL("../api/ops-write.js", import.meta.url), "utf8"),
+    readFile(new URL("../api/flights.js", import.meta.url), "utf8"),
     readFile(new URL("../api/ai-write.js", import.meta.url), "utf8"),
   ]);
 

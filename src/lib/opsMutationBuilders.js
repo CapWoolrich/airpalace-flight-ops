@@ -24,6 +24,11 @@ const FLIGHT_MUTATION_FIELDS = [
   "estimated_cost_note",
   "estimated_cost_hours",
   "estimated_cost_profile",
+  "itinerary_group_id",
+  "leg_sequence",
+  "total_legs",
+  "route_summary",
+  "suppress_individual_notifications",
 ];
 
 function normalizeFlightMutationValue(field, value) {

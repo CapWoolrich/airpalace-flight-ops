@@ -126,3 +126,12 @@ export function buildOperationalEmail(eventType, payload = {}) {
     text: renderText(rows, headline),
   };
 }
+
+export function buildItineraryEmail(payload = {}) {
+  const legs = Array.isArray(payload.legs) ? payload.legs : [];
+  const subject = `New Flight Itinerary Scheduled | ${payload.ac || '-'} | ${payload.routeSummary || '-'}`;
+  const rows = legs.map((leg, i) => `<tr><td style="padding:6px 10px;color:#64748b;font-size:13px;">Leg ${i + 1}</td><td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${escapeHtml(`${leg.orig} → ${leg.dest} | ${fmtDate(leg.date)} ${leg.time || 'STBY'} | ETA ${leg.eta_local || '-'} | PAX ${Number(leg.pm||0)+Number(leg.pw||0)+Number(leg.pc||0)} | ${leg.nt || '-'}`)}</td></tr>`).join('');
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f8fafc;padding:24px;"><div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;"><div style="background:#0f172a;color:#fff;padding:16px 18px;font-size:18px;font-weight:700;">AirPalace Flight Ops</div><div style="padding:16px 18px;"><div style="font-size:16px;color:#0f172a;font-weight:700;margin-bottom:10px;">✈️ New Flight Itinerary Scheduled</div><div style="font-size:13px;color:#334155;margin-bottom:10px;">${escapeHtml(payload.routeSummary || '-')}</div><table style="width:100%;border-collapse:collapse;"><tr><td style="padding:6px 10px;color:#64748b;font-size:13px;">Aircraft</td><td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${escapeHtml(payload.ac || '-')}</td></tr><tr><td style="padding:6px 10px;color:#64748b;font-size:13px;">Requested by</td><td style="padding:6px 10px;color:#0f172a;font-size:13px;font-weight:600;">${escapeHtml(payload.rb || '-')}</td></tr>${rows}</table><p style="margin-top:12px;color:#475569;font-size:12px;">Add to Apple Calendar / Outlook using the attached calendar file.</p></div></div></div>`;
+  const text = [`AirPalace Flight Ops`,`New Flight Itinerary Scheduled`,`Ruta: ${payload.routeSummary || '-'}`,`Aeronave: ${payload.ac || '-'}`,`Solicitó: ${payload.rb || '-'}`,'',...legs.map((leg,i)=>`Leg ${i+1}: ${leg.orig} -> ${leg.dest} ${leg.date} ${leg.time || 'STBY'} ETA ${leg.eta_local || '-'} PAX ${Number(leg.pm||0)+Number(leg.pw||0)+Number(leg.pc||0)} ${leg.nt || ''}`),'','Add to Apple Calendar / Outlook using the attached calendar file.'].join('\n');
+  return { subject, html, text };
+}

@@ -8,7 +8,8 @@ const VALID_AIRCRAFT = new Set(["N35EA", "N540JL"]);
 const VALID_AIRCRAFT_STATUSES = new Set(["disponible", "mantenimiento", "aog"]);
 const VALID_FLIGHT_STATUSES = new Set(["prog", "enc", "comp", "canc"]);
 const WRITE_ACTIONS = new Set(["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status"]);
-const OPS_WRITE_ACTIONS = new Set([...WRITE_ACTIONS, "restore_demo"]);
+const OPS_WRITE_ACTIONS = new Set([...WRITE_ACTIONS, "restore_demo", "create_itinerary", "create-itinerary"]);
+const ACTION_ALIASES = { "create-itinerary": "create_itinerary" };
 
 function hasControlChars(value) {
   return CONTROL_CHARS_REGEX.test(String(value || ""));
@@ -124,13 +125,16 @@ function validateCommonFlightPayload(payload, { requireCoreFields = false } = {}
 }
 
 export function validateOpsWritePayload(action, payload = {}) {
-  if (!OPS_WRITE_ACTIONS.has(String(action || ""))) return fail("Acción no permitida");
-  if (action === "restore_demo") return pass();
+  const normalizedAction = ACTION_ALIASES[String(action || "")] || String(action || "");
+  if (!OPS_WRITE_ACTIONS.has(String(action || "")) && !OPS_WRITE_ACTIONS.has(normalizedAction)) return fail("Acción no permitida");
+  if (normalizedAction === "restore_demo") return pass();
 
-  const common = validateCommonFlightPayload(payload, { requireCoreFields: action === "create_flight" });
+  if (normalizedAction === "create_itinerary") return pass();
+
+  const common = validateCommonFlightPayload(payload, { requireCoreFields: normalizedAction === "create_flight" });
   if (!common.ok) return common;
 
-  if (action === "change_aircraft_status") {
+  if (normalizedAction === "change_aircraft_status") {
     const ac = ensureString(payload.ac, { field: "ac", required: true, max: 10 });
     if (!ac.ok) return ac;
     if (!VALID_AIRCRAFT.has(ac.value)) return fail("Aeronave inválida");
