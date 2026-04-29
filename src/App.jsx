@@ -1291,7 +1291,7 @@ export default function App(){
     }
   },[fs,tomorrow]);
 
-  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><img src="/logo_login1.png" alt="AirPalace" width="196" height="196" loading="eager" fetchPriority="high" decoding="async" style={{display:"block",width:196,height:196,maxWidth:"72vw",margin:"0 auto 18px",objectFit:"contain",filter:"drop-shadow(0 12px 30px rgba(212,185,140,.22))"}}/><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
+  if(phase==="loading")return <div className="ops-loading-shell"><div style={{textAlign:"center",color:"#97a7c4"}}><img src="/logo_login2.png?v=2" alt="AirPalace" width="196" height="196" loading="eager" fetchPriority="high" decoding="async" style={{display:"block",width:196,height:196,maxWidth:"72vw",margin:"0 auto 18px",objectFit:"contain",filter:"drop-shadow(0 12px 30px rgba(212,185,140,.22))"}}/><div style={{fontSize:14,fontWeight:600,letterSpacing:0.4}}>Cargando centro de operaciones...</div></div></div>;
 
   var TABS=[{k:"cal",l:"Agenda"},{k:"list",l:"Vuelos"},{k:"recent",l:"Recientes"},{k:"plan",l:"Planificar"},{k:"gest",l:"Gestión"}];
   var mapOffset = reducedMotion ? 0 : Math.min(72, scrollY * 0.08);
