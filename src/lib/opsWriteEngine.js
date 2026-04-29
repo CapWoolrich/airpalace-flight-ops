@@ -116,7 +116,7 @@ export async function applyOpsMutation({
 
   if (action === "cancel_flight") {
     const { data: existing } = await db.from("flights").select("*").eq("id", flightId).single();
-    const cancelMutation = buildCancelFlightMutation(audit);
+    const cancelMutation = buildCancelFlightMutation(audit, payload);
     const { warnings } = await runFlightMutationWithAuditFallback(
       (nextUpdates) => db.from("flights").update(nextUpdates).eq("id", flightId),
       cancelMutation,
