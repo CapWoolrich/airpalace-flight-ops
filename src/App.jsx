@@ -67,6 +67,9 @@ export default function App(){
   var[ntf,setNtf]=useState(null);
   var EF={ac:"N35EA",orig:"",dest:"",date:initialOpsDate,time:"",rb:"",nt:"",pm:0,pw:0,pc:0,bg:0,st:"prog"};
   var[nf,setNf]=useState(EF);
+  var itineraryLegTemplate={orig:"",dest:"",date:initialOpsDate,time:"",pm:0,pw:0,pc:0,nt:""};
+  var[itineraryMode,setItineraryMode]=useState("single");
+  var[itineraryLegs,setItineraryLegs]=useState([Object.assign({}, itineraryLegTemplate)]);
   var[rc,setRc]=useState({ac:"N35EA",orig:"",dest:"",pm:0,pw:0,pc:0,bg:0,res:null});
   var[costProfiles,setCostProfiles]=useState([]);
   var[agentInstruction,setAgentInstruction]=useState("");
@@ -530,6 +533,46 @@ export default function App(){
     }
   }
 
+  async function addItinerary(baseFlight, legs) {
+    setPhase("saving");
+    try {
+      var normalizedLegs = legs.map(function(leg, idx){
+        return {
+          origin: String(idx===0 ? leg.orig : (leg.orig || legs[idx-1]?.dest || "")).trim(),
+          destination: String(leg.dest || "").trim(),
+          departureDate: leg.date,
+          departureTime: leg.time,
+          pax: Number(leg.pm||0)+Number(leg.pw||0)+Number(leg.pc||0),
+          pm: Number(leg.pm||0),
+          pw: Number(leg.pw||0),
+          pc: Number(leg.pc||0),
+          notes: noteWithActor(leg.nt || "", actorName),
+        };
+      });
+      var routeSummary = normalizedLegs.length
+        ? [normalizedLegs[0].origin].concat(normalizedLegs.map(function(l){return l.destination;})).join(" → ")
+        : "";
+      var result = await callOpsWrite("create_itinerary", {
+        routeSummary: routeSummary,
+        aircraft: baseFlight.ac,
+        requestedBy: baseFlight.rb,
+        legs: normalizedLegs,
+      });
+      var firstFlight = result?.flights?.[0] || baseFlight;
+      setNtf({ fl: firstFlight, lbl: "ITINERARIO PROGRAMADO" });
+      setSf(false);
+      setEditId(null);
+      setItineraryMode("single");
+      setItineraryLegs([Object.assign({}, itineraryLegTemplate, { date: sel })]);
+      setNf(Object.assign({}, EF, { date: sel }));
+      setPhase("saved");
+      setTimeout(() => setPhase("ready"), 1500);
+    } catch (e) {
+      setErrMsg(toErrorMessage(e));
+      setPhase("error");
+    }
+  }
+
   async function editFlight(flight) {
     setPhase("saving");
     try {
@@ -644,10 +687,24 @@ export default function App(){
   }
 
   function handleSave() {
-    if (!nf.orig||!nf.dest||!nf.time||!nf.rb) return;
+    if (itineraryMode==="single" && (!nf.orig||!nf.dest||!nf.time||!nf.rb)) return;
     if (!actorName.trim()) {
       setErrMsg("Indica quién está programando/editando este vuelo.");
       setPhase("error");
+      return;
+    }
+    if (itineraryMode==="itinerary" && editId===null) {
+      var hasInvalidLeg = itineraryLegs.some(function(leg, idx){
+        if (!leg.dest || !leg.date || !leg.time) return true;
+        var origin = idx===0 ? leg.orig : (leg.orig || itineraryLegs[idx-1]?.dest || "");
+        return !origin;
+      });
+      if (!nf.rb || hasInvalidLeg) {
+        setErrMsg("Completa todos los tramos y solicitante para guardar la ruta completa.");
+        setPhase("error");
+        return;
+      }
+      addItinerary(nf, itineraryLegs);
       return;
     }
     if (editId !== null) editFlight(nf);
@@ -1326,6 +1383,10 @@ export default function App(){
               <button onClick={function(){delFlight(f.id);}} style={{background:"rgba(30,41,59,.8)",border:"1px solid rgba(148,163,184,.28)",borderRadius:7,padding:"4px 8px",fontSize:13,cursor:"pointer",color:"#94a3b8"}}>×</button>
             </div>
             <div style={{fontWeight:700,color:"#f1f5f9",fontSize:17}}>{toAirportNameLabel(f.orig)} <span style={{color:"#94a3b8"}}>→</span> {toAirportNameLabel(f.dest)}</div>
+            {(f.leg_sequence&&f.total_legs)&&<div style={{display:"inline-flex",gap:6,alignItems:"center",marginTop:4}}>
+              <span style={{fontSize:10,fontWeight:700,color:"#bfdbfe",padding:"2px 8px",borderRadius:999,border:"1px solid rgba(147,197,253,.4)",background:"rgba(30,58,138,.35)"}}>Leg {f.leg_sequence}/{f.total_legs}</span>
+              {f.route_summary&&<span style={{fontSize:10,color:"#9fb0cd"}}>Part of: {f.route_summary}</span>}
+            </div>}
             <div style={{color:subtleText,fontSize:13,marginTop:2}}>{ftm(f.time)} · {f.rb||"-"}{px>0?" · "+px+" pax":""}{f.nt?" · "+f.nt:""}</div>
             <div style={{fontSize:11,color:"#9fb0cd"}}>UTC salida: {flightDepartureUtcLabel(f)}</div>
             {etaLocalUtc(f)&&<div style={{fontSize:11,color:"#bfdbfe",marginTop:3}}>🕓 ETA local destino: {etaLocalUtc(f).local}</div>}
@@ -1448,6 +1509,7 @@ export default function App(){
           <div key={f.id} style={Object.assign({},flightCardSurface,{padding:12,marginBottom:8,borderLeft:"3px solid "+(AC[f.ac]?.clr||"#64748b")})}>
             <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
               <div style={{fontWeight:800,color:"#f8fafc",fontSize:16,lineHeight:1.25}}>{f.ac} · {toAirportNameLabel(f.orig)} → {toAirportNameLabel(f.dest)}</div>
+              {(f.leg_sequence&&f.total_legs)&&<div style={{marginTop:4,fontSize:10,color:"#93c5fd"}}>Leg {f.leg_sequence}/{f.total_legs}{f.route_summary?` · ${f.route_summary}`:""}</div>}
               <span style={{fontSize:10,background:s.b,color:s.c,padding:"2px 8px",borderRadius:10,fontWeight:700}}>{s.i} {s.l}</span>
             </div>
             <div style={{fontSize:13,color:"#cbd5e1",fontWeight:600,marginTop:2}}>{f.date} · {ftm(f.time)}</div>
@@ -1635,11 +1697,61 @@ export default function App(){
               ← Cerrar
             </button>
           </div>
+          {editId===null&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,background:"rgba(15,23,42,.6)",border:"1px solid rgba(148,163,184,.25)",padding:6,borderRadius:14,marginBottom:12}}>
+            <button onClick={function(){setItineraryMode("single");}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="single"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="single"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Vuelo sencillo</button>
+            <button onClick={function(){setItineraryMode("itinerary");setItineraryLegs(function(prev){if(prev.length)return prev;return [Object.assign({},itineraryLegTemplate,{orig:nf.orig||"",date:nf.date||sel,time:nf.time||""})];});}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="itinerary"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="itinerary"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Ruta completa</button>
+          </div>}
           <label style={LS}>Fecha</label><input type="date" value={nf.date} onChange={function(e){setNf(function(p){return Object.assign({},p,{date:e.target.value});});}} style={IS}/>
           <label style={LS}>Aeronave</label>
           <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setNf(function(p){return Object.assign({},p,{ac:a.id});});}} style={{flex:1,padding:"9px 8px",border:"1px solid "+(nf.ac===a.id?a.clr:"rgba(148,163,184,.3)"),borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:nf.ac===a.id?"linear-gradient(160deg,"+a.clr+"33,"+a.clr+"22)":"rgba(15,23,42,.72)",color:nf.ac===a.id?"#eaf2ff":"#cbd5e1",boxShadow:nf.ac===a.id?"0 8px 14px rgba(2,6,23,.3)":"none"}}>{a.id}<br/><span style={{fontSize:10,color:nf.ac===a.id?"#bfdbfe":"#8ea2c8"}}>{a.tag}</span></button>;})}</div>
-          <ApIn value={nf.orig} onChange={function(v){setNf(function(p){return Object.assign({},p,{orig:v});});}} label="Origen"/>
-          <ApIn value={nf.dest} onChange={function(v){setNf(function(p){return Object.assign({},p,{dest:v});});}} label="Destino"/>
+          <ApIn
+            value={nf.orig}
+            onChange={function(v){
+              setNf(function(p){return Object.assign({},p,{orig:v});});
+              if(itineraryMode==="itinerary"){
+                setItineraryLegs(function(prev){
+                  if(!prev.length)return prev;
+                  var copy=prev.slice();
+                  copy[0]=Object.assign({},copy[0],{orig:v});
+                  return copy;
+                });
+              }
+            }}
+            label="Origen"
+          />
+          <ApIn
+            value={nf.dest}
+            onChange={function(v){
+              setNf(function(p){return Object.assign({},p,{dest:v});});
+              if(itineraryMode==="itinerary"){
+                setItineraryLegs(function(prev){
+                  if(!prev.length)return prev;
+                  var copy=prev.slice();
+                  copy[0]=Object.assign({},copy[0],{dest:v});
+                  if(copy[1]&&!copy[1].orig)copy[1]=Object.assign({},copy[1],{orig:v});
+                  return copy;
+                });
+              }
+            }}
+            label="Destino"
+          />
+          {itineraryMode==="itinerary"&&editId===null&&<div style={{marginBottom:10,background:"rgba(15,23,42,.66)",border:"1px solid rgba(148,163,184,.24)",borderRadius:14,padding:12}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#e2e8f0",marginBottom:10}}>Itinerario completo</div>
+            {itineraryLegs.map(function(leg,idx){var legOrig = idx===0 ? (leg.orig||nf.orig||"") : (leg.orig||itineraryLegs[idx-1]?.dest||""); return <div key={"leg-"+idx} style={{marginBottom:10,padding:12,borderRadius:12,background:"rgba(2,6,23,.45)",border:"1px solid rgba(148,163,184,.22)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{fontSize:13,fontWeight:800,color:"#dbeafe"}}>Leg {idx+1}</div>
+                {itineraryLegs.length>1&&<button onClick={function(){setItineraryLegs(function(prev){var next=prev.filter(function(_,i){return i!==idx;});return next.map(function(l,i){if(i>0&&!l.orig)return Object.assign({},l,{orig:next[i-1].dest||""});return l;});});}} style={{border:"1px solid rgba(248,113,113,.5)",background:"rgba(127,29,29,.25)",color:"#fecaca",borderRadius:9,padding:"4px 8px",fontSize:11,fontWeight:700}}>Eliminar</button>}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <input value={legOrig} disabled style={Object.assign({},IS,{marginBottom:0,fontSize:13,opacity:.85})}/>
+                <ApIn value={leg.dest||""} onChange={function(v){setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{dest:v});if(copy[idx+1]&&!copy[idx+1].orig)copy[idx+1]=Object.assign({},copy[idx+1],{orig:v});return copy;});}} label="Destino"/>
+                <input type="date" value={leg.date||nf.date||sel} onChange={function(e){var v=e.target.value;setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{date:v});return copy;});}} style={Object.assign({},IS,{marginBottom:0,fontSize:13})}/>
+                <input type="time" value={leg.time||""} onChange={function(e){var v=e.target.value;setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{time:v});return copy;});}} style={Object.assign({},IS,{marginBottom:0,fontSize:13})}/>
+              </div>
+            </div>;})}
+            <button onClick={function(){setItineraryLegs(function(prev){var last=prev[prev.length-1]||{};return prev.concat([Object.assign({},itineraryLegTemplate,{orig:last.dest||"",date:last.date||nf.date||sel,time:last.time||""})]);});}} style={{width:"100%",height:42,borderRadius:12,border:"1px solid rgba(125,211,252,.35)",background:"rgba(30,58,138,.4)",color:"#dbeafe",fontWeight:700,fontSize:13,cursor:"pointer"}}>+ Agregar tramo</button>
+            <div style={{marginTop:9,fontSize:12,color:"#9fb0cd"}}>Ruta completa: {itineraryLegs.length?([itineraryLegs[0]?.orig||nf.orig||"-"].concat(itineraryLegs.map(function(l){return l.dest||"?";})).join(" → ")):"-"}</div>
+          </div>}
           {formR&&<div style={{marginBottom:8,background:formR.dir&&!formR.wt.ov?"rgba(20,83,45,.36)":"rgba(127,29,29,.35)",borderRadius:10,padding:10,fontSize:12,border:"1px solid "+(formR.dir&&!formR.wt.ov?"#86efac":"#fca5a5"),color:"#e2e8f0"}}>
             📏 ~{formR.aw} NM | ⏱ {Math.floor(formR.bm/60)}h{("0"+(formR.bm%60)).slice(-2)}m block
             {formR.stops.length===1&&<div style={{color:"#b45309",fontWeight:600}}>🛬 Auto-escala: {formR.stops[0].c}</div>}
@@ -1671,7 +1783,7 @@ export default function App(){
           <input type="text" placeholder="Ferry, observaciones..." value={nf.nt} onChange={function(e){setNf(function(p){return Object.assign({},p,{nt:e.target.value});});}} style={IS}/>
           <label style={LS}>Programado/Editado por</label>
           <input type="text" placeholder="Nombre o correo" value={actorName} onChange={function(e){setActorName(e.target.value);}} style={IS}/>
-          <button onClick={handleSave} disabled={!nf.orig||!nf.dest||!nf.time||!nf.rb||phase==="saving"} style={{width:"100%",padding:13,border:"1px solid rgba(125,211,252,.35)",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:10,background:nf.orig&&nf.dest&&nf.time&&nf.rb?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(71,85,105,.65)",color:"#fff",letterSpacing:0.2}}>{phase==="saving"?"⏳ Guardando...":editId!==null?"✅ Guardar cambios":"✈️ Programar vuelo"}</button>
+          <button onClick={handleSave} disabled={phase==="saving"||(!nf.rb)||((itineraryMode==="single"||editId!==null)&&(!nf.orig||!nf.dest||!nf.time))} style={{width:"100%",height:46,border:"1px solid rgba(125,211,252,.35)",borderRadius:14,fontSize:14,fontWeight:700,cursor:"pointer",marginTop:10,background:"linear-gradient(145deg,#1d4ed8,#1e3a8a)",color:"#fff",letterSpacing:0.2,opacity:(phase==="saving"||(!nf.rb)||((itineraryMode==="single"||editId!==null)&&(!nf.orig||!nf.dest||!nf.time)))?0.6:1}}>{phase==="saving"?"⏳ Guardando...":editId!==null?"✅ Guardar cambios":itineraryMode==="itinerary"?"🧭 Guardar itinerario completo":"✈️ Programar vuelo"}</button>
           {editId!==null&&<button onClick={function(){if(confirm("¿Cancelar este vuelo?"))chgStatus(editId,"canc");setSf(false);}} style={{width:"100%",padding:12,border:"1px solid #f87171",borderRadius:12,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:8,background:"rgba(127,29,29,.28)",color:"#fecaca"}}>❌ Cancelar vuelo</button>}
         </div>
       </div>}
