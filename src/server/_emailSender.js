@@ -18,6 +18,8 @@ export async function sendOperationalEmail({
   payload = {},
   recipientsOverride = null,
   opsOnly = false,
+  templateOverride = null,
+  attachmentsOverride = null,
 }) {
   const missing = missingEnvError();
   if (missing) return { ok: false, error: missing, attempted: [], sent: [], failed: [], provider_errors: [] };
@@ -53,10 +55,10 @@ export async function sendOperationalEmail({
     };
   }
 
-  const template = buildOperationalEmail(eventType, payload);
+  const template = templateOverride || buildOperationalEmail(eventType, payload);
   const from = process.env.EMAIL_FROM;
   const replyTo = process.env.EMAIL_REPLY_TO || undefined;
-  const icsAttachment = buildFlightIcs(eventType, payload);
+  const icsAttachment = attachmentsOverride || buildFlightIcs(eventType, payload);
 
   const sendOne = async (to) => {
     try {
@@ -73,7 +75,7 @@ export async function sendOperationalEmail({
           subject: template.subject,
           html: template.html,
           text: template.text,
-          attachments: icsAttachment ? [icsAttachment] : undefined,
+          attachments: Array.isArray(icsAttachment) ? icsAttachment : (icsAttachment ? [icsAttachment] : undefined),
         }),
       });
       const data = await r.json().catch(() => ({}));
