@@ -296,7 +296,7 @@ export default function App(){
   async function callOpsWrite(action, payload) {
     const { data: authData } = await supabase.auth.getSession();
     const token = authData?.session?.access_token;
-    const response = await fetch("/api/ops-write", {
+    const response = await fetch("/api/flights", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ action, payload }),
