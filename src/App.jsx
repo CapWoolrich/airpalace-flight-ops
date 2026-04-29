@@ -525,7 +525,7 @@ export default function App(){
         await callOpsWrite("create_flight", { ...flight, ...estimatedCostSnapshot, nt: noteWithActor(flight.nt, actorName) });
       }
 
-      setNtf({ fl: flight, lbl: "PROGRAMADO" });
+      setNtf({ type: "single", fl: flight, lbl: "PROGRAMADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
@@ -568,8 +568,23 @@ export default function App(){
         requestedBy: baseFlight.rb,
         legs: normalizedLegs,
       });
-      var firstFlight = result?.flights?.[0] || baseFlight;
-      setNtf({ fl: firstFlight, lbl: "ITINERARIO PROGRAMADO" });
+      var itineraryFlights = (result?.flights && result.flights.length)
+        ? result.flights
+        : normalizedLegs.map(function(leg){
+            return {
+              orig: leg.origin,
+              dest: leg.destination,
+              date: leg.departureDate,
+              time: leg.departureTime,
+              ac: baseFlight.ac,
+              rb: baseFlight.rb,
+              pm: leg.pm,
+              pw: leg.pw,
+              pc: leg.pc,
+              nt: leg.notes,
+            };
+          });
+      setNtf({ type: "itinerary", flights: itineraryFlights, lbl: "ITINERARIO PROGRAMADO" });
       setSf(false);
       setEditId(null);
       setItineraryMode("single");
@@ -603,7 +618,7 @@ export default function App(){
         ...buildFlightEstimatedCost(flight),
       });
 
-      setNtf({ fl: mutation.flight || flight, lbl: "MODIFICADO" });
+      setNtf({ type: "single", fl: mutation.flight || flight, lbl: "MODIFICADO" });
       setSf(false);
       setEditId(null);
       setNf(Object.assign({}, EF, { date: sel }));
@@ -1806,16 +1821,32 @@ export default function App(){
             <div style={{width:34,height:34,borderRadius:"50%",background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✅</div>
             <div style={{fontWeight:900,fontSize:18,color:"#e2e8f0",letterSpacing:.2}}>Vuelo {ntf.lbl}</div>
           </div>
-          <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{toAirportNameLabel(ntf.fl.orig)} <span style={{color:"#94a3b8"}}>→</span> {toAirportNameLabel(ntf.fl.dest)}</div>
-          <div style={{fontSize:12,color:"#9fb0cd",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
-          <div style={{background:"rgba(15,23,42,.72)",borderRadius:14,padding:"12px 13px",border:"1px solid rgba(148,163,184,.25)",fontSize:13,color:"#cbd5e1",lineHeight:1.7}}>
-            <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
-            <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
-            <div><strong>Hora salida:</strong> {ftm(ntf.fl.time)}</div>
-            <div><strong>Solicitó:</strong> {ntf.fl.rb||"-"}</div>
-            <div><strong>PAX:</strong> {(ntf.fl.pm||0)+(ntf.fl.pw||0)+(ntf.fl.pc||0)}</div>
-            {ntf.fl.nt&&<div><strong>Notas:</strong> {ntf.fl.nt}</div>}
-          </div>
+          {ntf.type==="itinerary" ? <>
+            <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{ntf.flights && ntf.flights.length ? [toAirportNameLabel(ntf.flights[0].orig)].concat(ntf.flights.map(function(fl){return toAirportNameLabel(fl.dest);})).join(" → ") : "-"}</div>
+            <div style={{fontSize:12,color:"#9fb0cd",fontWeight:700,marginBottom:14}}>{(ntf.flights && ntf.flights[0]?.ac)||"-"} · {ntf.flights ? ntf.flights.length : 0} tramo(s)</div>
+            <div style={{background:"rgba(15,23,42,.72)",borderRadius:14,padding:"12px 13px",border:"1px solid rgba(148,163,184,.25)",fontSize:13,color:"#cbd5e1",lineHeight:1.7,maxHeight:280,overflowY:"auto"}}>
+              <div><strong>Solicitó:</strong> {(ntf.flights && ntf.flights[0]?.rb)||"-"}</div>
+              {(ntf.flights||[]).map(function(fl, idx){
+                return <div key={"ntf-leg-"+idx} style={{marginTop:10,paddingTop:10,borderTop:idx?"1px solid rgba(148,163,184,.2)":"none"}}>
+                  <div><strong>Tramo {idx+1}:</strong> {toAirportNameLabel(fl.orig)} → {toAirportNameLabel(fl.dest)}</div>
+                  <div><strong>Salida:</strong> {fdt(fl.date)} · {ftm(fl.time)}</div>
+                  <div><strong>PAX:</strong> {(fl.pm||0)+(fl.pw||0)+(fl.pc||0)}</div>
+                  {fl.nt&&<div><strong>Notas:</strong> {fl.nt}</div>}
+                </div>;
+              })}
+            </div>
+          </> : <>
+            <div style={{fontSize:21,fontWeight:900,color:"#e2e8f0",lineHeight:1.2,marginBottom:4}}>{toAirportNameLabel(ntf.fl.orig)} <span style={{color:"#94a3b8"}}>→</span> {toAirportNameLabel(ntf.fl.dest)}</div>
+            <div style={{fontSize:12,color:"#9fb0cd",fontWeight:700,marginBottom:14}}>{ntf.fl.ac} · {fdt(ntf.fl.date)} · {ftm(ntf.fl.time)}</div>
+            <div style={{background:"rgba(15,23,42,.72)",borderRadius:14,padding:"12px 13px",border:"1px solid rgba(148,163,184,.25)",fontSize:13,color:"#cbd5e1",lineHeight:1.7}}>
+              <div><strong>Aeronave:</strong> {ntf.fl.ac}</div>
+              <div><strong>Fecha:</strong> {fdt(ntf.fl.date)}</div>
+              <div><strong>Hora salida:</strong> {ftm(ntf.fl.time)}</div>
+              <div><strong>Solicitó:</strong> {ntf.fl.rb||"-"}</div>
+              <div><strong>PAX:</strong> {(ntf.fl.pm||0)+(ntf.fl.pw||0)+(ntf.fl.pc||0)}</div>
+              {ntf.fl.nt&&<div><strong>Notas:</strong> {ntf.fl.nt}</div>}
+            </div>
+          </>}
           <button onClick={function(){setNtf(null);}} style={{width:"100%",padding:12,background:"#0f172a",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:"pointer",marginTop:14}}>Cerrar</button>
         </div>
       </div>}
