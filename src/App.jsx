@@ -1389,7 +1389,7 @@ export default function App(){
       <div className="ops-bg-glow" style={{transform:`translate3d(0,${glowOffset}px,0)`}} />
       <div className="ops-bg-map" style={{transform:`translate3d(0,${mapOffset}px,0)`, backgroundImage:`url("${TECH_MAP_SVG}")`}} />
       <div className="ops-bg-noise" />
-      <div style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif",maxWidth:480,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1,paddingBottom:"228px"}}>
+      <div className="ops-main-shell" style={{fontFamily:"Inter,-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif"}}>
 
       <div style={{background:"linear-gradient(160deg,rgba(12,20,34,.95),rgba(17,29,48,.82))",padding:"18px 16px 14px",borderRadius:"0 0 22px 22px",boxShadow:"0 18px 42px rgba(2,6,23,.42)",border:"1px solid rgba(148,163,184,.16)",backdropFilter:"blur(6px)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1580,7 +1580,7 @@ export default function App(){
       {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
         <div style={Object.assign({},panelPrimary,{padding:10,marginBottom:10})}>
-          <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,minWidth:0}}>
             <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
               <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
             </select>
@@ -1617,7 +1617,7 @@ export default function App(){
           <div style={{fontWeight:800,fontSize:16,color:"#e2e8f0"}}>🧭 Planificación de vuelo</div>
           <div style={{fontSize:11,color:"#8ea2c8",marginBottom:14}}>Rutas IFR +18% · Block +20min</div>
           <label style={LS}>Aeronave</label>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setRc(function(p){return Object.assign({},p,{ac:a.id,res:null});});}} style={{flex:1,padding:"10px 8px",border:"2px solid "+a.clr,borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:rc.ac===a.id?a.clr:"transparent",color:rc.ac===a.id?"#fff":a.clr}}>{a.id}<br/><span style={{fontSize:10,fontWeight:500}}>{a.tag}</span></button>;})}</div>
+          <div className="ops-aircraft-selector" style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setRc(function(p){return Object.assign({},p,{ac:a.id,res:null});});}} style={{flex:1,padding:"10px 8px",border:"2px solid "+a.clr,borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:rc.ac===a.id?a.clr:"transparent",color:rc.ac===a.id?"#fff":a.clr}}>{a.id}<br/><span style={{fontSize:10,fontWeight:500}}>{a.tag}</span></button>;})}</div>
           <ApIn value={rc.orig} onChange={function(v){setRc(function(p){return Object.assign({},p,{orig:v,res:null});});}} label="Origen"/>
           <ApIn value={rc.dest} onChange={function(v){setRc(function(p){return Object.assign({},p,{dest:v,res:null});});}} label="Destino"/>
           <div style={{background:"rgba(15,23,42,.66)",borderRadius:12,padding:12,border:"1px solid rgba(148,163,184,.24)",marginTop:6}}>
@@ -1704,10 +1704,10 @@ export default function App(){
             {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <button key={r[0]} onClick={function(){onAlertClick(r[0]);}} style={{background:"rgba(15,23,42,.78)",border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:"8px 6px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>{r[1]}</div><div style={{fontSize:10,color:"#9fb0cd"}}>{r[0]}</div></button>;})}
           </div>
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
+        <div className="ops-card" style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>✈️ Estado de flota</div>
           {Object.values(AC).map(function(a){var ms=getAcStatus(a.id,today),ml=MST[ms],p=pos[a.id],plan=maintPlan[a.id]||{};return(
-            <div key={a.id} style={{marginBottom:10,padding:12,borderRadius:12,border:"1px solid "+(ms!=="disponible"?ml.c+"88":"rgba(148,163,184,.25)"),background:"rgba(15,23,42,.58)"}}>
+            <div key={a.id} className="ops-fleet-card" style={{marginBottom:10,padding:12,borderRadius:12,border:"1px solid "+(ms!=="disponible"?ml.c+"88":"rgba(148,163,184,.25)"),background:"rgba(15,23,42,.58)"}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
@@ -1720,11 +1720,11 @@ export default function App(){
               </div>
             </div>);})}
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
+        <div className="ops-card" style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
-          <div className="ops-search-row" style={{display:"grid",gridTemplateColumns:"1.2fr minmax(180px,.8fr)",gap:8,marginBottom:8}}>
+          <div className="ops-search-row" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,180px)",gap:8,marginBottom:8}}>
             <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);setHasSearchedCosts(true);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,minWidth:0}}>
               <button onClick={function(){setHasSearchedCosts(true);}} style={{border:"1px solid rgba(59,130,246,.5)",borderRadius:10,background:"rgba(30,58,138,.65)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Buscar</button>
               <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");setHasSearchedCosts(false);}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
             </div>
@@ -1769,21 +1769,21 @@ export default function App(){
       </div>}
 
       {sf&&<div className="ops-flight-modal-overlay" style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
-        <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
+        <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{width:36,height:4,background:"rgba(148,163,184,.45)",borderRadius:2,margin:"0 auto 12px"}}/>
-          <div style={{position:"sticky",top:-18,paddingTop:10,paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2}}>
+          <div className="ops-flight-modal-header" style={{position:"sticky",top:-18,paddingTop:10,paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2,gap:8}}>
             <div style={{fontWeight:800,fontSize:17,color:"#e2e8f0"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
             <button onClick={function(){setSf(false);}} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:999,border:"1px solid rgba(148,163,184,.34)",background:"rgba(15,23,42,.68)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:0.15}}>
               ← Cerrar
             </button>
           </div>
-          {editId===null&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,background:"rgba(15,23,42,.6)",border:"1px solid rgba(148,163,184,.25)",padding:6,borderRadius:14,marginBottom:12}}>
+          {editId===null&&<div className="ops-flight-modal-tabs" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,background:"rgba(15,23,42,.6)",border:"1px solid rgba(148,163,184,.25)",padding:6,borderRadius:14,marginBottom:12}}>
             <button onClick={function(){setItineraryMode("single");}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="single"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="single"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Vuelo sencillo</button>
             <button onClick={function(){setItineraryMode("itinerary");setItineraryLegs(function(prev){if(prev.length)return prev;return [Object.assign({},itineraryLegTemplate,{orig:nf.orig||"",date:nf.date||sel,time:nf.time||""})];});}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="itinerary"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="itinerary"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Ruta completa</button>
           </div>}
           <label style={LS}>Fecha</label><input type="date" value={nf.date} onChange={function(e){setNf(function(p){return Object.assign({},p,{date:e.target.value});});}} style={IS}/>
           <label style={LS}>Aeronave</label>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setNf(function(p){return Object.assign({},p,{ac:a.id});});}} style={{flex:1,padding:"9px 8px",border:"1px solid "+(nf.ac===a.id?a.clr:"rgba(148,163,184,.3)"),borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:nf.ac===a.id?"linear-gradient(160deg,"+a.clr+"33,"+a.clr+"22)":"rgba(15,23,42,.72)",color:nf.ac===a.id?"#eaf2ff":"#cbd5e1",boxShadow:nf.ac===a.id?"0 8px 14px rgba(2,6,23,.3)":"none"}}>{a.id}<br/><span style={{fontSize:10,color:nf.ac===a.id?"#bfdbfe":"#8ea2c8"}}>{a.tag}</span></button>;})}</div>
+          <div className="ops-aircraft-selector" style={{display:"flex",gap:8,marginBottom:10}}>{Object.values(AC).map(function(a){return <button key={a.id} onClick={function(){setNf(function(p){return Object.assign({},p,{ac:a.id});});}} style={{flex:1,padding:"9px 8px",border:"1px solid "+(nf.ac===a.id?a.clr:"rgba(148,163,184,.3)"),borderRadius:12,fontSize:12,fontWeight:700,cursor:"pointer",background:nf.ac===a.id?"linear-gradient(160deg,"+a.clr+"33,"+a.clr+"22)":"rgba(15,23,42,.72)",color:nf.ac===a.id?"#eaf2ff":"#cbd5e1",boxShadow:nf.ac===a.id?"0 8px 14px rgba(2,6,23,.3)":"none"}}>{a.id}<br/><span style={{fontSize:10,color:nf.ac===a.id?"#bfdbfe":"#8ea2c8"}}>{a.tag}</span></button>;})}</div>
           <ApIn
             value={nf.orig}
             onChange={function(v){
@@ -1852,7 +1852,7 @@ export default function App(){
           </div>
           {(itineraryMode==="single" || editId!==null)&&<>
             <label style={LS}>Hora</label>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+            <div className="ops-time-buttons" style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
               {["STBY","07:00","08:00","09:00","12:00","15:00","16:00","18:00"].map(function(t){return <button key={t} onClick={function(){setNf(function(p){return Object.assign({},p,{time:t});});}} style={{padding:"7px 11px",border:"1px solid "+(nf.time===t?"#93c5fd":"rgba(148,163,184,.25)"),borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",background:nf.time===t?"rgba(30,58,138,.55)":"rgba(15,23,42,.72)",color:"#dbeafe"}}>{t==="STBY"?t:ftm(t)}</button>;})}
             </div>
             <input type="time" value={nf.time!=="STBY"?nf.time:""} onChange={function(e){setNf(function(p){return Object.assign({},p,{time:e.target.value});});}} style={IS}/>
