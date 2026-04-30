@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
+import UpdatePassword from "./UpdatePassword";
 
 const authShellStyle = {
   minHeight: "100vh",
@@ -43,20 +44,12 @@ export default function AuthGate({ children }) {
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [updateMsg, setUpdateMsg] = useState("");
-  const [linkInvalid, setLinkInvalid] = useState(false);
 
   const isUpdatePasswordRoute = useMemo(() => window.location.pathname === "/update-password", []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
-      if (isUpdatePasswordRoute && !data.session) {
-        const hash = window.location.hash || "";
-        setLinkInvalid(!hash.includes("type=recovery"));
-      }
     });
 
     const {
@@ -101,34 +94,6 @@ export default function AuthGate({ children }) {
     }
   }
 
-  async function handleUpdatePassword(e) {
-    e.preventDefault();
-    setUpdateMsg("");
-    if (newPassword.length < 8) {
-      setUpdateMsg("Password must contain at least 8 characters.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setUpdateMsg("Passwords do not match.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      await supabase.auth.signOut();
-      setUpdateMsg("Password updated successfully. Redirecting to login...");
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 2200);
-    } catch (err) {
-      setUpdateMsg(err.message || "This recovery link is invalid or expired. Please request a new password reset link.");
-      setLinkInvalid(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function signOut() {
     await supabase.auth.signOut();
   }
@@ -137,7 +102,7 @@ export default function AuthGate({ children }) {
     const showUpdateForm = isUpdatePasswordRoute;
     return (
       <div style={authShellStyle}>
-        <form onSubmit={showUpdateForm ? handleUpdatePassword : handleSubmit} style={authCardStyle}>
+        {showUpdateForm ? (<UpdatePassword />) : (<form onSubmit={handleSubmit} style={authCardStyle}>
           <img src="/logo_login1.png" alt="AirPalace" style={{ width: 140, display: "block", margin: "0 auto 14px" }} />
           <h2 style={{ marginTop: 0, marginBottom: 8 }}>{showUpdateForm ? "Update password" : "AirPalace Login"}</h2>
           {!showUpdateForm && (
@@ -146,54 +111,34 @@ export default function AuthGate({ children }) {
             </p>
           )}
 
-          {!showUpdateForm ? (
-            <>
-              <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Correo</label>
-              <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" style={inputStyle} />
+          <>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Correo</label>
+            <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" style={inputStyle} />
 
-              {mode !== "forgot" && (
-                <>
-                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Contraseña</label>
-                  <input type="password" required minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="******" style={{ ...inputStyle, marginBottom: 14 }} />
-                </>
-              )}
+            {mode !== "forgot" && (
+              <>
+                <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Contraseña</label>
+                <input type="password" required minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="******" style={{ ...inputStyle, marginBottom: 14 }} />
+              </>
+            )}
 
-              <button type="submit" disabled={loading} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.75 : 1 }}>
-                {loading ? "Procesando..." : mode === "login" ? "Entrar" : mode === "signup" ? "Crear cuenta" : "Send reset link"}
+            <button type="submit" disabled={loading} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.75 : 1 }}>
+              {loading ? "Procesando..." : mode === "login" ? "Entrar" : mode === "signup" ? "Crear cuenta" : "Send reset link"}
+            </button>
+
+            <button type="button" onClick={() => { setMode(mode === "forgot" ? "login" : "forgot"); setMsg(""); }} style={{ width: "100%", marginTop: 10, padding: 10, border: "none", background: "transparent", color: "#93c5fd", fontWeight: 600, cursor: "pointer" }}>
+              {mode === "forgot" ? "Back to login" : "Forgot password?"}
+            </button>
+
+            {signupEnabled && mode !== "forgot" && (
+              <button type="button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMsg(""); }} style={{ width: "100%", marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid #334155", background: "transparent", color: "#fff", fontWeight: 600, cursor: "pointer" }}>
+                {mode === "login" ? "Crear cuenta" : "Ya tengo cuenta, iniciar sesión"}
               </button>
+            )}
 
-              <button type="button" onClick={() => { setMode(mode === "forgot" ? "login" : "forgot"); setMsg(""); }} style={{ width: "100%", marginTop: 10, padding: 10, border: "none", background: "transparent", color: "#93c5fd", fontWeight: 600, cursor: "pointer" }}>
-                {mode === "forgot" ? "Back to login" : "Forgot password?"}
-              </button>
-
-              {signupEnabled && mode !== "forgot" && (
-                <button type="button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMsg(""); }} style={{ width: "100%", marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid #334155", background: "transparent", color: "#fff", fontWeight: 600, cursor: "pointer" }}>
-                  {mode === "login" ? "Crear cuenta" : "Ya tengo cuenta, iniciar sesión"}
-                </button>
-              )}
-
-              {msg && <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>{msg}</p>}
-            </>
-          ) : (
-            <>
-              {linkInvalid && !session ? (
-                <>
-                  <p style={{ color: "#fca5a5", fontSize: 14, marginBottom: 12 }}>This recovery link is invalid or expired. Please request a new password reset link.</p>
-                  <button type="button" onClick={() => { window.location.href = "/"; }} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Request new reset link</button>
-                </>
-              ) : (
-                <>
-                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>New password</label>
-                  <input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={inputStyle} />
-                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Confirm password</label>
-                  <input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }} />
-                  <button type="submit" disabled={loading} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.75 : 1 }}>Update password</button>
-                </>
-              )}
-              {updateMsg && <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>{updateMsg}</p>}
-            </>
-          )}
-        </form>
+            {msg && <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>{msg}</p>}
+          </>
+        </form>)}
       </div>
     );
   }

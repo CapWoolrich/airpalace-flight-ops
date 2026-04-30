@@ -54,3 +54,20 @@ Optional (notifications):
 - `CALLMEBOT_APIKEY`
 - email provider env vars used by `src/server/_emailSender.js`
 - web-push env vars used by `src/server/_push.js`
+
+## Auth password reset configuration
+
+In **Authentication → URL Configuration** set:
+
+- **Site URL**: `https://airpalace.app`
+- **Redirect URLs**:
+  - `https://airpalace.app/update-password`
+  - `https://airpalace.app/**`
+  - `http://localhost:5173/update-password`
+  - `http://localhost:3000/update-password`
+
+In **Authentication → Email Templates → Reset Password**, keep the reset link as:
+
+- `{{ .ConfirmationURL }}`
+
+Do not hardcode manual reset links in the template.
