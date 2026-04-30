@@ -1580,7 +1580,7 @@ export default function App(){
       {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
         <div style={Object.assign({},panelPrimary,{padding:10,marginBottom:10})}>
-          <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,minWidth:0}}>
+          <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,minWidth:0}}>
             <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
               <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
             </select>
@@ -1631,7 +1631,7 @@ export default function App(){
             <div style={{background:"rgba(15,23,42,.7)",borderRadius:14,padding:14,border:"1px solid rgba(148,163,184,.24)"}}>
               <div style={{fontWeight:800,fontSize:17}}>{toAirportNameLabel(rc.orig)+" → "+toAirportNameLabel(rc.dest)}</div>
               <div style={{fontSize:12,color:"#64748b",lineHeight:1.9,marginTop:4}}>GC: {rc.res.gc} NM | Vía aérea: ~{rc.res.aw} NM<br/>En ruta: {Math.floor(rc.res.em/60)}h{("0"+(rc.res.em%60)).slice(-2)}m | <strong>Block: {Math.floor(rc.res.bm/60)}h{("0"+(rc.res.bm%60)).slice(-2)}m</strong></div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,marginTop:10}}>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:rc.res.dir?"#dcfce7":"#fef3c7"}}><div style={{fontSize:22}}>{rc.res.dir?"✅":"⚠️"}</div><div style={{fontSize:10,fontWeight:700,color:rc.res.dir?"#166534":"#92400e"}}>{rc.res.dir?"DIRECTO":"ESCALA"}</div></div>
                 <div style={{textAlign:"center",padding:10,borderRadius:10,background:!rc.res.wt.ov?"#dcfce7":"#fee2e2"}}><div style={{fontSize:22}}>{!rc.res.wt.ov?"⚖️":"❌"}</div><div style={{fontSize:10,fontWeight:700,color:!rc.res.wt.ov?"#166534":"#991b1b"}}>{!rc.res.wt.ov?"PESO OK":"SOBREPESO"}</div></div>
               </div>
@@ -1661,7 +1661,7 @@ export default function App(){
             </div>
             {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
-              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
                 <div style={{padding:8,borderRadius:10,background:"rgba(15,23,42,.72)",border:"1px solid rgba(148,163,184,.2)"}}>
                   <div style={{fontSize:10,color:"#93c5fd",fontWeight:700}}>Costo fijo total</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{formatUsd(planEstimatedCost.fixedTotalUsd)}</div>
@@ -1694,7 +1694,7 @@ export default function App(){
             {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
           </button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:2,marginTop:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:2,marginTop:8}}>
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
           <div style={{background:"#d1fae5",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{fs.filter(function(f){return f.st==="prog";}).length}</div><div style={{fontSize:10,color:"#059669",fontWeight:700}}>Programados</div></div>
         </div>
@@ -1711,7 +1711,7 @@ export default function App(){
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
-              <div className="ops-fleet-dates" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
+              <div className="ops-fleet-dates" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:8}}>
                 <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
                 <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
@@ -1722,14 +1722,14 @@ export default function App(){
         </div>
         <div className="ops-card" style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
-          <div className="ops-search-row" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,180px)",gap:8,marginBottom:8}}>
+          <div className="ops-search-row" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,160px)",gap:8,marginBottom:8}}>
             <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);setHasSearchedCosts(true);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,minWidth:0}}>
+            <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,minWidth:0}}>
               <button onClick={function(){setHasSearchedCosts(true);}} style={{border:"1px solid rgba(59,130,246,.5)",borderRadius:10,background:"rgba(30,58,138,.65)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Buscar</button>
               <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");setHasSearchedCosts(false);}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
             <input type="date" value={mgmtDateFrom} onChange={function(e){setMgmtDateFrom(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
             <input type="date" value={mgmtDateTo} onChange={function(e){setMgmtDateTo(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
           </div>
@@ -1769,15 +1769,15 @@ export default function App(){
       </div>}
 
       {sf&&<div className="ops-flight-modal-overlay" style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
-        <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
+        <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",maxHeight:"93vh",overflowY:"auto",overflowX:"clip",padding:"18px 16px 36px",width:"100%",maxWidth:"100%",minWidth:0,border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{width:36,height:4,background:"rgba(148,163,184,.45)",borderRadius:2,margin:"0 auto 12px"}}/>
-          <div className="ops-flight-modal-header" style={{position:"sticky",top:-18,paddingTop:10,paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2,gap:8}}>
+          <div className="ops-flight-modal-header" style={{position:"sticky",top:0,paddingTop:"calc(env(safe-area-inset-top) + 12px)",paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2,gap:8}}>
             <div style={{fontWeight:800,fontSize:17,color:"#e2e8f0"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
             <button onClick={function(){setSf(false);}} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:999,border:"1px solid rgba(148,163,184,.34)",background:"rgba(15,23,42,.68)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:0.15}}>
               ← Cerrar
             </button>
           </div>
-          {editId===null&&<div className="ops-flight-modal-tabs" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,background:"rgba(15,23,42,.6)",border:"1px solid rgba(148,163,184,.25)",padding:6,borderRadius:14,marginBottom:12}}>
+          {editId===null&&<div className="ops-flight-modal-tabs" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10,background:"rgba(15,23,42,.6)",border:"1px solid rgba(148,163,184,.25)",padding:6,borderRadius:14,marginBottom:12}}>
             <button onClick={function(){setItineraryMode("single");}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="single"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="single"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Vuelo sencillo</button>
             <button onClick={function(){setItineraryMode("itinerary");setItineraryLegs(function(prev){if(prev.length)return prev;return [Object.assign({},itineraryLegTemplate,{orig:nf.orig||"",date:nf.date||sel,time:nf.time||""})];});}} style={{height:42,borderRadius:10,border:"1px solid "+(itineraryMode==="itinerary"?"rgba(147,197,253,.8)":"rgba(148,163,184,.2)"),background:itineraryMode==="itinerary"?"linear-gradient(145deg,#1d4ed8,#1e3a8a)":"rgba(15,23,42,.72)",color:"#e2e8f0",fontSize:13,fontWeight:700,cursor:"pointer"}}>Ruta completa</button>
           </div>}
@@ -1822,7 +1822,7 @@ export default function App(){
                 <div style={{fontSize:13,fontWeight:800,color:"#dbeafe"}}>Leg {idx+1}</div>
                 {itineraryLegs.length>1&&<button onClick={function(){setItineraryLegs(function(prev){var next=prev.filter(function(_,i){return i!==idx;});return next.map(function(l,i){if(i>0&&!l.orig)return Object.assign({},l,{orig:next[i-1].dest||""});return l;});});}} style={{border:"1px solid rgba(248,113,113,.5)",background:"rgba(127,29,29,.25)",color:"#fecaca",borderRadius:9,padding:"4px 8px",fontSize:11,fontWeight:700}}>Eliminar</button>}
               </div>
-              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:10}}>
                 <input value={legOrig} disabled style={Object.assign({},IS,{marginBottom:0,fontSize:13,opacity:.85})}/>
                 <ApIn value={leg.dest||""} onChange={function(v){setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{dest:v});if(copy[idx+1]&&!copy[idx+1].orig)copy[idx+1]=Object.assign({},copy[idx+1],{orig:v});return copy;});}} label="Destino"/>
                 <input type="date" value={leg.date||nf.date||sel} onChange={function(e){var v=e.target.value;setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{date:v});return copy;});}} style={Object.assign({},IS,{marginBottom:0,fontSize:13})}/>
@@ -1926,7 +1926,7 @@ export default function App(){
         })}
       </div>
 
-      <div style={{position:"fixed",bottom:"calc(98px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",zIndex:900}}>
+      <div style={{position:"fixed",bottom:"calc(var(--bottom-nav-height,96px) + env(safe-area-inset-bottom) + 4px)",left:"50%",transform:"translateX(-50%)",zIndex:900,maxWidth:"calc(100dvw - 24px)",width:"min(430px,calc(100dvw - 24px))",paddingInline:8}}>
         {phase==="saving"&&<div style={{background:"#d97706",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,.3)"}}>⏳ Guardando...</div>}
         {phase==="saved"&&<div style={{background:"#16a34a",color:"#fff",padding:"12px 24px",borderRadius:14,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(22,163,106,.5)"}}>✅ Sincronizado</div>}
         {phase==="warn"&&<div style={{background:"#f59e0b",color:"#fff",padding:"12px 20px",borderRadius:14,fontSize:11,fontWeight:600,boxShadow:"0 4px 20px rgba(245,158,11,.45)",textAlign:"center",maxWidth:340}}>⚠️ {errMsg}</div>}
@@ -2012,7 +2012,7 @@ export default function App(){
             <div><strong>Solicitó:</strong> {pendingWrite.card.requester}</div>
             <div><strong>Notas:</strong> {pendingWrite.card.notes}</div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginTop:5}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:4,marginTop:5}}>
             <button onClick={executeAgentInstruction} disabled={agentBusy} style={{padding:"6px 5px",border:"none",borderRadius:8,background:"#16a34a",color:"#fff",fontSize:10,fontWeight:700,cursor:"pointer"}}>Confirmar</button>
             <button onClick={function(){setPendingWrite(null);setAgentVoiceState("idle");}} style={{padding:"6px 5px",border:"1px solid rgba(148,163,184,.33)",borderRadius:8,background:"rgba(15,23,42,.72)",color:"#cbd5e1",fontSize:10,fontWeight:700,cursor:"pointer"}}>Editar</button>
             <button onClick={function(){setPendingWrite(null);setAgentValidation(null);setAgentResult(null);}} style={{padding:"6px 5px",border:"1px solid #fca5a5",borderRadius:8,background:"rgba(127,29,29,.28)",color:"#fecaca",fontSize:10,fontWeight:700,cursor:"pointer"}}>Cancelar</button>

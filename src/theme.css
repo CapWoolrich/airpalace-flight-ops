@@ -23,7 +23,7 @@ html,body,#root{
   margin:0;
   min-height:100%;
   background:#050b16;
-  overflow-x:hidden;
+  overflow-x:clip;
 }
 
 body{
@@ -57,20 +57,20 @@ select option{
 
 .ops-app-shell{
   position:relative;
-  overflow-x:hidden;
+  overflow-x:clip;
   min-height:100vh;
   width:100%;
   max-width:100%;
 }
-.ops-main-shell{width:100%;max-width:480px;margin:0 auto;min-height:100vh;position:relative;z-index:1;padding:0 14px 228px;overflow-x:hidden;}
+.ops-main-shell{width:100%;max-width:480px;margin:0 auto;min-height:100vh;position:relative;z-index:1;padding:0 14px 228px;overflow-x:clip;}
 
 .ops-bottom-nav{
   position:fixed;
   left:50%;
   bottom:calc(10px + env(safe-area-inset-bottom));
   transform:translateX(-50%);
-  width:min(466px,calc(100dvw - 16px));
-  max-width:calc(100dvw - 16px);
+  width:min(430px,calc(100dvw - 24px));
+  max-width:calc(100dvw - 24px);
   display:grid;
   grid-template-columns:repeat(5,minmax(0,1fr));
   gap:5px;
@@ -84,7 +84,7 @@ select option{
   border-radius:22px;
   box-shadow:0 12px 34px rgba(2,6,23,.62),0 2px 10px rgba(148,163,184,.14),inset 0 1px 0 rgba(255,255,255,.05);
   z-index:940;
-  overflow:hidden;
+  overflow:clip;
   isolation:isolate;
 }
 
@@ -114,7 +114,7 @@ select option{
   position:fixed;
   left:50%;
   transform:translateX(-50%);
-  bottom:calc(80px + env(safe-area-inset-bottom));
+  bottom:calc(var(--bottom-nav-height,96px) + env(safe-area-inset-bottom) + 8px);
   z-index:945;
 }
 
@@ -183,7 +183,7 @@ select option{
   }
 }
 
-html,body{overflow-x:hidden;}
+html,body{overflow-x:clip;}
 
 .ops-mgmt-shell,
 .ops-flight-modal,
@@ -193,17 +193,19 @@ html,body{overflow-x:hidden;}
 .ops-search-row,
 .ops-search-actions{min-width:0;max-width:100%;}
 
-.ops-flight-modal-overlay{padding:env(safe-area-inset-top) 10px calc(env(safe-area-inset-bottom) + 10px);align-items:flex-end;}
-.ops-flight-modal-overlay{overflow-x:hidden;}
+.ops-flight-modal-overlay{padding:env(safe-area-inset-top) 12px calc(env(safe-area-inset-bottom) + 12px);align-items:flex-end;}
+.ops-flight-modal-overlay{overflow-x:clip;}
 .ops-flight-modal{
+  left:50%;
+  transform:translateX(-50%);
   width:min(430px,calc(100dvw - 24px))!important;
-  max-width:430px!important;
+  max-width:calc(100dvw - 24px)!important;
   margin-inline:auto;
   padding-bottom:calc(env(safe-area-inset-bottom) + 36px)!important;
   overscroll-behavior:contain;
-  overflow-x:hidden!important;
+  overflow-x:clip!important;
 }
-.ops-itinerary-panel{overflow:hidden;}
+.ops-itinerary-panel{overflow:clip;}
 .ops-itinerary-panel input,.ops-itinerary-panel button,.ops-itinerary-panel div{max-width:100%;min-width:0;}
 .ops-leg-grid{align-items:start;}
 .ops-leg-grid > *{min-width:0;}
@@ -215,11 +217,11 @@ html,body{overflow-x:hidden;}
 .ops-fleet-aircraft-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;}
 .ops-fleet-aircraft-title{min-width:0;overflow-wrap:anywhere;}
 
-.ops-ai-pilot-btn{right:12px!important;bottom:calc(96px + env(safe-area-inset-bottom))!important;}
-.ops-ai-pilot-panel{bottom:calc(158px + env(safe-area-inset-bottom))!important;}
+.ops-ai-pilot-btn{right:max(16px, env(safe-area-inset-right))!important;bottom:calc(var(--bottom-nav-height,96px) + env(safe-area-inset-bottom) + 16px)!important;}
+.ops-ai-pilot-panel{bottom:calc(var(--bottom-nav-height,96px) + env(safe-area-inset-bottom) + 78px)!important;}
 
 @media (max-width: 768px){
-  .ops-bottom-nav{width:min(100% - 16px,460px);bottom:calc(8px + env(safe-area-inset-bottom));}
+  .ops-bottom-nav{width:min(430px,calc(100dvw - 24px));max-width:calc(100dvw - 24px);bottom:calc(8px + env(safe-area-inset-bottom));overflow:clip;}
   .ops-floating-cta{bottom:calc(86px + env(safe-area-inset-bottom));}
 }
 
@@ -229,14 +231,14 @@ html,body{overflow-x:hidden;}
   .ops-flight-modal{width:min(430px,calc(100dvw - 24px))!important;max-width:calc(100dvw - 24px)!important;max-height:calc(100dvh - env(safe-area-inset-top) - 10px)!important;padding:16px 12px 30px!important;border-radius:18px!important;}
   .ops-flight-modal-header{flex-direction:column;align-items:flex-start!important;gap:8px;}
   .ops-flight-modal-header button{align-self:flex-end;}
-  .ops-flight-modal-tabs{grid-template-columns:1fr!important;}
-  .ops-aircraft-selector{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;}
+  .ops-flight-modal-tabs{grid-template-columns:minmax(0,1fr)!important;}
+  .ops-aircraft-selector{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
   .ops-leg-grid{grid-template-columns:1fr!important;gap:7px!important;}
   .ops-fleet-dates{grid-template-columns:1fr!important;}
   .ops-fleet-aircraft-header{flex-direction:column;align-items:flex-start;}
   .ops-fleet-status-actions{flex-wrap:wrap;gap:6px!important;}
   .ops-fleet-status-actions > button{flex:1 1 calc(33.33% - 6px);min-height:34px;}
-  .ops-search-row{grid-template-columns:1fr!important;}
+  .ops-search-row{grid-template-columns:minmax(0,1fr)!important;}
   .ops-search-actions{grid-template-columns:1fr 1fr!important;}
   .ops-time-buttons{gap:6px!important;}
   .ops-ai-pilot-btn{bottom:calc(100px + env(safe-area-inset-bottom))!important;}
@@ -244,6 +246,8 @@ html,body{overflow-x:hidden;}
 
 @media (max-width: 390px){
   .ops-main-shell{padding-inline:10px;}
+  .ops-aircraft-selector{grid-template-columns:minmax(0,1fr)!important;}
+  .ops-fleet-aircraft-header{grid-template-columns:minmax(0,1fr)!important;}
   .ops-mgmt-shell{padding-inline:0!important;}
   .ops-flight-modal{padding-inline:10px!important;}
   .ops-flight-modal-tabs button,.ops-search-actions button{font-size:clamp(11px,3.2vw,12px)!important;}
