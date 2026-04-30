@@ -6,6 +6,7 @@ import { applyOpsMutation } from "../src/lib/opsWriteEngine.js";
 import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
 import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../src/server/_opsSideEffects.js";
 import { validateAiWritePayload } from "../src/server/_validation.js";
+import { canCancelFlights, canCreateFlights, canEditFlights, canOperateFlights } from "../src/server/_rolePermissions.js";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status"];
 function bad(res, status, error, extras = {}) {
@@ -38,6 +39,13 @@ export default async function handler(req, res) {
   if (!WRITE_ACTIONS.includes(action)) return bad(res, 400, "Acción no permitida");
   if (!confirmed) return bad(res, 400, "Debes confirmar antes de ejecutar");
   if (!verifyAiConfirmation(token, action, payload)) return bad(res, 403, "Confirmación inválida");
+
+  const role = access.role;
+  if (action === "create_flight" && !canCreateFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "edit_flight" && !canEditFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "cancel_flight" && !canCancelFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "duplicate_flight" && !canEditFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "change_aircraft_status" && !canOperateFlights(role)) return bad(res, 403, "Acción no permitida");
 
   const supabase = ensureSupabase();
   if (!supabase) return bad(res, 500, "Supabase server env missing");

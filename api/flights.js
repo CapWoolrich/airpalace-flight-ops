@@ -10,6 +10,7 @@ import { buildItineraryCalendarInvite } from "../src/server/_calendarInvite.js";
 import { localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "../src/lib/timezones.js";
 import { buildCreateFlightMutation } from "../src/lib/opsMutationBuilders.js";
 import { validateOpsWritePayload } from "../src/server/_validation.js";
+import { canCancelFlights, canCreateFlights, canEditFlights, canOperateFlights, canDeleteFlights } from "../src/server/_rolePermissions.js";
 
 const OPS_WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status", "restore_demo", "create_itinerary", "create-itinerary"];
 const ACTION_ALIASES = { "create-itinerary": "create_itinerary" };
@@ -124,6 +125,13 @@ export default async function handler(req, res) {
     rateLimit: { max: 25, windowSeconds: 60 },
   });
   if (!access.ok) return bad(res, access.status, access.error);
+
+  const role = access.role;
+  if ((action === "create_flight" || action === "create_itinerary" || action === "create-itinerary") && !canCreateFlights(role)) return bad(res, 403, "Acción no permitida");
+  if ((action === "edit_flight" || action === "duplicate_flight") && !canEditFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "cancel_flight" && !canCancelFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "change_aircraft_status" && !canOperateFlights(role)) return bad(res, 403, "Acción no permitida");
+  if (action === "restore_demo" && !canDeleteFlights(role)) return bad(res, 403, "Acción no permitida");
 
   const payload = req.body?.payload || {};
   const payloadValidation = validateOpsWritePayload(action, payload);
