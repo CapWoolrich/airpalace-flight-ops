@@ -1580,7 +1580,7 @@ export default function App(){
       {vw==="recent"&&<div style={{padding:"0 14px 24px"}}>
         <div style={{fontWeight:700,color:"#fff",fontSize:15,marginBottom:8}}>🕘 Últimos vuelos creados</div>
         <div style={Object.assign({},panelPrimary,{padding:10,marginBottom:10})}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
             <select value={recentAc} onChange={function(e){setRecentAc(e.target.value);}} style={IS}>
               <option value="all">Aeronave: Todas</option><option value="N35EA">N35EA</option><option value="N540JL">N540JL</option>
             </select>
@@ -1661,7 +1661,7 @@ export default function App(){
             </div>
             {planEstimatedCost&&<div style={{marginTop:10,background:"linear-gradient(145deg,rgba(30,41,59,.9),rgba(15,23,42,.85))",borderRadius:12,padding:14,border:"1px solid rgba(148,163,184,.28)"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#e2e8f0",marginBottom:8}}>💵 Costo promedio estimado del vuelo</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div style={{padding:8,borderRadius:10,background:"rgba(15,23,42,.72)",border:"1px solid rgba(148,163,184,.2)"}}>
                   <div style={{fontSize:10,color:"#93c5fd",fontWeight:700}}>Costo fijo total</div>
                   <div style={{fontSize:14,fontWeight:800,color:"#e2e8f0"}}>{formatUsd(planEstimatedCost.fixedTotalUsd)}</div>
@@ -1688,7 +1688,7 @@ export default function App(){
         </div>
       </div>}
 
-      {vw==="gest"&&<div style={{padding:"0 14px calc(160px + env(safe-area-inset-bottom, 0px))",maxWidth:1080,margin:"0 auto",display:"grid",gap:14}}>
+      {vw==="gest"&&<div className="ops-mgmt-shell" style={{padding:"0 14px calc(190px + env(safe-area-inset-bottom, 0px))",maxWidth:1080,margin:"0 auto",display:"grid",gap:14}}>
         <div style={{marginTop:8,marginBottom:10}}>
           <button onClick={enablePushNotifications} style={{width:"100%",padding:"11px 12px",border:"1px solid rgba(148,163,184,.42)",borderRadius:11,background:"linear-gradient(145deg,rgba(8,18,34,.9),rgba(15,23,42,.74))",fontSize:11,fontWeight:700,color:"#dce7fb",cursor:"pointer",letterSpacing:0.25}}>
             {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
@@ -1711,20 +1711,20 @@ export default function App(){
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
+              <div className="ops-fleet-dates" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
                 <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
                 <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
-              <div style={{display:"flex",gap:4}}>
+              <div className="ops-fleet-status-actions" style={{display:"flex",gap:4}}>
                 {Object.entries(MST).map(function(e){return <button key={e[0]} onClick={function(){chgMaint(a.id,e[0]);}} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"1px solid "+e[1].c,background:ms===e[0]?e[1].c:"transparent",color:ms===e[0]?"#fff":e[1].c,fontWeight:700,cursor:"pointer"}}>{e[1].l}</button>;})}
               </div>
             </div>);})}
         </div>
         <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
-          <div style={{display:"grid",gridTemplateColumns:"1.2fr minmax(180px,.8fr)",gap:8,marginBottom:8}}>
+          <div className="ops-search-row" style={{display:"grid",gridTemplateColumns:"1.2fr minmax(180px,.8fr)",gap:8,marginBottom:8}}>
             <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);setHasSearchedCosts(true);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <div className="ops-search-actions" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               <button onClick={function(){setHasSearchedCosts(true);}} style={{border:"1px solid rgba(59,130,246,.5)",borderRadius:10,background:"rgba(30,58,138,.65)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Buscar</button>
               <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");setHasSearchedCosts(false);}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
             </div>
@@ -1768,8 +1768,8 @@ export default function App(){
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
 
-      {sf&&<div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
-        <div style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
+      {sf&&<div className="ops-flight-modal-overlay" style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
+        <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",width:"100%",maxWidth:480,maxHeight:"93vh",overflowY:"auto",padding:"18px 18px 36px",border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{width:36,height:4,background:"rgba(148,163,184,.45)",borderRadius:2,margin:"0 auto 12px"}}/>
           <div style={{position:"sticky",top:-18,paddingTop:10,paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2}}>
             <div style={{fontWeight:800,fontSize:17,color:"#e2e8f0"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
@@ -1815,14 +1815,14 @@ export default function App(){
             }}
             label="Destino"
           />
-          {itineraryMode==="itinerary"&&editId===null&&<div style={{marginBottom:10,background:"rgba(15,23,42,.66)",border:"1px solid rgba(148,163,184,.24)",borderRadius:14,padding:12}}>
+          {itineraryMode==="itinerary"&&editId===null&&<div className="ops-itinerary-panel" style={{marginBottom:10,background:"rgba(15,23,42,.66)",border:"1px solid rgba(148,163,184,.24)",borderRadius:14,padding:12}}>
             <div style={{fontSize:15,fontWeight:800,color:"#e2e8f0",marginBottom:10}}>Itinerario completo</div>
             {itineraryLegs.map(function(leg,idx){var legOrig = idx===0 ? (leg.orig||nf.orig||"") : (leg.orig||itineraryLegs[idx-1]?.dest||""); return <div key={"leg-"+idx} style={{marginBottom:10,padding:12,borderRadius:12,background:"rgba(2,6,23,.45)",border:"1px solid rgba(148,163,184,.22)"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                 <div style={{fontSize:13,fontWeight:800,color:"#dbeafe"}}>Leg {idx+1}</div>
                 {itineraryLegs.length>1&&<button onClick={function(){setItineraryLegs(function(prev){var next=prev.filter(function(_,i){return i!==idx;});return next.map(function(l,i){if(i>0&&!l.orig)return Object.assign({},l,{orig:next[i-1].dest||""});return l;});});}} style={{border:"1px solid rgba(248,113,113,.5)",background:"rgba(127,29,29,.25)",color:"#fecaca",borderRadius:9,padding:"4px 8px",fontSize:11,fontWeight:700}}>Eliminar</button>}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div className="ops-leg-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <input value={legOrig} disabled style={Object.assign({},IS,{marginBottom:0,fontSize:13,opacity:.85})}/>
                 <ApIn value={leg.dest||""} onChange={function(v){setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{dest:v});if(copy[idx+1]&&!copy[idx+1].orig)copy[idx+1]=Object.assign({},copy[idx+1],{orig:v});return copy;});}} label="Destino"/>
                 <input type="date" value={leg.date||nf.date||sel} onChange={function(e){var v=e.target.value;setItineraryLegs(function(prev){var copy=prev.slice();copy[idx]=Object.assign({},copy[idx],{date:v});return copy;});}} style={Object.assign({},IS,{marginBottom:0,fontSize:13})}/>
@@ -1935,13 +1935,13 @@ export default function App(){
 
       <button
         onClick={function(){setAgentOpen(function(v){return !v;});}}
-        style={{position:"fixed",right:16,bottom:"calc(87px + env(safe-area-inset-bottom))",zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(212,185,140,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
+        className="ops-ai-pilot-btn" style={{position:"fixed",right:16,bottom:"calc(87px + env(safe-area-inset-bottom))",zIndex:950,width:48,height:48,borderRadius:"50%",border:"1px solid rgba(212,185,140,.32)",background:"linear-gradient(150deg,rgba(15,23,42,.95),rgba(30,41,59,.88))",color:"#fff",fontSize:21,cursor:"pointer",boxShadow:"0 10px 20px rgba(2,6,23,.4)"}}
         aria-label="AI Pilot"
       >
         👨🏼‍✈️
       </button>
 
-      {agentOpen&&<div style={{position:"fixed",right:12,bottom:"calc(148px + env(safe-area-inset-bottom))",width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
+      {agentOpen&&<div className="ops-ai-pilot-panel" style={{position:"fixed",right:12,bottom:"calc(148px + env(safe-area-inset-bottom))",width:"calc(100% - 24px)",maxWidth:336,zIndex:960,background:"linear-gradient(168deg,rgba(8,16,31,.99),rgba(15,25,42,.96))",borderRadius:14,padding:9,boxShadow:"0 16px 30px rgba(0,0,0,.42)",border:"1px solid rgba(148,163,184,.24)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
           <div style={{display:"flex",alignItems:"center",gap:7}}>
             <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(30,64,175,.24)",border:"1px solid rgba(96,165,250,.34)",fontSize:11}}>🧠</span>
