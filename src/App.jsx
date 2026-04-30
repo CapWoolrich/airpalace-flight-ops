@@ -1340,22 +1340,28 @@ export default function App(){
   },[analyticsBaseFlights,analyticsDateFrom,analyticsDateTo,analyticsAircraft,analyticsRequester,analyticsFlightType,analyticsMonth,analyticsYear]);
 
   var analyticsData=useMemo(function(){
-    var months={},aircraft={},person={},types={},heat={},plannedVsReal=[];
+    var months={},monthsPrev={},aircraft={},person={},types={},heat={},plannedByMonth={},realByMonth={},lastUpdated="";
     var flights=analyticsFiltered;
+    var ytdStart=today.slice(0,4)+"-01-01";
+    var ytdHours=analyticsBaseFlights.filter(function(f){return String(f.date||"")>=ytdStart&&String(f.date||"")<=today;}).reduce(function(acc,f){return acc+f._hours;},0);
     flights.forEach(function(f){
       months[f._month]=months[f._month]||{month:f._month,hours:0,flights:0}; months[f._month].hours+=f._hours; months[f._month].flights++;
-      aircraft[f.ac]=aircraft[f.ac]||{ac:f.ac,hours:0,flights:0}; aircraft[f.ac].hours+=f._hours; aircraft[f.ac].flights++;
-      var p=f.rb||"No disponible"; person[p]=person[p]||{name:p,hours:0,flights:0,last:"",ac:{}}; person[p].hours+=f._hours; person[p].flights++; person[p].last=String(f.date||"")>person[p].last?String(f.date||""):person[p].last; person[p].ac[f.ac]=(person[p].ac[f.ac]||0)+f._hours;
-      var t=(String(f._type||"Ejecutivo").toLowerCase().includes("ferry")?"Ferry":String(f._type||"").toLowerCase().includes("mant")?"Mantenimiento":String(f._type||"").toLowerCase().includes("fam")?"Familiar":"Ejecutivo"); types[t]=(types[t]||0)+f._hours;
-      var hk=f._dow+"-"+Math.floor(f._hour/3); heat[hk]=(heat[hk]||0)+1;
-      var planned=Number(f.scheduled_block_minutes||f.planned_block_minutes||0)/60||f._hours; plannedVsReal.push({month:f._month,planned:planned,real:f._hours});
+      var prevKey=(Number(f._year)-1)+"-"+String(f._month).slice(5,7); monthsPrev[prevKey]=(monthsPrev[prevKey]||0)+f._hours;
+      aircraft[f.ac]=aircraft[f.ac]||{ac:f.ac,hours:0,flights:0,last:""}; aircraft[f.ac].hours+=f._hours; aircraft[f.ac].flights++; aircraft[f.ac].last=String(f.date||"")>aircraft[f.ac].last?String(f.date||""):aircraft[f.ac].last;
+      var rp=f.rb||"No disponible"; person[rp]=person[rp]||{name:rp,hours:0,flights:0}; person[rp].hours+=f._hours; person[rp].flights++;
+      var tl=String(f._type||"Sin clasificar").toLowerCase(); var t=tl.includes("ferry")?"Ferry":tl.includes("mant")?"Mantenimiento":tl.includes("fam")?"Familiar":tl.includes("ejec")?"Ejecutivo":"Otro"; types[t]=(types[t]||0)+f._hours;
+      var hk=f._dow+"-"+Math.floor(f._hour/4); heat[hk]=(heat[hk]||0)+1;
+      plannedByMonth[f._month]=(plannedByMonth[f._month]||0)+(Number(f.scheduled_block_minutes||f.planned_block_minutes||0)/60||0);
+      realByMonth[f._month]=(realByMonth[f._month]||0)+f._hours;
+      lastUpdated=String(f.updated_at||f.created_at||f.date||"")>lastUpdated?String(f.updated_at||f.created_at||f.date||""):lastUpdated;
     });
-    var monthSeries=Object.values(months).sort(function(a,b){return a.month.localeCompare(b.month);});
-    var aircraftSeries=Object.values(aircraft).sort(function(a,b){return b.hours-a.hours;});
-    var personSeries=Object.values(person).map(function(p){var topAc=Object.entries(p.ac).sort(function(a,b){return b[1]-a[1];})[0]; return Object.assign({},p,{avg:p.flights?p.hours/p.flights:0,topAc:topAc?topAc[0]:"-"});}).sort(function(a,b){return b.hours-a.hours;});
-    var totalHours=flights.reduce(function(a,f){return a+f._hours;},0);
-    return {monthSeries,aircraftSeries,personSeries,typeSeries:Object.entries(types).map(function(e){return {name:e[0],value:e[1]};}),heat,totalHours,totalFlights:flights.length,avgHours:flights.length?totalHours/flights.length:0,topPerson:personSeries[0]||null,plannedVsReal};
-  },[analyticsFiltered]);
+    var monthSeries=Object.values(months).sort(function(a,b){return a.month.localeCompare(b.month);}).map(function(m,i,arr){var prev=arr[i-1]?arr[i-1].hours:0;return Object.assign({},m,{prevYear:monthsPrev[(Number(m.month.slice(0,4))-1)+"-"+m.month.slice(5,7)]||0,delta:prev?((m.hours-prev)/prev)*100:0});});
+    var totalHours=flights.reduce(function(a,f){return a+f._hours;},0); var totalFlights=flights.length;
+    var aircraftSeries=Object.values(aircraft).map(function(a){return Object.assign({},a,{util:totalHours?(a.hours/totalHours)*100:0,avg:a.flights?a.hours/a.flights:0});}).sort(function(a,b){return b.hours-a.hours;});
+    var personSeries=Object.values(person).map(function(p){return Object.assign({},p,{avg:p.flights?p.hours/p.flights:0,pct:totalHours?(p.hours/totalHours)*100:0});}).sort(function(a,b){return b.hours-a.hours;});
+    var pmr=Object.keys(realByMonth).sort().map(function(m){return {month:m,planned:plannedByMonth[m]||0,real:realByMonth[m]||0};});
+    return {monthSeries,aircraftSeries,personSeries,typeSeries:Object.entries(types).map(function(e){return {name:e[0],value:e[1]};}),heat,totalHours,totalFlights,avgHours:totalFlights?totalHours/totalFlights:0,ytdHours,lastUpdated,plannedVsReal:pmr,topAircraft:aircraftSeries[0]||null,topPerson:personSeries[0]||null};
+  },[analyticsFiltered,analyticsBaseFlights,today]);
   useEffect(function(){
     var tomFlights=fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";});
     if(tomFlights.length>0){
