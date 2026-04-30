@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import { hasRoleAtLeast, normalizeRole } from "./_rolePermissions.js";
 
 const RATE_LIMIT_STORE = new Map();
-const ROLE_ORDER = { viewer: 1, ops: 2, admin: 3 };
 
 function getSupabaseUrl() {
   return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
@@ -76,16 +76,6 @@ async function checkRateLimitDurable(req, rateLimit) {
   }
 }
 
-function normalizeRole(role) {
-  const next = String(role || "").toLowerCase();
-  return Object.prototype.hasOwnProperty.call(ROLE_ORDER, next) ? next : "viewer";
-}
-
-function hasRoleAtLeast(role, minimumRole) {
-  if (!minimumRole) return true;
-  return (ROLE_ORDER[normalizeRole(role)] || 0) >= (ROLE_ORDER[normalizeRole(minimumRole)] || 0);
-}
-
 export function hasValidInternalSecret(req) {
   const expected = String(process.env.API_INTERNAL_SECRET || "").trim();
   const provided = String(req.headers["x-internal-secret"] || "").trim();
@@ -101,7 +91,7 @@ async function resolveUserRole(userId) {
   try {
     const service = createClient(supabaseUrl, serviceRoleKey);
     const { data, error } = await service
-      .from("user_roles")
+      .from("public.user_roles")
       .select("role")
       .eq("user_id", userId)
       .maybeSingle();
