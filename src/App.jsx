@@ -1688,30 +1688,30 @@ export default function App(){
         </div>
       </div>}
 
-      {vw==="gest"&&<div style={{padding:"0 14px 24px"}}>
+      {vw==="gest"&&<div style={{padding:"0 14px calc(160px + env(safe-area-inset-bottom, 0px))",maxWidth:1080,margin:"0 auto",display:"grid",gap:14}}>
         <div style={{marginTop:8,marginBottom:10}}>
           <button onClick={enablePushNotifications} style={{width:"100%",padding:"11px 12px",border:"1px solid rgba(148,163,184,.42)",borderRadius:11,background:"linear-gradient(145deg,rgba(8,18,34,.9),rgba(15,23,42,.74))",fontSize:11,fontWeight:700,color:"#dce7fb",cursor:"pointer",letterSpacing:0.25}}>
             {pushState==="saving"?"⏳ Activando notificaciones...":pushState==="ok"?"🔔 Notificaciones activas":"🔔 Activar notificaciones push"}
           </button>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,marginTop:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:2,marginTop:8}}>
           <div style={{background:"#dbeafe",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#1d4ed8"}}>{todayFs.length}</div><div style={{fontSize:10,color:"#1d4ed8",fontWeight:700}}>Hoy</div></div>
           <div style={{background:"#d1fae5",borderRadius:14,padding:"13px 8px",textAlign:"center"}}><div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{fs.filter(function(f){return f.st==="prog";}).length}</div><div style={{fontSize:10,color:"#059669",fontWeight:700}}>Programados</div></div>
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:12,marginBottom:12})}>
+        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:8}}>🚨 Alertas operativas</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
             {[["Vuelos hoy",opsAlerts.today],["Vuelos mañana",opsAlerts.tomorrow],["No disponibles",opsAlerts.unavailable],["Mantenimiento",opsAlerts.maint],["AOG",opsAlerts.aog],["Conflictos",opsAlerts.conflicts],["Pendientes",opsAlerts.pending],["Fuera de base",opsAlerts.outBase],["Cambios recientes",opsAlerts.recentChanges]].map(function(r){return <button key={r[0]} onClick={function(){onAlertClick(r[0]);}} style={{background:"rgba(15,23,42,.78)",border:"1px solid rgba(148,163,184,.24)",borderRadius:10,padding:"8px 6px",textAlign:"center",cursor:"pointer"}}><div style={{fontSize:18,fontWeight:800,color:"#f8fafc"}}>{r[1]}</div><div style={{fontSize:10,color:"#9fb0cd"}}>{r[0]}</div></button>;})}
           </div>
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
+        <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>✈️ Estado de flota</div>
           {Object.values(AC).map(function(a){var ms=getAcStatus(a.id,today),ml=MST[ms],p=pos[a.id],plan=maintPlan[a.id]||{};return(
             <div key={a.id} style={{marginBottom:10,padding:12,borderRadius:12,border:"1px solid "+(ms!=="disponible"?ml.c+"88":"rgba(148,163,184,.25)"),background:"rgba(15,23,42,.58)"}}>
               <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontWeight:800,color:a.clr}}>{a.id+" · "+a.type}</span><span style={{fontSize:11,background:ml.b,color:ml.c,padding:"2px 8px",borderRadius:8,fontWeight:700}}>{ms.toUpperCase()}</span></div>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>📍 {p}</div>
               {ms==="mantenimiento"&&plan.to&&<div style={{fontSize:11,color:"#b45309",marginBottom:6}}>En mantenimiento hasta: {new Date(plan.to+"T12:00:00").toLocaleDateString("es-MX")}</div>}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,marginBottom:6}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
                 <input type="date" value={plan.from||""} onChange={function(e){var next=Object.assign({},plan,{from:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
                 <input type="date" value={plan.to||""} onChange={function(e){var next=Object.assign({},plan,{to:e.target.value});saveMaintPlan(Object.assign({},maintPlan,{[a.id]:next}));persistMaintenanceDates(a.id,next,mt[a.id]||"disponible");}} style={Object.assign({},IS,{marginBottom:0,padding:"7px 9px",fontSize:11})}/>
               </div>
@@ -1720,16 +1720,16 @@ export default function App(){
               </div>
             </div>);})}
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
+        <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0})}>
           <div style={{fontWeight:800,fontSize:15,marginBottom:10,color:"#e2e8f0"}}>🔎 Buscar vuelos y costo estimado</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+          <div style={{display:"grid",gridTemplateColumns:"1.2fr minmax(180px,.8fr)",gap:8,marginBottom:8}}>
             <input value={mgmtSearchText} onChange={function(e){setMgmtSearchText(e.target.value);setHasSearchedCosts(true);}} placeholder="Nombre / solicitante / matrícula / ruta" style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               <button onClick={function(){setHasSearchedCosts(true);}} style={{border:"1px solid rgba(59,130,246,.5)",borderRadius:10,background:"rgba(30,58,138,.65)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Buscar</button>
               <button onClick={function(){setMgmtSearchText("");setMgmtDateFrom("");setMgmtDateTo("");setHasSearchedCosts(false);}} style={{border:"1px solid rgba(148,163,184,.35)",borderRadius:10,background:"rgba(15,23,42,.7)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpiar</button>
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8,marginBottom:12}}>
             <input type="date" value={mgmtDateFrom} onChange={function(e){setMgmtDateFrom(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
             <input type="date" value={mgmtDateTo} onChange={function(e){setMgmtDateTo(e.target.value);setHasSearchedCosts(true);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
           </div>
@@ -1749,7 +1749,7 @@ export default function App(){
             </div>;
           })}
         </div>
-        <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
+        <div style={Object.assign({},panelPrimary,{padding:16,marginBottom:0,minWidth:0})}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
             <div style={{fontWeight:800,fontSize:16,color:"#eaf2ff"}}>📊 Analytics ejecutivas</div>
             <div style={{display:"flex",gap:6}}>
