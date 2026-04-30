@@ -112,6 +112,14 @@ export default function App(){
   var[hasSearchedCosts,setHasSearchedCosts]=useState(false);
   var[expandedConflictKeys,setExpandedConflictKeys]=useState({});
   var[hoveredCommandCard,setHoveredCommandCard]=useState("");
+  var[mgmtTab,setMgmtTab]=useState("overview");
+  var[analyticsDateFrom,setAnalyticsDateFrom]=useState("");
+  var[analyticsDateTo,setAnalyticsDateTo]=useState("");
+  var[analyticsAircraft,setAnalyticsAircraft]=useState("all");
+  var[analyticsRequester,setAnalyticsRequester]=useState("all");
+  var[analyticsFlightType,setAnalyticsFlightType]=useState("all");
+  var[analyticsMonth,setAnalyticsMonth]=useState("all");
+  var[analyticsYear,setAnalyticsYear]=useState("all");
   var[scrollY,setScrollY]=useState(0);
   var[reducedMotion,setReducedMotion]=useState(false);
   const [airportHydrationTick, setAirportHydrationTick] = useState(0);
@@ -1297,6 +1305,57 @@ export default function App(){
     return {byReq,byAc,byDest,bySt,byMonth,byYear,hrsMonth,hrsYear,cancelled:filteredAnalytics.filter(function(f){return f.st==="canc";}).length};
   },[filteredAnalytics]);
 
+
+  var analyticsBaseFlights=useMemo(function(){
+    return fs.filter(function(f){return f&&f.st!=="canc";}).map(function(f){
+      var dep=f.departure_utc||f.block_out||f.departure_time||f.scheduled_departure||"";
+      var arr=f.arrival_utc||f.block_in||f.arrival_time||f.scheduled_arrival||"";
+      var minutes=Number(f.block_minutes||0);
+      if(!minutes&&Number(f.block_hours||0)>0)minutes=Number(f.block_hours)*60;
+      if(!minutes&&dep&&arr){var d1=new Date(dep).getTime();var d2=new Date(arr).getTime();if(Number.isFinite(d1)&&Number.isFinite(d2)&&d2>d1)minutes=Math.round((d2-d1)/60000);}
+      if(!minutes){var rr=calcR(f.orig,f.dest,f.ac,{m:f.pm,w:f.pw,c:f.pc},f.bg);minutes=rr?rr.bm:60;}
+      var hours=Math.max(0,minutes/60);
+      var iso=String(f.date||"");
+      var monthKey=iso.slice(0,7);
+      var yearKey=iso.slice(0,4);
+      var legKey=f.itinerary_group_id?String(f.itinerary_group_id):("single-"+String(f.id||Math.random()));
+      var hourLocal=Number(String(f.time||"00:00").slice(0,2)||0);
+      var dow=(new Date((iso||today)+"T12:00:00Z")).getUTCDay();
+      var type=String(f.flight_type||f.nt||"Ejecutivo");
+      return Object.assign({},f,{_hours:hours,_month:monthKey,_year:yearKey,_trip:legKey,_hour:hourLocal,_dow:dow,_type:type});
+    });
+  },[fs,today]);
+
+  var analyticsFiltered=useMemo(function(){
+    return analyticsBaseFlights.filter(function(f){
+      if(analyticsDateFrom&&String(f.date||"")<analyticsDateFrom)return false;
+      if(analyticsDateTo&&String(f.date||"")>analyticsDateTo)return false;
+      if(analyticsAircraft!=="all"&&f.ac!==analyticsAircraft)return false;
+      if(analyticsRequester!=="all"&&(f.rb||"No disponible")!==analyticsRequester)return false;
+      if(analyticsFlightType!=="all"&&!String(f._type||"").toLowerCase().includes(analyticsFlightType.toLowerCase()))return false;
+      if(analyticsMonth!=="all"&&String(f.date||"").slice(5,7)!==analyticsMonth)return false;
+      if(analyticsYear!=="all"&&String(f.date||"").slice(0,4)!==analyticsYear)return false;
+      return true;
+    });
+  },[analyticsBaseFlights,analyticsDateFrom,analyticsDateTo,analyticsAircraft,analyticsRequester,analyticsFlightType,analyticsMonth,analyticsYear]);
+
+  var analyticsData=useMemo(function(){
+    var months={},aircraft={},person={},types={},heat={},plannedVsReal=[];
+    var flights=analyticsFiltered;
+    flights.forEach(function(f){
+      months[f._month]=months[f._month]||{month:f._month,hours:0,flights:0}; months[f._month].hours+=f._hours; months[f._month].flights++;
+      aircraft[f.ac]=aircraft[f.ac]||{ac:f.ac,hours:0,flights:0}; aircraft[f.ac].hours+=f._hours; aircraft[f.ac].flights++;
+      var p=f.rb||"No disponible"; person[p]=person[p]||{name:p,hours:0,flights:0,last:"",ac:{}}; person[p].hours+=f._hours; person[p].flights++; person[p].last=String(f.date||"")>person[p].last?String(f.date||""):person[p].last; person[p].ac[f.ac]=(person[p].ac[f.ac]||0)+f._hours;
+      var t=(String(f._type||"Ejecutivo").toLowerCase().includes("ferry")?"Ferry":String(f._type||"").toLowerCase().includes("mant")?"Mantenimiento":String(f._type||"").toLowerCase().includes("fam")?"Familiar":"Ejecutivo"); types[t]=(types[t]||0)+f._hours;
+      var hk=f._dow+"-"+Math.floor(f._hour/3); heat[hk]=(heat[hk]||0)+1;
+      var planned=Number(f.scheduled_block_minutes||f.planned_block_minutes||0)/60||f._hours; plannedVsReal.push({month:f._month,planned:planned,real:f._hours});
+    });
+    var monthSeries=Object.values(months).sort(function(a,b){return a.month.localeCompare(b.month);});
+    var aircraftSeries=Object.values(aircraft).sort(function(a,b){return b.hours-a.hours;});
+    var personSeries=Object.values(person).map(function(p){var topAc=Object.entries(p.ac).sort(function(a,b){return b[1]-a[1];})[0]; return Object.assign({},p,{avg:p.flights?p.hours/p.flights:0,topAc:topAc?topAc[0]:"-"});}).sort(function(a,b){return b.hours-a.hours;});
+    var totalHours=flights.reduce(function(a,f){return a+f._hours;},0);
+    return {monthSeries,aircraftSeries,personSeries,typeSeries:Object.entries(types).map(function(e){return {name:e[0],value:e[1]};}),heat,totalHours,totalFlights:flights.length,avgHours:flights.length?totalHours/flights.length:0,topPerson:personSeries[0]||null,plannedVsReal};
+  },[analyticsFiltered]);
   useEffect(function(){
     var tomFlights=fs.filter(function(f){return f.date===tomorrow&&f.st!=="canc";});
     if(tomFlights.length>0){
@@ -1684,31 +1743,30 @@ export default function App(){
           })}
         </div>
         <div style={Object.assign({},panelPrimary,{padding:14,marginBottom:12})}>
-          <div style={{fontWeight:800,fontSize:16,marginBottom:10,color:"#eaf2ff"}}>📊 Analítica operativa</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+            <div style={{fontWeight:800,fontSize:16,color:"#eaf2ff"}}>📊 Analytics ejecutivas</div>
+            <div style={{display:"flex",gap:6}}>
+              {[{k:"overview",l:"Resumen"},{k:"analytics",l:"Analytics"}].map(function(t){return <button key={t.k} onClick={function(){setMgmtTab(t.k);}} style={{padding:"6px 10px",borderRadius:999,border:"1px solid rgba(212,185,140,.35)",background:mgmtTab===t.k?"rgba(212,185,140,.18)":"rgba(15,23,42,.7)",color:mgmtTab===t.k?"#f3dfbf":"#cbd5e1",fontSize:11,fontWeight:700}}>{t.l}</button>;})}
+            </div>
+          </div>
+          {mgmtTab==="overview"?<div style={{fontSize:12,color:"#9fb0cd"}}>Selecciona <strong style={{color:"#e2e8f0"}}>Analytics</strong> para ver el tablero ejecutivo de utilización, personas y desempeño.</div>:<>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
-            <select value={anMonth} onChange={function(e){setAnMonth(e.target.value);}} style={IS}>
-              <option value="all">Mes: Todos</option>
-              {["01","02","03","04","05","06","07","08","09","10","11","12"].map(function(m,i){return <option key={m} value={m}>{MN[i]}</option>;})}
-            </select>
-            <select value={anYear} onChange={function(e){setAnYear(e.target.value);}} style={IS}>
-              <option value="all">Año: Todos</option>
-              {Array.from(new Set(fs.map(function(f){return String(f.date||"").slice(0,4);}).filter(Boolean))).sort().map(function(y){return <option key={y} value={y}>{y}</option>;})}
-            </select>
+            <input type="date" value={analyticsDateFrom} onChange={function(e){setAnalyticsDateFrom(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <input type="date" value={analyticsDateTo} onChange={function(e){setAnalyticsDateTo(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
+            <select value={analyticsAircraft} onChange={function(e){setAnalyticsAircraft(e.target.value);}} style={IS}><option value="all">Aeronave: Todas</option>{Object.keys(AC).map(function(a){return <option key={a} value={a}>{a}</option>;})}</select>
+            <select value={analyticsRequester} onChange={function(e){setAnalyticsRequester(e.target.value);}} style={IS}><option value="all">Solicitante: Todos</option>{Array.from(new Set(fs.map(function(f){return f.rb||"No disponible";}))).map(function(r){return <option key={r} value={r}>{r}</option>;})}</select>
           </div>
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginBottom:6}}>Vuelos programados por aeronave</div>
-          {Object.keys(flightsByAc).map(function(ac){var total=Object.values(flightsByAc).reduce(function(a,b){return a+b;},0)||1;var pct=Math.round((flightsByAc[ac]/total)*100);return <div key={ac+"f"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{ac}</span><strong style={{color:"#f8fafc"}}>{flightsByAc[ac]} vuelos</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:ac==="N540JL"?"#fb923c":"#60a5fa",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Horas de vuelo por aeronave (estimadas)</div>
-          {Object.keys(hoursByAc).map(function(ac){var max=Math.max.apply(null,Object.values(hoursByAc).concat([1]));var pct=Math.round((hoursByAc[ac]/max)*100);return <div key={ac+"h"} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{ac}</span><strong style={{color:"#f8fafc"}}>{hoursByAc[ac].toFixed(1)} h</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:ac==="N540JL"?"#fdba74":"#93c5fd",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Vuelos solicitados por persona</div>
-          {requestsByPerson.length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:requestsByPerson.map(function(r){var max=requestsByPerson[0][1]||1;var pct=Math.round((r[1]/max)*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{r[0]}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#fbbf24",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Top destinos</div>
-          {Object.keys(metrics.byDest).length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:Object.entries(metrics.byDest).sort(function(a,b){return b[1]-a[1];}).slice(0,5).map(function(r){var max=Math.max.apply(null,Object.values(metrics.byDest));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{r[0]}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#38bdf8",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:12,marginBottom:6}}>Vuelos por estatus</div>
-          {Object.keys(metrics.bySt).length===0?<div style={{fontSize:11,color:"#9fb0cd"}}>Sin registros.</div>:Object.entries(metrics.bySt).map(function(r){var max=Math.max.apply(null,Object.values(metrics.bySt));var pct=Math.round((r[1]/(max||1))*100);return <div key={r[0]} style={{marginBottom:7}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{(STS[r[0]]||{l:r[0]}).l}</span><strong style={{color:"#f8fafc"}}>{r[1]}</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999,border:"1px solid rgba(148,163,184,.18)"}}><div style={{height:8,width:pct+"%",background:"#a78bfa",borderRadius:999}}/></div></div>;})}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-            <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Cancelaciones</div><div style={{fontSize:19,fontWeight:800,color:"#dc2626"}}>{metrics.cancelled}</div></div>
-            <div style={{background:"#f8fafc",padding:9,borderRadius:10,border:"1px solid #e2e8f0"}}><div style={{fontSize:10,color:"#64748b"}}>Utilización estimada</div><div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>{Object.values(metrics.byAc).reduce(function(a,b){return a+b;},0)} vuelos</div></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginBottom:10}}>
+            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Horas totales YTD</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.totalHours.toFixed(1)}h</div></div>
+            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Total vuelos período</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.totalFlights}</div></div>
+            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Promedio horas/vuelo</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.avgHours.toFixed(2)}h</div></div>
+            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Mayor uso</div><div style={{fontSize:15,fontWeight:800,color:"#f8fafc"}}>{analyticsData.topPerson?analyticsData.topPerson.name:"Sin datos"}</div></div>
           </div>
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginBottom:4}}>Horas por mes</div>
+          {analyticsData.monthSeries.length===0?<div style={{fontSize:11,color:"#9fb0cd",marginBottom:8}}>Sin datos para el filtro seleccionado.</div>:analyticsData.monthSeries.map(function(m){var max=Math.max.apply(null,analyticsData.monthSeries.map(function(v){return v.hours;}).concat([1]));var pct=Math.round((m.hours/max)*100);return <div key={m.month} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{m.month}</span><strong>{m.hours.toFixed(1)}h · {m.flights} vuelos</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"linear-gradient(90deg,#60a5fa,#fbbf24)",borderRadius:999}}/></div></div>;})}
+          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:10,marginBottom:4}}>Utilización por aeronave</div>
+          {analyticsData.aircraftSeries.map(function(a){var max=Math.max.apply(null,analyticsData.aircraftSeries.map(function(v){return v.hours;}).concat([1]));return <div key={a.ac} style={{fontSize:11,color:"#cbd5e1",marginBottom:5}}>{a.ac} · {a.hours.toFixed(1)}h · {a.flights} legs<div style={{height:6,marginTop:3,background:"rgba(30,41,59,.9)",borderRadius:999}}><div style={{height:6,width:Math.round((a.hours/max)*100)+"%",background:a.ac==="N540JL"?"#f59e0b":"#38bdf8",borderRadius:999}}/></div></div>;})}
+          </>}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
