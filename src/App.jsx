@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import { AC, REQBY, STS, MST, LS, IS, NB, META_FIELDS, MN } from "./app/data";
 import { AirportInput as ApIn } from "./app/components/AirportInput";
 import { PassengerStepper as Stp } from "./app/components/PassengerStepper";
+import AnalyticsDashboard from "./app/components/AnalyticsDashboard";
 import { loadFlightsFromDb, loadMaintFromDb, tds, fdt, ftm, gmd, calcR, getPos, makeCalUrl, etaLocalUtc } from "./app/helpers";
 import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getCompactAircraftTypeLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl, toAirportNameLabel } from "./app/aircraftCardUtils";
 import { analyzeOpsInstruction } from "./ai/agentClient";
@@ -1755,24 +1756,14 @@ export default function App(){
               {[{k:"overview",l:"Resumen"},{k:"analytics",l:"Analytics"}].map(function(t){return <button key={t.k} onClick={function(){setMgmtTab(t.k);}} style={{padding:"6px 10px",borderRadius:999,border:"1px solid rgba(212,185,140,.35)",background:mgmtTab===t.k?"rgba(212,185,140,.18)":"rgba(15,23,42,.7)",color:mgmtTab===t.k?"#f3dfbf":"#cbd5e1",fontSize:11,fontWeight:700}}>{t.l}</button>;})}
             </div>
           </div>
-          {mgmtTab==="overview"?<div style={{fontSize:12,color:"#9fb0cd"}}>Selecciona <strong style={{color:"#e2e8f0"}}>Analytics</strong> para ver el tablero ejecutivo de utilización, personas y desempeño.</div>:<>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
-            <input type="date" value={analyticsDateFrom} onChange={function(e){setAnalyticsDateFrom(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <input type="date" value={analyticsDateTo} onChange={function(e){setAnalyticsDateTo(e.target.value);}} style={Object.assign({},IS,{marginBottom:0,fontSize:12})}/>
-            <select value={analyticsAircraft} onChange={function(e){setAnalyticsAircraft(e.target.value);}} style={IS}><option value="all">Aeronave: Todas</option>{Object.keys(AC).map(function(a){return <option key={a} value={a}>{a}</option>;})}</select>
-            <select value={analyticsRequester} onChange={function(e){setAnalyticsRequester(e.target.value);}} style={IS}><option value="all">Solicitante: Todos</option>{Array.from(new Set(fs.map(function(f){return f.rb||"No disponible";}))).map(function(r){return <option key={r} value={r}>{r}</option>;})}</select>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginBottom:10}}>
-            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Horas totales YTD</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.totalHours.toFixed(1)}h</div></div>
-            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Total vuelos período</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.totalFlights}</div></div>
-            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Promedio horas/vuelo</div><div style={{fontSize:22,fontWeight:800,color:"#f8fafc"}}>{analyticsData.avgHours.toFixed(2)}h</div></div>
-            <div style={{padding:10,borderRadius:12,background:"rgba(15,23,42,.75)",border:"1px solid rgba(148,163,184,.24)"}}><div style={{fontSize:10,color:"#94a3b8"}}>Mayor uso</div><div style={{fontSize:15,fontWeight:800,color:"#f8fafc"}}>{analyticsData.topPerson?analyticsData.topPerson.name:"Sin datos"}</div></div>
-          </div>
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginBottom:4}}>Horas por mes</div>
-          {analyticsData.monthSeries.length===0?<div style={{fontSize:11,color:"#9fb0cd",marginBottom:8}}>Sin datos para el filtro seleccionado.</div>:analyticsData.monthSeries.map(function(m){var max=Math.max.apply(null,analyticsData.monthSeries.map(function(v){return v.hours;}).concat([1]));var pct=Math.round((m.hours/max)*100);return <div key={m.month} style={{marginBottom:6}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#bfdbfe"}}><span>{m.month}</span><strong>{m.hours.toFixed(1)}h · {m.flights} vuelos</strong></div><div style={{height:8,background:"rgba(30,41,59,.9)",borderRadius:999}}><div style={{height:8,width:pct+"%",background:"linear-gradient(90deg,#60a5fa,#fbbf24)",borderRadius:999}}/></div></div>;})}
-          <div style={{fontSize:12,fontWeight:700,color:"#dbeafe",marginTop:10,marginBottom:4}}>Utilización por aeronave</div>
-          {analyticsData.aircraftSeries.map(function(a){var max=Math.max.apply(null,analyticsData.aircraftSeries.map(function(v){return v.hours;}).concat([1]));return <div key={a.ac} style={{fontSize:11,color:"#cbd5e1",marginBottom:5}}>{a.ac} · {a.hours.toFixed(1)}h · {a.flights} legs<div style={{height:6,marginTop:3,background:"rgba(30,41,59,.9)",borderRadius:999}}><div style={{height:6,width:Math.round((a.hours/max)*100)+"%",background:a.ac==="N540JL"?"#f59e0b":"#38bdf8",borderRadius:999}}/></div></div>;})}
-          </>}
+          {mgmtTab==="overview"?<div style={{fontSize:12,color:"#9fb0cd"}}>Selecciona <strong style={{color:"#e2e8f0"}}>Analytics</strong> para ver el tablero ejecutivo de utilización, personas y desempeño.</div>:<AnalyticsDashboard
+            filters={{analyticsDateFrom,analyticsDateTo,analyticsAircraft,analyticsRequester}}
+            setters={{setAnalyticsDateFrom,setAnalyticsDateTo,setAnalyticsAircraft,setAnalyticsRequester}}
+            analyticsData={analyticsData}
+            requesters={Array.from(new Set(fs.map(function(f){return f.rb||"No disponible";})))}
+            aircrafts={Object.keys(AC)}
+            IS={IS}
+          />}
         </div>
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
