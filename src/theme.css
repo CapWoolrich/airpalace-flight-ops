@@ -171,3 +171,49 @@ select option{
     transform:none !important;
   }
 }
+
+html,body{overflow-x:hidden;}
+
+.ops-mgmt-shell,
+.ops-flight-modal,
+.ops-itinerary-panel,
+.ops-leg-grid,
+.ops-fleet-dates,
+.ops-search-row,
+.ops-search-actions{min-width:0;max-width:100%;}
+
+.ops-flight-modal-overlay{padding:env(safe-area-inset-top) 10px calc(env(safe-area-inset-bottom) + 10px);align-items:flex-end;}
+.ops-flight-modal{padding-bottom:calc(env(safe-area-inset-bottom) + 36px)!important;overscroll-behavior:contain;}
+.ops-itinerary-panel{overflow:hidden;}
+.ops-itinerary-panel input,.ops-itinerary-panel button,.ops-itinerary-panel div{max-width:100%;min-width:0;}
+.ops-leg-grid{align-items:start;}
+.ops-leg-grid > *{min-width:0;}
+.ops-leg-grid input{width:100%;}
+
+.ops-search-row input{min-width:0;}
+.ops-search-actions button{min-height:40px;}
+
+.ops-ai-pilot-btn{right:12px!important;bottom:calc(96px + env(safe-area-inset-bottom))!important;}
+.ops-ai-pilot-panel{bottom:calc(158px + env(safe-area-inset-bottom))!important;}
+
+@media (max-width: 768px){
+  .ops-bottom-nav{width:min(100% - 16px,460px);bottom:calc(8px + env(safe-area-inset-bottom));}
+  .ops-floating-cta{bottom:calc(86px + env(safe-area-inset-bottom));}
+}
+
+@media (max-width: 480px){
+  .ops-mgmt-shell{padding-inline:14px!important;padding-bottom:calc(208px + env(safe-area-inset-bottom))!important;}
+  .ops-flight-modal{max-width:100%!important;max-height:calc(100dvh - env(safe-area-inset-top) - 10px)!important;padding:16px 14px 30px!important;border-radius:18px!important;}
+  .ops-leg-grid{grid-template-columns:1fr!important;gap:7px!important;}
+  .ops-fleet-dates{grid-template-columns:1fr!important;}
+  .ops-fleet-status-actions{flex-wrap:wrap;gap:6px!important;}
+  .ops-fleet-status-actions > button{flex:1 1 calc(33.33% - 6px);min-height:34px;}
+  .ops-search-row{grid-template-columns:1fr!important;}
+  .ops-search-actions{grid-template-columns:1fr 1fr!important;}
+  .ops-ai-pilot-btn{bottom:calc(100px + env(safe-area-inset-bottom))!important;}
+}
+
+@media (max-width: 390px){
+  .ops-mgmt-shell{padding-inline:12px!important;}
+  .ops-search-actions{grid-template-columns:1fr!important;}
+}
