@@ -1768,11 +1768,11 @@ export default function App(){
         <button onClick={restore} style={{width:"100%",padding:10,background:"transparent",border:"1.5px solid #dc2626",borderRadius:10,color:"#dc2626",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔄 Restaurar datos originales</button>
       </div>}
 
-      {sf&&<div className="ops-flight-modal-overlay" style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:1000,background:"rgba(2,6,23,.72)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={function(){setSf(false);}}>
+      {sf&&<div className="ops-flight-modal-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(2,6,23,.72)",display:"flex",justifyContent:"center"}} onClick={function(){setSf(false);}}>
         <div className="ops-flight-modal" style={{background:"linear-gradient(170deg,rgba(8,16,31,.98),rgba(15,25,42,.95))",borderRadius:"22px 22px 0 0",maxHeight:"93vh",overflowY:"auto",overflowX:"clip",padding:"18px 16px 36px",width:"100%",maxWidth:"100%",minWidth:0,border:"1px solid rgba(148,163,184,.26)"}} onClick={function(e){e.stopPropagation();}}>
           <div style={{width:36,height:4,background:"rgba(148,163,184,.45)",borderRadius:2,margin:"0 auto 12px"}}/>
-          <div className="ops-flight-modal-header" style={{position:"sticky",top:0,paddingTop:"calc(env(safe-area-inset-top) + 12px)",paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2,gap:8}}>
-            <div style={{fontWeight:800,fontSize:17,color:"#e2e8f0"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
+          <div className="ops-flight-modal-header" style={{position:"sticky",top:0,paddingTop:"calc(env(safe-area-inset-top) + 12px)",paddingBottom:10,marginBottom:12,background:"linear-gradient(170deg,rgba(8,16,31,.97),rgba(15,25,42,.93))",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(148,163,184,.2)",zIndex:2,gap:12,minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:17,color:"#e2e8f0",minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{editId!==null?"✏️ Editar vuelo":"✈️ Nuevo vuelo"}</div>
             <button onClick={function(){setSf(false);}} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:999,border:"1px solid rgba(148,163,184,.34)",background:"rgba(15,23,42,.68)",color:"#dbeafe",fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:0.15}}>
               ← Cerrar
             </button>
