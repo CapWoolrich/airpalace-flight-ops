@@ -1,30 +1,72 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
+
+const authShellStyle = {
+  minHeight: "100vh",
+  display: "grid",
+  placeItems: "center",
+  padding: 24,
+  background: "radial-gradient(circle at 20% 10%, #12233f 0%, #0c1220 48%, #090f1a 100%)",
+  color: "#fff",
+  fontFamily: "-apple-system,sans-serif",
+};
+
+const authCardStyle = {
+  width: "100%",
+  maxWidth: 420,
+  background: "linear-gradient(150deg, rgba(17,24,39,.96), rgba(12,20,35,.98))",
+  padding: 22,
+  borderRadius: 18,
+  boxShadow: "0 14px 38px rgba(0,0,0,.42)",
+  border: "1px solid rgba(148,163,184,.22)",
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: 12,
+  borderRadius: 10,
+  border: "1px solid #334155",
+  marginBottom: 12,
+  outline: "none",
+  boxSizing: "border-box",
+  background: "#0b1220",
+  color: "#e2e8f0",
+};
 
 export default function AuthGate({ children }) {
   const signupEnabled =
     import.meta.env.DEV ||
     String(import.meta.env.VITE_ENABLE_PUBLIC_SIGNUP || "").toLowerCase() === "true";
   const [session, setSession] = useState(null);
-  const [mode, setMode] = useState("login"); // login | signup
+  const [mode, setMode] = useState("login"); // login | signup | forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [updateMsg, setUpdateMsg] = useState("");
+  const [linkInvalid, setLinkInvalid] = useState(false);
+
+  const isUpdatePasswordRoute = useMemo(() => window.location.pathname === "/update-password", []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
+      if (isUpdatePasswordRoute && !data.session) {
+        const hash = window.location.hash || "";
+        setLinkInvalid(!hash.includes("type=recovery"));
+      }
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session ?? null);
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [isUpdatePasswordRoute]);
 
   useEffect(() => {
     if (!signupEnabled && mode === "signup") setMode("login");
@@ -38,22 +80,18 @@ export default function AuthGate({ children }) {
     try {
       if (mode === "signup") {
         if (!signupEnabled) throw new Error("Registro público deshabilitado en este entorno.");
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-
+        const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-
         setMsg("Cuenta creada. Si tu proyecto exige confirmación por email, revisa tu correo. Si no, ya puedes iniciar sesión.");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+      } else if (mode === "forgot") {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/update-password`,
         });
-
         if (error) throw error;
-
+        setMsg("If this email exists, we sent a secure password reset link.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
         setMsg("Sesión iniciada correctamente.");
       }
     } catch (err) {
@@ -63,136 +101,97 @@ export default function AuthGate({ children }) {
     }
   }
 
+  async function handleUpdatePassword(e) {
+    e.preventDefault();
+    setUpdateMsg("");
+    if (newPassword.length < 8) {
+      setUpdateMsg("Password must contain at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setUpdateMsg("Passwords do not match.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      await supabase.auth.signOut();
+      setUpdateMsg("Password updated successfully. Redirecting to login...");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 2200);
+    } catch (err) {
+      setUpdateMsg(err.message || "This recovery link is invalid or expired. Please request a new password reset link.");
+      setLinkInvalid(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
 
-  if (!session) {
+  if (!session || isUpdatePasswordRoute) {
+    const showUpdateForm = isUpdatePasswordRoute;
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "grid",
-          placeItems: "center",
-          padding: 24,
-          background: "#0c1220",
-          color: "#fff",
-          fontFamily: "-apple-system,sans-serif",
-        }}
-      >
-        <form
-          onSubmit={handleSubmit}
-          style={{
-            width: "100%",
-            maxWidth: 380,
-            background: "#111827",
-            padding: 20,
-            borderRadius: 16,
-            boxShadow: "0 10px 30px rgba(0,0,0,.25)",
-          }}
-        >
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>AirPalace Login</h2>
-
-          <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
-            {mode === "login"
-              ? "Ingresa con tu correo y contraseña."
-              : "Crea una cuenta con correo y contraseña."}
-          </p>
-
-          <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
-            Correo
-          </label>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="tu@correo.com"
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid #334155",
-              marginBottom: 12,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-
-          <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>
-            Contraseña
-          </label>
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="******"
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 10,
-              border: "1px solid #334155",
-              marginBottom: 14,
-              outline: "none",
-              boxSizing: "border-box",
-            }}
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 10,
-              border: "none",
-              background: "#2563eb",
-              color: "#fff",
-              fontWeight: 700,
-              cursor: "pointer",
-              opacity: loading ? 0.75 : 1,
-            }}
-          >
-            {loading
-              ? "Procesando..."
-              : mode === "login"
-              ? "Entrar"
-              : "Crear cuenta"}
-          </button>
-
-          {signupEnabled && (
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === "login" ? "signup" : "login");
-                setMsg("");
-              }}
-              style={{
-                width: "100%",
-                marginTop: 10,
-                padding: 12,
-                borderRadius: 10,
-                border: "1px solid #334155",
-                background: "transparent",
-                color: "#fff",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {mode === "login"
-                ? "Crear cuenta"
-                : "Ya tengo cuenta, iniciar sesión"}
-            </button>
+      <div style={authShellStyle}>
+        <form onSubmit={showUpdateForm ? handleUpdatePassword : handleSubmit} style={authCardStyle}>
+          <img src="/logo_login1.png" alt="AirPalace" style={{ width: 140, display: "block", margin: "0 auto 14px" }} />
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{showUpdateForm ? "Update password" : "AirPalace Login"}</h2>
+          {!showUpdateForm && (
+            <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
+              {mode === "login" ? "Ingresa con tu correo y contraseña." : mode === "signup" ? "Crea una cuenta con correo y contraseña." : "Receive a secure recovery link to reset your password."}
+            </p>
           )}
 
-          {msg && (
-            <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>
-              {msg}
-            </p>
+          {!showUpdateForm ? (
+            <>
+              <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Correo</label>
+              <input type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" style={inputStyle} />
+
+              {mode !== "forgot" && (
+                <>
+                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Contraseña</label>
+                  <input type="password" required minLength={6} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="******" style={{ ...inputStyle, marginBottom: 14 }} />
+                </>
+              )}
+
+              <button type="submit" disabled={loading} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.75 : 1 }}>
+                {loading ? "Procesando..." : mode === "login" ? "Entrar" : mode === "signup" ? "Crear cuenta" : "Send reset link"}
+              </button>
+
+              <button type="button" onClick={() => { setMode(mode === "forgot" ? "login" : "forgot"); setMsg(""); }} style={{ width: "100%", marginTop: 10, padding: 10, border: "none", background: "transparent", color: "#93c5fd", fontWeight: 600, cursor: "pointer" }}>
+                {mode === "forgot" ? "Back to login" : "Forgot password?"}
+              </button>
+
+              {signupEnabled && mode !== "forgot" && (
+                <button type="button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMsg(""); }} style={{ width: "100%", marginTop: 4, padding: 12, borderRadius: 10, border: "1px solid #334155", background: "transparent", color: "#fff", fontWeight: 600, cursor: "pointer" }}>
+                  {mode === "login" ? "Crear cuenta" : "Ya tengo cuenta, iniciar sesión"}
+                </button>
+              )}
+
+              {msg && <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>{msg}</p>}
+            </>
+          ) : (
+            <>
+              {linkInvalid && !session ? (
+                <>
+                  <p style={{ color: "#fca5a5", fontSize: 14, marginBottom: 12 }}>This recovery link is invalid or expired. Please request a new password reset link.</p>
+                  <button type="button" onClick={() => { window.location.href = "/"; }} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Request new reset link</button>
+                </>
+              ) : (
+                <>
+                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>New password</label>
+                  <input type="password" required minLength={8} autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={inputStyle} />
+                  <label style={{ display: "block", fontSize: 13, marginBottom: 6 }}>Confirm password</label>
+                  <input type="password" required minLength={8} autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }} />
+                  <button type="submit" disabled={loading} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", opacity: loading ? 0.75 : 1 }}>Update password</button>
+                </>
+              )}
+              {updateMsg && <p style={{ fontSize: 13, color: "#cbd5e1", marginTop: 12 }}>{updateMsg}</p>}
+            </>
           )}
         </form>
       </div>
