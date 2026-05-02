@@ -91,7 +91,8 @@ async function resolveUserRole(userId) {
   try {
     const service = createClient(supabaseUrl, serviceRoleKey);
     const { data, error } = await service
-      .from("public.user_roles")
+      .schema("public")
+      .from("user_roles")
       .select("role")
       .eq("user_id", userId)
       .maybeSingle();
