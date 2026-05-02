@@ -1,6 +1,7 @@
 import { buildOperationalEmail } from "./_emailTemplate.js";
 import { buildFlightIcs } from "./_calendarInvite.js";
-import { computeEmailRecipients, parseCsvEmails } from "./_emailRecipients.js";
+import { createClient } from "@supabase/supabase-js";
+import { computeEmailRecipients, getRequesterEmailRecipient, parseCsvEmails } from "./_emailRecipients.js";
 
 function uniq(arr) {
   return Array.from(new Set(arr));
@@ -11,6 +12,13 @@ function missingEnvError() {
   if (!process.env.RESEND_API_KEY) return "Falta configurar RESEND_API_KEY.";
   if (!process.env.EMAIL_FROM) return "Falta configurar EMAIL_FROM.";
   return null;
+}
+
+function getServiceSupabaseClient() {
+  const url = process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
 export async function sendOperationalEmail({
@@ -24,13 +32,18 @@ export async function sendOperationalEmail({
   const missing = missingEnvError();
   if (missing) return { ok: false, error: missing, attempted: [], sent: [], failed: [], provider_errors: [] };
 
+  const requestedBy = payload?.rb || payload?.requested_by || payload?.requestedBy || "";
+  const serviceSupabase = getServiceSupabaseClient();
+  const requesterEmail = await getRequesterEmailRecipient(requestedBy, { serviceSupabase, logger: console });
+
+  const computedRecipients = computeEmailRecipients({ eventType, requestor: requestedBy, env: process.env }).finalRecipients;
   const mode = String(process.env.EMAIL_MODE || "production").toLowerCase();
   const recipients = uniq(
     recipientsOverride?.length
       ? recipientsOverride
         : opsOnly
         ? parseCsvEmails(process.env.OPS_EMAILS)
-        : computeEmailRecipients({ eventType, requestor: payload?.rb, env: process.env }).finalRecipients
+        : computedRecipients.concat(requesterEmail ? [requesterEmail] : [])
   );
 
   if (!recipients.length) {
