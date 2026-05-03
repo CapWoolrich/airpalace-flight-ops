@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase";
-import UpdatePassword from "./UpdatePassword";
+import SetPassword from "./SetPassword";
 
 const authShellStyle = {
   minHeight: "100vh",
@@ -45,7 +45,7 @@ export default function AuthGate({ children }) {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const isUpdatePasswordRoute = useMemo(() => window.location.pathname === "/update-password", []);
+  const isSetPasswordRoute = useMemo(() => ["/set-password", "/update-password"].includes(window.location.pathname), []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -59,7 +59,7 @@ export default function AuthGate({ children }) {
     });
 
     return () => subscription.unsubscribe();
-  }, [isUpdatePasswordRoute]);
+  }, [isSetPasswordRoute]);
 
   useEffect(() => {
     if (!signupEnabled && mode === "signup") setMode("login");
@@ -98,13 +98,35 @@ export default function AuthGate({ children }) {
     await supabase.auth.signOut();
   }
 
-  if (!session || isUpdatePasswordRoute) {
-    const showUpdateForm = isUpdatePasswordRoute;
+  const [userRoleState, setUserRoleState] = useState({ requires_password_setup: false, password_set: true, role: "viewer" });
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadUserRoleState() {
+      if (!session?.user?.id) {
+        if (mounted) setUserRoleState({ requires_password_setup: false, password_set: true, role: "viewer" });
+        return;
+      }
+      const { data } = await supabase.from("user_roles").select("user_id,role,requires_password_setup,password_set").eq("user_id", session.user.id).maybeSingle();
+      if (mounted) setUserRoleState({
+        requires_password_setup: Boolean(data?.requires_password_setup),
+        password_set: Boolean(data?.password_set),
+        role: String(data?.role || "viewer"),
+      });
+    }
+    loadUserRoleState();
+    return () => { mounted = false; };
+  }, [session?.user?.id]);
+
+  const requiresOnboarding = !!session && userRoleState.requires_password_setup === true && userRoleState.password_set !== true;
+
+  if (!session || isSetPasswordRoute || requiresOnboarding) {
+    const showUpdateForm = isSetPasswordRoute || requiresOnboarding;
     return (
       <div style={authShellStyle}>
-        {showUpdateForm ? (<UpdatePassword />) : (<form onSubmit={handleSubmit} style={authCardStyle}>
+        {showUpdateForm ? (<SetPassword />) : (<form onSubmit={handleSubmit} style={authCardStyle}>
           <img src="/logo_login1.png" alt="AirPalace" style={{ width: 140, display: "block", margin: "0 auto 14px" }} />
-          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{showUpdateForm ? "Update password" : "AirPalace Login"}</h2>
+          <h2 style={{ marginTop: 0, marginBottom: 8 }}>{showUpdateForm ? "Activa tu acceso" : "AirPalace Login"}</h2>
           {!showUpdateForm && (
             <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
               {mode === "login" ? "Ingresa con tu correo y contraseña." : mode === "signup" ? "Crea una cuenta con correo y contraseña." : "Receive a secure recovery link to reset your password."}

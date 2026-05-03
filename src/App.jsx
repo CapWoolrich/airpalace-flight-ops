@@ -347,7 +347,7 @@ export default function App(){
     try{
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
-      await fetch("/api/send-push-notification",{method:"POST",headers:{"Content-Type":"application/json", ...(token ? { Authorization: `Bearer ${token}` } : {})},body:JSON.stringify({title,body,url:url||"/"})});
+      await fetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json", ...(token ? { Authorization: `Bearer ${token}` } : {})},body:JSON.stringify({action:"send-push-notification",title,body,url:url||"/"})});
     }catch{}
   }
 
@@ -844,10 +844,11 @@ export default function App(){
     try {
       const { data: realtimeAuth } = await supabase.auth.getSession();
       const realtimeToken = realtimeAuth?.session?.access_token;
-      const sessionResp = await fetch("/api/realtime-session", {
+      const sessionResp = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(realtimeToken ? { Authorization: `Bearer ${realtimeToken}` } : {}) },
         body: JSON.stringify({
+          action: "realtime-session",
           instructions:
             "Actúa como front-end de transcripción en tiempo real para AI Pilot. Tu tarea principal es transcribir en español/inglés aeronáutico con alta precisión. No ejecutes acciones operativas por tu cuenta.",
         }),
@@ -948,7 +949,7 @@ export default function App(){
       const sub=await subscribeToPush(publicKey);
       const { data: pushAuth } = await supabase.auth.getSession();
       const pushToken = pushAuth?.session?.access_token;
-      const r=await fetch("/api/save-push-subscription",{method:"POST",headers:{"Content-Type":"application/json", ...(pushToken ? { Authorization: `Bearer ${pushToken}` } : {})},body:JSON.stringify({subscription:sub.toJSON()})});
+      const r=await fetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json", ...(pushToken ? { Authorization: `Bearer ${pushToken}` } : {})},body:JSON.stringify({action:"save-push-subscription",subscription:sub.toJSON()})});
       if(!r.ok){const d=await r.json().catch(function(){return{};});throw new Error(d.error||`HTTP ${r.status}`);}
       setPushState("ok");
     }catch(e){
@@ -970,10 +971,10 @@ export default function App(){
 
       const { data: transcribeAuth } = await supabase.auth.getSession();
       const transcribeToken = transcribeAuth?.session?.access_token;
-      const r = await fetch("/api/transcribe-audio", {
+      const r = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(transcribeToken ? { Authorization: `Bearer ${transcribeToken}` } : {}) },
-        body: JSON.stringify({ audio_base64: base64, mime_type: blob.type || "audio/mp4" }),
+        body: JSON.stringify({ action: "transcribe-audio", audio_base64: base64, mime_type: blob.type || "audio/mp4" }),
       });
       const data = await r.json().catch(function(){return{};});
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -1076,11 +1077,12 @@ export default function App(){
         if (!pendingWrite?.token && !validationOverride) throw new Error("Falta token de confirmación del servidor.");
         const { data } = await supabase.auth.getSession();
         const token = data?.session?.access_token;
-        const response = await fetch("/api/ai-write", {
+        const response = await fetch("/api/ai", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({
-            action: validation.action,
+            action: "ai-write",
+            payload_action: validation.action,
             payload: validation.payload,
             confirmed: !!pendingWrite && !validationOverride,
             confirmation_token: pendingWrite?.token || null,

@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
-import { requireRouteAccess } from "../src/server/_routeProtection.js";
-import { verifyAiConfirmation } from "../src/server/_aiConfirmation.js";
-import { buildAuditMeta } from "../src/lib/opsMutationBuilders.js";
-import { applyOpsMutation } from "../src/lib/opsWriteEngine.js";
-import { resolveFlightTarget } from "../src/ai/flightTargetResolver.js";
-import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../src/server/_opsSideEffects.js";
-import { validateAiWritePayload } from "../src/server/_validation.js";
-import { canCancelFlights, canCreateFlights, canEditFlights, canOperateFlights } from "../src/server/_rolePermissions.js";
+import { requireRouteAccess } from "../_routeProtection.js";
+import { verifyAiConfirmation } from "../_aiConfirmation.js";
+import { buildAuditMeta } from "../../lib/opsMutationBuilders.js";
+import { applyOpsMutation } from "../../lib/opsWriteEngine.js";
+import { resolveFlightTarget } from "../../ai/flightTargetResolver.js";
+import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../_opsSideEffects.js";
+import { validateAiWritePayload } from "../_validation.js";
+import { canCancelFlights, canCreateFlights, canEditFlights, canOperateFlights } from "../_rolePermissions.js";
 
 const WRITE_ACTIONS = ["create_flight", "edit_flight", "cancel_flight", "duplicate_flight", "change_aircraft_status"];
 function bad(res, status, error, extras = {}) {
