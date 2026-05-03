@@ -25,57 +25,59 @@ function compareByDateTimeAsc(a,b){
 
 
 
-export function isFlightActiveNow(flight, nowMs){
-  if(String(flight?.st||"")!=="enc")return false;
-  if(!flight?.date||!flight?.time||!flight?.orig||!flight?.dest||!flight?.ac)return false;
-
+function getFlightUtcWindow(flight){
+  if(!flight?.date||!flight?.time||!flight?.orig||!flight?.dest||!flight?.ac)return null;
   var dateIso=normalizeDateIso(flight.date);
   var depMins=parseTimeToMinutes(flight.time);
-  if(!dateIso||!Number.isFinite(depMins))return false;
-
-  var tz=resolveAirportTimezone(flight.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
-  if(!tz)return false;
-
+  if(!dateIso||!Number.isFinite(depMins))return null;
+  var tzInfo=resolveAirportTimezone(flight.orig,{ fallbackTimeZone: "America/Merida" });
+  var tz=tzInfo?.timeZone;
+  if(!tz)return null;
   var departureUtc=localDateTimeToUtcMs(dateIso, depMins, tz);
-  if(!Number.isFinite(departureUtc))return false;
-
+  if(!Number.isFinite(departureUtc))return null;
   var route=calcR(flight.orig, flight.dest, flight.ac, { m: flight.pm, w: flight.pw, c: flight.pc }, flight.bg);
   var blockMinutes=Number(route?.bm);
-  if(!Number.isFinite(blockMinutes)||blockMinutes<=0)return false;
-
+  if(!Number.isFinite(blockMinutes)||blockMinutes<=0)return null;
   var arrivalUtc=departureUtc + (blockMinutes*60*1000);
+  if(!Number.isFinite(arrivalUtc))return null;
+  return { departureUtc:departureUtc, arrivalUtc:arrivalUtc };
+}
+
+export function isFlightActiveNow(flight, nowMs){
+  if(String(flight?.st||"")!=="enc")return false;
+  var window=getFlightUtcWindow(flight);
+  if(!window)return false;
   var now=Number.isFinite(nowMs)?nowMs:Date.now();
-  return now>=departureUtc && now<=arrivalUtc;
+  return now>=window.departureUtc && now<=window.arrivalUtc;
 }
 export function getAircraftTimeline(fs, acId, todayIso){
   var flights=(fs||[]).filter(function(f){ return f?.ac===acId && f?.st!=="canc"; });
   var nowMs=Date.now();
   var inFlight=flights
-    .filter(function(f){ return isFlightActiveNow(f, nowMs); })
-    .sort(compareByDateTimeDesc)[0] || null;
+    .map(function(f){
+      var window=getFlightUtcWindow(f);
+      return { flight:f, window:window };
+    })
+    .filter(function(item){
+      return String(item.flight?.st||"")==="enc" && !!item.window && nowMs>=item.window.departureUtc && nowMs<=item.window.arrivalUtc;
+    })
+    .sort(function(a,b){ return b.window.departureUtc-a.window.departureUtc; })[0]?.flight || null;
   var lastLeg=flights
-    .filter(function(f){
-      var dateIso=normalizeDateIso(f?.date);
-      var depMins=parseTimeToMinutes(f?.time);
-      if(!dateIso||!Number.isFinite(depMins)) return false;
-      var tz=resolveAirportTimezone(f?.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
-      if(!tz)return false;
-      var depMs=localDateTimeToUtcMs(dateIso, depMins, tz);
-      return Number.isFinite(depMs) && depMs<=nowMs;
+    .map(function(f){ return { flight:f, window:getFlightUtcWindow(f) }; })
+    .filter(function(item){
+      if(!item.window)return false;
+      if(item.flight?.st==="canc")return false;
+      return item.window.departureUtc<=nowMs || item.window.arrivalUtc<=nowMs || item.flight?.st==="comp";
     })
-    .sort(compareByDateTimeDesc)[0] || null;
+    .sort(function(a,b){ return b.window.departureUtc-a.window.departureUtc; })[0]?.flight || null;
   var upcoming=flights
-    .filter(function(f){
-      if(f?.st==="comp")return false;
-      var dateIso=normalizeDateIso(f?.date);
-      var depMins=parseTimeToMinutes(f?.time);
-      if(!dateIso||!Number.isFinite(depMins)) return false;
-      var tz=resolveAirportTimezone(f?.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
-      if(!tz)return false;
-      var depMs=localDateTimeToUtcMs(dateIso, depMins, tz);
-      return Number.isFinite(depMs) && depMs>nowMs;
+    .map(function(f){ return { flight:f, window:getFlightUtcWindow(f) }; })
+    .filter(function(item){
+      if(!item.window)return false;
+      if(item.flight?.st==="comp" || item.flight?.st==="canc")return false;
+      return item.window.departureUtc>nowMs;
     })
-    .sort(compareByDateTimeAsc)[0] || null;
+    .sort(function(a,b){ return a.window.departureUtc-b.window.departureUtc; })[0]?.flight || null;
   return { inFlight, lastLeg, upcoming };
 }
 
