@@ -81,11 +81,10 @@ export default function SetPassword() {
       const { data: userData } = await supabase.auth.getUser();
       const user = userData?.user;
       if (user?.id) {
-        await supabase.from("profiles").upsert({
-          id: user.id,
-          email: user.email || "",
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || "",
+        await supabase.from("user_roles").upsert({
+          user_id: user.id,
           role: user.user_metadata?.role || "viewer",
+          requires_password_setup: false,
           password_set: true,
           onboarding_completed: true,
           updated_at: new Date().toISOString(),

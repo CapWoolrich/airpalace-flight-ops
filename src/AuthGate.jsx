@@ -98,26 +98,27 @@ export default function AuthGate({ children }) {
     await supabase.auth.signOut();
   }
 
-  const [profileFlags, setProfileFlags] = useState({ password_set: false, onboarding_completed: false });
+  const [userRoleState, setUserRoleState] = useState({ requires_password_setup: false, password_set: true, role: "viewer" });
 
   useEffect(() => {
     let mounted = true;
-    async function loadProfile() {
+    async function loadUserRoleState() {
       if (!session?.user?.id) {
-        if (mounted) setProfileFlags({ password_set: false, onboarding_completed: false });
+        if (mounted) setUserRoleState({ requires_password_setup: false, password_set: true, role: "viewer" });
         return;
       }
-      const { data } = await supabase.from("profiles").select("password_set,onboarding_completed").eq("id", session.user.id).maybeSingle();
-      if (mounted) setProfileFlags({
+      const { data } = await supabase.from("user_roles").select("user_id,role,requires_password_setup,password_set").eq("user_id", session.user.id).maybeSingle();
+      if (mounted) setUserRoleState({
+        requires_password_setup: Boolean(data?.requires_password_setup),
         password_set: Boolean(data?.password_set),
-        onboarding_completed: Boolean(data?.onboarding_completed),
+        role: String(data?.role || "viewer"),
       });
     }
-    loadProfile();
+    loadUserRoleState();
     return () => { mounted = false; };
   }, [session?.user?.id]);
 
-  const requiresOnboarding = !!session && !(profileFlags.password_set && profileFlags.onboarding_completed);
+  const requiresOnboarding = !!session && userRoleState.requires_password_setup === true && userRoleState.password_set !== true;
 
   if (!session || isSetPasswordRoute || requiresOnboarding) {
     const showUpdateForm = isSetPasswordRoute || requiresOnboarding;

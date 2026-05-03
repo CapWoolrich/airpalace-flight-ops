@@ -37,17 +37,14 @@ export default async function handler(req, res) {
 
   const userId = data?.user?.id;
   if (userId) {
-    await service.from("profiles").upsert({
-      id: userId,
-      email,
-      full_name,
+    await service.from("user_roles").upsert({
+      user_id: userId,
       role,
+      requires_password_setup: true,
       password_set: false,
       onboarding_completed: false,
       updated_at: new Date().toISOString(),
     });
-
-    await service.from("user_roles").upsert({ user_id: userId, role });
   }
 
   return res.status(200).json({ ok: true, message: "Invitación enviada", redirectTo });
