@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { requireRouteAccess } from "../src/server/_routeProtection.js";
-import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../src/server/_opsSideEffects.js";
+import { requireRouteAccess } from "../_routeProtection.js";
+import { emitAircraftStatusSideEffects, emitFlightSideEffects } from "../_opsSideEffects.js";
 
 function bad(res, status, error, extras = {}) {
   return res.status(status).json({ ok: false, error, ...extras });

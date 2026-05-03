@@ -1,5 +1,5 @@
-import { buildWhatsAppFlightMessage } from "../src/server/_whatsappMessage.js";
-import { requireRouteAccess } from "../src/server/_routeProtection.js";
+import { buildWhatsAppFlightMessage } from "../_whatsappMessage.js";
+import { requireRouteAccess } from "../_routeProtection.js";
 
 export default async function handler(req, res) {
   try {

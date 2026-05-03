@@ -1,5 +1,5 @@
-import { requireRouteAccess } from "../src/server/_routeProtection.js";
-import { validateRealtimeSessionPayload } from "../src/server/_validation.js";
+import { requireRouteAccess } from "../_routeProtection.js";
+import { validateRealtimeSessionPayload } from "../_validation.js";
 
 function send(res, status, payload) {
   return res.status(status).json(payload);

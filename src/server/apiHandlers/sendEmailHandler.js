@@ -1,5 +1,5 @@
-import { sendOperationalEmail } from "../src/server/_emailSender.js";
-import { ensureBodyFields, requireRouteAccess } from "../src/server/_routeProtection.js";
+import { sendOperationalEmail } from "../_emailSender.js";
+import { ensureBodyFields, requireRouteAccess } from "../_routeProtection.js";
 
 function getRecipientsOverride(req) {
   const requestedRecipients = Array.isArray(req.body?.recipients) ? req.body.recipients : null;
