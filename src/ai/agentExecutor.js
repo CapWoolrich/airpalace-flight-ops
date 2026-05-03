@@ -42,7 +42,7 @@ export async function executeAgentAction(agentResult, options = {}) {
   const isWriteAction = WRITE_ACTIONS.includes(action);
 
   if (isWriteAction) {
-    throw new Error("Las acciones AI de escritura solo pueden ejecutarse vía /api/ai-write con confirmación del servidor.");
+    throw new Error("Las acciones AI de escritura solo pueden ejecutarse vía /api/ai?action=ai-write con confirmación del servidor.");
   }
 
   async function fetchFlightsForQuery() {
