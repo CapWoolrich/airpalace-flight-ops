@@ -1,6 +1,6 @@
 import { calcR, etaLocalUtc } from "./helpers.js";
 import { findAirportByAny } from "../lib/airports.js";
-import { formatUtcLabel, parseTimeToMinutes } from "../lib/timezones.js";
+import { formatUtcLabel, localDateTimeToUtcMs, normalizeDateIso, parseTimeToMinutes, resolveAirportTimezone } from "../lib/timezones.js";
 
 export function resolveFlightAwareUrl(aircraft){
   return String(aircraft?.flightAwareUrl || "").trim();
@@ -23,16 +23,58 @@ function compareByDateTimeAsc(a,b){
   return String(a?.date||"").localeCompare(String(b?.date||"")) || String(a?.time||"").localeCompare(String(b?.time||""));
 }
 
+
+
+export function isFlightActiveNow(flight, nowMs){
+  if(String(flight?.st||"")!=="enc")return false;
+  if(!flight?.date||!flight?.time||!flight?.orig||!flight?.dest||!flight?.ac)return false;
+
+  var dateIso=normalizeDateIso(flight.date);
+  var depMins=parseTimeToMinutes(flight.time);
+  if(!dateIso||!Number.isFinite(depMins))return false;
+
+  var tz=resolveAirportTimezone(flight.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
+  if(!tz)return false;
+
+  var departureUtc=localDateTimeToUtcMs(dateIso, depMins, tz);
+  if(!Number.isFinite(departureUtc))return false;
+
+  var route=calcR(flight.orig, flight.dest, flight.ac, { m: flight.pm, w: flight.pw, c: flight.pc }, flight.bg);
+  var blockMinutes=Number(route?.bm);
+  if(!Number.isFinite(blockMinutes)||blockMinutes<=0)return false;
+
+  var arrivalUtc=departureUtc + (blockMinutes*60*1000);
+  var now=Number.isFinite(nowMs)?nowMs:Date.now();
+  return now>=departureUtc && now<=arrivalUtc;
+}
 export function getAircraftTimeline(fs, acId, todayIso){
   var flights=(fs||[]).filter(function(f){ return f?.ac===acId && f?.st!=="canc"; });
+  var nowMs=Date.now();
   var inFlight=flights
-    .filter(function(f){ return f?.st==="enc"; })
-    .sort(compareByDateTimeAsc)[0] || null;
+    .filter(function(f){ return isFlightActiveNow(f, nowMs); })
+    .sort(compareByDateTimeDesc)[0] || null;
   var lastLeg=flights
-    .filter(function(f){ return String(f?.date||"")<=String(todayIso||""); })
+    .filter(function(f){
+      var dateIso=normalizeDateIso(f?.date);
+      var depMins=parseTimeToMinutes(f?.time);
+      if(!dateIso||!Number.isFinite(depMins)) return false;
+      var tz=resolveAirportTimezone(f?.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
+      if(!tz)return false;
+      var depMs=localDateTimeToUtcMs(dateIso, depMins, tz);
+      return Number.isFinite(depMs) && depMs<=nowMs;
+    })
     .sort(compareByDateTimeDesc)[0] || null;
   var upcoming=flights
-    .filter(function(f){ return String(f?.date||"")>=String(todayIso||"") && f?.st!=="comp"; })
+    .filter(function(f){
+      if(f?.st==="comp")return false;
+      var dateIso=normalizeDateIso(f?.date);
+      var depMins=parseTimeToMinutes(f?.time);
+      if(!dateIso||!Number.isFinite(depMins)) return false;
+      var tz=resolveAirportTimezone(f?.orig,{ fallbackTimeZone: "America/Merida" }).timeZone;
+      if(!tz)return false;
+      var depMs=localDateTimeToUtcMs(dateIso, depMins, tz);
+      return Number.isFinite(depMs) && depMs>nowMs;
+    })
     .sort(compareByDateTimeAsc)[0] || null;
   return { inFlight, lastLeg, upcoming };
 }

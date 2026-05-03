@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AC } from "../src/app/data.js";
-import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getMonthlyAircraftMetrics, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
+import { buildNextFlightLine, buildNextFlightRouteLine, buildRouteStatusLine, deriveOperationalStatus, formatMonthlyHoursLabel, getAircraftTimeline, getMonthlyAircraftMetrics, isFlightActiveNow, resolveFlightAwareUrl } from "../src/app/aircraftCardUtils.js";
 
 test("resolveFlightAwareUrl returns mapped URL per aircraft", () => {
   assert.equal(resolveFlightAwareUrl(AC.N35EA), "https://es.flightaware.com/live/flight/N35EA");
@@ -42,4 +42,19 @@ test("getMonthlyAircraftMetrics computes flights, hours, and utilization with re
 test("formatMonthlyHoursLabel keeps hour suffix attached", () => {
   assert.equal(formatMonthlyHoursLabel(23.4), "23.4 h");
   assert.equal(formatMonthlyHoursLabel(null), "-- h");
+});
+
+
+test("isFlightActiveNow ignores stale enc flights", () => {
+  const flight = { ac: "N35EA", st: "enc", date: "2020-01-01", time: "08:00", orig: "MID", dest: "CUN", pm: 0, pw: 0, pc: 0, bg: 0 };
+  assert.equal(isFlightActiveNow(flight, Date.now()), false);
+});
+
+test("getAircraftTimeline does not mark old enc flights inFlight", () => {
+  const fs = [
+    { ac: "N35EA", st: "enc", date: "2020-01-01", time: "08:00", orig: "MID", dest: "CUN", pm: 0, pw: 0, pc: 0, bg: 0 },
+    { ac: "N35EA", st: "prog", date: "2099-01-01", time: "08:00", orig: "MID", dest: "CUN", pm: 0, pw: 0, pc: 0, bg: 0 },
+  ];
+  const timeline = getAircraftTimeline(fs, "N35EA", "2099-01-01");
+  assert.equal(timeline.inFlight, null);
 });
