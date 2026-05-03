@@ -1,8 +1,8 @@
 import OpenAI from "openai";
-import { signAiConfirmation } from "../src/server/_aiConfirmation.js";
-import { requireRouteAccess } from "../src/server/_routeProtection.js";
-import { normalizeAgentWithAliases } from "../src/ai/agentUtils.js";
-import { validateOpsAgentPayload } from "../src/server/_validation.js";
+import { signAiConfirmation } from "../_aiConfirmation.js";
+import { requireRouteAccess } from "../_routeProtection.js";
+import { normalizeAgentWithAliases } from "../../ai/agentUtils.js";
+import { validateOpsAgentPayload } from "../_validation.js";
 
 const MODEL = "gpt-4.1-mini";
 const OPS_AGENT_JSON_SCHEMA = {
