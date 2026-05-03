@@ -19,12 +19,14 @@
     "airports:rebuild_airport_search_index": "node scripts/airports/rebuild_airport_search_index.mjs"
   },
   "dependencies": {
-    "openai": "^6.1.0",
     "@supabase/supabase-js": "^2.49.8",
-    "web-push": "^3.6.7",
+    "openai": "^6.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^2.15.4"
+    "react-is": "18.2.0",
+    "react-smooth": "^4.0.4",
+    "recharts": "^2.15.4",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
